@@ -182,6 +182,9 @@
     <ClInclude Include="NES\Mappers\Kaiser\Kaiser7037.h" />
     <ClInclude Include="NES\Mappers\Kaiser\Kaiser7057.h" />
     <ClInclude Include="NES\Mappers\Kaiser\Kaiser7058.h" />
+    <ClInclude Include="NES\Mappers\Bbk\BbkFdc.h" />
+    <ClInclude Include="NES\Mappers\Bbk\BbkLpcAudio.h" />
+    <ClInclude Include="NES\Mappers\Bbk\BbkMapper.h" />
     <ClInclude Include="NES\Mappers\Mmc3Variants\McAcc.h" />
     <ClInclude Include="NES\Mappers\Unlicensed\A65AS.h" />
     <ClInclude Include="NES\Mappers\Unlicensed\Ac08.h" />
@@ -496,6 +499,8 @@
     <ClInclude Include="NES\Input\PartyTap.h" />
     <ClInclude Include="NES\Input\PowerPad.h" />
     <ClInclude Include="NES\Input\SuborKeyboard.h" />
+    <ClInclude Include="NES\Input\BbkMouse.h" />
+    <ClInclude Include="NES\Input\BbkKeyboard.h" />
     <ClInclude Include="NES\Input\SuborMouse.h" />
     <ClInclude Include="NES\Input\TwoPlayerAdapter.h" />
     <ClInclude Include="NES\Input\VirtualBoyController.h" />

@@ -138,17 +138,67 @@ namespace Mesen.Utilities
 		public static void LoadFile(string filename)
 		{
 			if(File.Exists(filename)) {
+				string ext = Path.GetExtension(filename).ToLowerInvariant();
 				if(IsPatchFile(filename)) {
 					LoadPatchFile(filename);
-				} else if(Path.GetExtension(filename).ToLowerInvariant() == "." + FileDialogHelper.MesenSaveStateExt) {
+				} else if(ext == "." + FileDialogHelper.MesenSaveStateExt) {
 					EmuApi.LoadStateFile(filename);
-				} else if(EmuApi.IsRunning() && Path.GetExtension(filename).ToLowerInvariant() == "." + FileDialogHelper.MesenMovieExt) {
+				} else if(EmuApi.IsRunning() && ext == "." + FileDialogHelper.MesenMovieExt) {
 					RecordApi.MoviePlay(filename);
+				} else if(ext == ".img" || ext == ".ima") {
+					OpenBbkDiskImage(filename);
 				} else {
 					LoadRom(filename);
 				}
 			} else {
 				DisplayMessageHelper.DisplayMessage("Error", ResourceHelper.GetMessage("FileNotFound", filename));
+			}
+		}
+
+		//A BBK floppy image can't boot on its own, so mount it and start a fresh run of the BBK
+		//BIOS (the .nes next to Mesen.exe) - like loading an FDS disk boots the FDS BIOS.
+		private static async void OpenBbkDiskImage(string imgPath)
+		{
+			string? bios = FindBbkBios();
+			if(bios == null) {
+				await MesenMsgBox.Show(null, "BbkBiosMissing", MessageBoxButtons.OK, MessageBoxIcon.Error);
+				return;
+			}
+			EmuApi.SetBbkBootDisk(imgPath);
+			LoadRom(bios);
+		}
+
+		//Find a BBK BIOS ROM in the Mesen executable's folder, identified by its iNES header
+		//(mapper 171, >=128KB PRG, no CHR ROM - the same signature the core uses for the BBK).
+		private static string? FindBbkBios()
+		{
+			try {
+				foreach(string nes in Directory.EnumerateFiles(Program.OriginalFolder, "*.nes")) {
+					if(IsBbkBiosRom(nes)) {
+						return nes;
+					}
+				}
+			} catch { }
+			return null;
+		}
+
+		private static bool IsBbkBiosRom(string path)
+		{
+			try {
+				using FileStream fs = File.OpenRead(path);
+				byte[] h = new byte[16];
+				if(fs.Read(h, 0, 16) < 16) {
+					return false;
+				}
+				if(h[0] != 'N' || h[1] != 'E' || h[2] != 'S' || h[3] != 0x1A) {
+					return false;
+				}
+				int prg16k = h[4];               //PRG ROM in 16KB units
+				int chr8k = h[5];                //CHR ROM in 8KB units
+				int mapper = (h[6] >> 4) | (h[7] & 0xF0);
+				return mapper == 171 && prg16k >= 8 && chr8k == 0;
+			} catch {
+				return false;
 			}
 		}
 

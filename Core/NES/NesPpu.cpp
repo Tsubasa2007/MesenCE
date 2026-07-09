@@ -34,6 +34,8 @@ template<class T> NesPpu<T>::NesPpu(NesConsole* console)
 	_console = console;
 	_emu = console->GetEmulator();
 	_mapper = console->GetMapper();
+	_paletteBgHackEnabled = _mapper == nullptr || _mapper->EnablePpuPaletteBgHack();
+	_vblFlagClearOnRead = _mapper == nullptr || _mapper->EnablePpuVblankFlagClearOnRead();
 	_masterClock = 0;
 	_masterClockDivider = 4;
 	_settings = _emu->GetSettings();
@@ -563,7 +565,13 @@ template<class T> void NesPpu<T>::SetControlRegister(uint8_t value)
 	if(!_control.NmiOnVerticalBlank) {
 		_console->GetCpu()->ClearNmiFlag();
 	} else if(_control.NmiOnVerticalBlank && _statusFlags.VerticalBlank) {
-		_console->GetCpu()->SetNmiFlag();
+		//When the vblank flag survives $2002 reads (famiclone quirk), limit the
+		//enable-retrigger to a single NMI per vblank to avoid an NMI storm from
+		//games that toggle bit 7 continuously
+		if(_vblFlagClearOnRead || !_nmiTriggeredThisVblank) {
+			_console->GetCpu()->SetNmiFlag();
+			_nmiTriggeredThisVblank = true;
+		}
 	}
 }
 
@@ -601,12 +609,16 @@ template<class T> void NesPpu<T>::SetMaskRegister(uint8_t value)
 
 template<class T> void NesPpu<T>::UpdateStatusFlag()
 {
-	_statusFlags.VerticalBlank = false;
-	_console->GetCpu()->ClearNmiFlag();
+	if(_vblFlagClearOnRead) {
+		_statusFlags.VerticalBlank = false;
+		_console->GetCpu()->ClearNmiFlag();
 
-	if(_scanline == _nmiScanline && _cycle == 0) {
-		//"Reading one PPU clock before reads it as clear and never sets the flag or generates NMI for that frame."
-		_preventVblFlag = true;
+		if(_scanline == _nmiScanline && _cycle == 0) {
+			//"Reading one PPU clock before reads it as clear and never sets the flag or generates NMI for that frame."
+			//This suppression is part of the flag-clear-on-read behavior; PPUs that don't
+			//clear the flag on reads can't suppress it either.
+			_preventVblFlag = true;
+		}
 	}
 }
 
@@ -1355,6 +1367,7 @@ template<class T> void NesPpu<T>::TriggerNmi()
 {
 	if(_control.NmiOnVerticalBlank) {
 		_console->GetCpu()->SetNmiFlag();
+		_nmiTriggeredThisVblank = true;
 	}
 }
 
@@ -1395,6 +1408,7 @@ template<class T> void NesPpu<T>::Exec()
 		if(_scanline < 240) {
 			((T*)this)->ProcessScanline();
 		} else if(_cycle == 1 && _scanline == _nmiScanline) {
+			_nmiTriggeredThisVblank = false;
 			if(!_preventVblFlag) {
 				_statusFlags.VerticalBlank = true;
 				BeginVBlank();
@@ -1709,6 +1723,7 @@ template<class T> void NesPpu<T>::Serialize(Serializer& s)
 		SV(_oamCopyDone);
 		SV(_needStateUpdate);
 		SV(_preventVblFlag);
+		SV(_nmiTriggeredThisVblank);
 		SV(_needVideoRamIncrement);
 		SV(_overflowBugCounter);
 		SV(_updateVramAddr);

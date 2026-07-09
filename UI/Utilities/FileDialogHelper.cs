@@ -51,7 +51,7 @@ namespace Mesen.Utilities
 						filter.Add(new FilePickerFileType("All supported files") {
 							Patterns = new List<string>() {
 								"*.sfc", "*.fig", "*.smc", "*.bs", "*.st", "*.spc",
-								"*.nes", "*.fds", "*.qd", "*.unif", "*.unf", "*.studybox", "*.nsf", "*.nsfe",
+								"*.nes", "*.fds", "*.qd", "*.unif", "*.unf", "*.studybox", "*.nsf", "*.nsfe", "*.img", "*.ima",
 								"*.gb", "*.gbc", "*.gbx", "*.gbs",
 								"*.pce", "*.sgx", "*.cue", "*.hes",
 								"*.sms", "*.gg", "*.sg", "*.col",
@@ -63,6 +63,7 @@ namespace Mesen.Utilities
 						});
 						filter.Add(new FilePickerFileType("SNES ROM files") { Patterns = new List<string>() { "*.sfc", "*.fig", "*.smc", "*.bs", "*.st", "*.spc" } });
 						filter.Add(new FilePickerFileType("NES ROM files") { Patterns = new List<string>() { "*.nes", "*.fds", "*.qd", "*.unif", "*.unf", "*.studybox", "*.nsf", "*.nsfe" } });
+						filter.Add(new FilePickerFileType("BBK disk images") { Patterns = new List<string>() { "*.img", "*.ima" } });
 						filter.Add(new FilePickerFileType("GB ROM files") { Patterns = new List<string>() { "*.gb", "*.gbc", "*.gbx", "*.gbs" } });
 						filter.Add(new FilePickerFileType("GBA ROM files") { Patterns = new List<string>() { "*.gba" } });
 						filter.Add(new FilePickerFileType("PC Engine ROM files") { Patterns = new List<string>() { "*.pce", "*.sgx", "*.cue", "*.hes" } });

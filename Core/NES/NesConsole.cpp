@@ -24,6 +24,7 @@
 #include "NES/Mappers/VsSystem/VsControlManager.h"
 #include "NES/Mappers/NSF/NsfMapper.h"
 #include "NES/Mappers/FDS/Fds.h"
+#include "NES/Mappers/Bbk/BbkMapper.h"
 #include "Shared/Emulator.h"
 #include "Shared/Audio/SoundMixer.h"
 #include "Shared/SaveStateManager.h"
@@ -36,6 +37,7 @@
 #include "Debugger/DebugTypes.h"
 #include "Utilities/Serializer.h"
 #include "Utilities/sha1.h"
+#include "Utilities/FolderUtilities.h"
 
 NesConsole::NesConsole(Emulator* emu)
 {
@@ -177,7 +179,7 @@ LoadRomResult NesConsole::LoadRom(VirtualFile& romFile)
 
 		if(GetNesConfig().AutoConfigureInput && romData.Info.InputType != GameInputType::Unspecified) {
 			//Auto-configure the inputs (if option is enabled)
-			InitializeInputDevices(romData.Info.InputType, romData.Info.System);
+			InitializeInputDevices(romData.Info.InputType, romData.Info.System, mapper.get());
 		}
 
 		_mapper.swap(mapper);
@@ -435,6 +437,32 @@ void NesConsole::SaveBattery()
 	}
 }
 
+vector<string> NesConsole::GetBbkDiskList(int32_t& currentIndex)
+{
+	currentIndex = -1;
+	vector<string> result;
+	if(BbkMapper* bbk = dynamic_cast<BbkMapper*>(_mapper.get())) {
+		//Match on file name rather than full path: the inserted disk may have been mounted
+		//either from the folder scan (manual swap) or from the auto-mount path builder, which
+		//can format the same file's path slightly differently.
+		string current = FolderUtilities::GetFilename(bbk->GetCurrentDiskFilename(), true);
+		vector<string> paths = bbk->GetDiskFileList();
+		for(size_t i = 0; i < paths.size(); i++) {
+			string name = FolderUtilities::GetFilename(paths[i], true);
+			if(!current.empty() && name == current) {
+				currentIndex = (int32_t)i;
+			}
+			result.push_back(name);
+		}
+	}
+	return result;
+}
+
+bool NesConsole::IsBbkGame()
+{
+	return dynamic_cast<BbkMapper*>(_mapper.get()) != nullptr;
+}
+
 ShortcutState NesConsole::IsShortcutAllowed(EmulatorShortcut shortcut, uint32_t shortcutParam)
 {
 	bool isRunning = _emu->IsRunning();
@@ -445,13 +473,21 @@ ShortcutState NesConsole::IsShortcutAllowed(EmulatorShortcut shortcut, uint32_t 
 	switch(shortcut) {
 		case EmulatorShortcut::FdsEjectDisk:
 		case EmulatorShortcut::FdsInsertNextDisk:
+			//Also used to swap BBK floppy disk images
+			return (ShortcutState)(isRunning && !isNetplayClient && !isMoviePlaying && (romFormat == RomFormat::Fds || dynamic_cast<BbkMapper*>(_mapper.get()) != nullptr));
+
 		case EmulatorShortcut::FdsSwitchDiskSide:
 			return (ShortcutState)(isRunning && !isNetplayClient && !isMoviePlaying && romFormat == RomFormat::Fds);
 
 		case EmulatorShortcut::FdsInsertDiskNumber:
-			if(isRunning && !isNetplayClient && !isMoviePlaying && romFormat == RomFormat::Fds) {
-				Fds* fds = dynamic_cast<Fds*>(_mapper.get());
-				return (ShortcutState)(fds && shortcutParam < fds->GetSideCount());
+			if(isRunning && !isNetplayClient && !isMoviePlaying) {
+				if(romFormat == RomFormat::Fds) {
+					Fds* fds = dynamic_cast<Fds*>(_mapper.get());
+					return (ShortcutState)(fds && shortcutParam < fds->GetSideCount());
+				}
+				if(BbkMapper* bbk = dynamic_cast<BbkMapper*>(_mapper.get())) {
+					return (ShortcutState)(shortcutParam < bbk->GetDiskCount());
+				}
 			}
 			return ShortcutState::Disabled;
 
@@ -548,7 +584,7 @@ void NesConsole::DebugWriteVram(uint16_t addr, uint8_t value)
 	}
 }
 
-void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem system)
+void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem system, BaseMapper* mapper)
 {
 	ControllerType port1 = ControllerType::NesController;
 	ControllerType port2 = ControllerType::NesController;
@@ -603,10 +639,19 @@ void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem syst
 		log("[Input] Exciting Boxing controller connected");
 		expDevice = ControllerType::ExcitingBoxing;
 	} else if(inputType == GameInputType::SuborKeyboardMouse1) {
-		log("[Input] Subor mouse connected");
-		log("[Input] Subor keyboard connected");
-		expDevice = ControllerType::SuborKeyboard;
-		port2 = ControllerType::SuborMouse;
+		if(dynamic_cast<BbkMapper*>(mapper)) {
+			//The BBK FD-1 keyboard shares the Subor scan protocol but has a different key
+			//matrix, and its mouse is an EM84502 serial device, not the Subor mouse protocol
+			log("[Input] BBK keyboard connected");
+			expDevice = ControllerType::BbkKeyboard;
+			log("[Input] BBK mouse connected");
+			port2 = ControllerType::BbkMouse;
+		} else {
+			log("[Input] Subor keyboard connected");
+			expDevice = ControllerType::SuborKeyboard;
+			log("[Input] Subor mouse connected");
+			port2 = ControllerType::SuborMouse;
+		}
 	} else if(inputType == GameInputType::JissenMahjong) {
 		log("[Input] Jissen Mahjong controller connected");
 		expDevice = ControllerType::JissenMahjong;

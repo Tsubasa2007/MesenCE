@@ -58,7 +58,7 @@ private:
 
 	template<bool isDualSystem> void InternalRunFrame();
 
-	void InitializeInputDevices(GameInputType inputType, GameSystem system);
+	void InitializeInputDevices(GameInputType inputType, GameSystem system, BaseMapper* mapper);
 
 	void StartRecordingHdPack(HdPackBuilderOptions options);
 	void StopRecordingHdPack();
@@ -75,6 +75,11 @@ public:
 	NesApu* GetApu() { return _apu.get(); }
 	NesMemoryManager* GetMemoryManager() { return _memoryManager.get(); }
 	BaseMapper* GetMapper() { return _mapper.get(); }
+
+	//Returns the list of swappable disk image names for BBK games (empty for anything else).
+	//currentIndex is set to the inserted disk's index, or -1 when none/not applicable.
+	vector<string> GetBbkDiskList(int32_t& currentIndex);
+	bool IsBbkGame();
 	NesSoundMixer* GetSoundMixer() { return _mixer.get(); }
 	Emulator* GetEmulator();
 	NesConfig& GetNesConfig();

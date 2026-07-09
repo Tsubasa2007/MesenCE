@@ -76,6 +76,10 @@
 						<CheckBox IsChecked="{Binding Config.FdsAutoInsertDisk}" Content="{l:Translate chkFdsAutoInsertDisk}" />
 					</c:OptionSection>
 
+					<c:OptionSection Header="{l:Translate lblBbkSettings}">
+						<CheckBox IsChecked="{Binding Config.BbkShowDiskLed}" Content="{l:Translate chkBbkShowDiskLed}" />
+					</c:OptionSection>
+
 					<c:OptionSection Header="{l:Translate lblVsDualSystem}">
 						<Grid ColumnDefinitions="Auto,Auto" RowDefinitions="Auto,Auto">
 							<TextBlock Text="{l:Translate lblVsDualPlayAudio}" />

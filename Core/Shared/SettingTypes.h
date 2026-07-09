@@ -244,7 +244,11 @@ enum class ControllerType
 	//WS
 	WsController,
 	WsControllerVertical,
-	Pcv2Controller
+	Pcv2Controller,
+
+	//NES - appended at the end to keep existing values stable
+	BbkMouse,
+	BbkKeyboard
 };
 
 struct KeyMapping
@@ -644,6 +648,7 @@ struct NesConfig
 	bool FdsAutoLoadDisk = true;
 	bool FdsFastForwardOnLoad = false;
 	bool FdsAutoInsertDisk = false;
+	bool BbkShowDiskLed = false;
 	VsDualOutputOption VsDualVideoOutput = VsDualOutputOption::Both;
 	VsDualOutputOption VsDualAudioOutput = VsDualOutputOption::Both;
 
@@ -708,6 +713,9 @@ struct NesConfig
 	int32_t StereoPanningAngle = 0;
 	int32_t StereoCombFilterDelay = 0;
 	int32_t StereoCombFilterStrength = 0;
+
+	//Folder scanned for BBK floppy disk images (.img/.ima). Empty = use the game's own folder.
+	char BbkDiskFolder[1000] = {};
 };
 
 enum class SmsRevision
