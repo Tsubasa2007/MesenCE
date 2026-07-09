@@ -295,6 +295,9 @@
 			<Control ID="chkFdsFastForwardOnLoad">Automatically fast forward FDS games when disk or BIOS is loading</Control>
 			<Control ID="chkFdsAutoInsertDisk">Automatically switch disks for FDS games</Control>
 
+			<Control ID="lblBbkSettings">BBK Learning Machine Settings</Control>
+			<Control ID="chkBbkShowDiskLed">Show disk activity LED (top-right corner)</Control>
+
 			<Control ID="lblVsDualSystem">VS. DualSystem Settings</Control>
 			<Control ID="lblVsDualPlayAudio">Play audio for:</Control>
 			<Control ID="lblVsDualShowVideo">Show video for:</Control>
@@ -972,6 +975,15 @@
 			<Control ID="tabDipSwitches">DIP Switches</Control>
 			
 			<Control ID="btnOk">OK</Control>
+			<Control ID="btnCancel">Cancel</Control>
+		</Form>
+
+		<Form ID="SelectDiskWindow">
+			<Control ID="wndTitle">Select Disk</Control>
+			<Control ID="lblSearch">Search:</Control>
+			<Control ID="btnChangeFolder">Change Folder...</Control>
+			<Control ID="btnInsert">Insert</Control>
+			<Control ID="btnEject">Eject</Control>
 			<Control ID="btnCancel">Cancel</Control>
 		</Form>
 
@@ -1824,6 +1836,7 @@ E
 		<Message ID="MesenUpToDate">You are running the latest version of Mesen.</Message>
 		<Message ID="PatchAndReset">Patch and reset the current game?</Message>
 		<Message ID="SelectRomIps">Please select a ROM for this patch file.</Message>
+		<Message ID="BbkBiosMissing">No BBK learning machine BIOS ROM was found.&#xA;&#xA;A .img disk cannot boot on its own - it needs the BBK BIOS. Place a BBK BIOS ROM (an iNES .nes file: mapper 171, 128 KB or larger PRG, no CHR ROM) in the same folder as the Mesen executable, then open the disk image again.</Message>
 		<Message ID="UnableToStartMissingSdl">Mesen could not launch because SDL2 could not be found. Install SDL2 using your package manager and try again.&#xA;&#xA;Error details:&#xA;{0}</Message>
 		<Message ID="UnableToStartMissingDependencies">Mesen could not launch because of missing dependencies.&#xA;&#xA;Error details:&#xA;{0}</Message>
 		<Message ID="UnexpectedError">An unexpected error has occurred.&#xA;&#xA;Error details:&#xA;{0}</Message>
@@ -2025,6 +2038,7 @@ E
 			<Value ID="ExcitingBoxing">Exciting Boxing Punching Bag</Value>
 			<Value ID="JissenMahjong">Jissen Mahjong Controller</Value>
 			<Value ID="SuborKeyboard">Subor Keyboard</Value>
+			<Value ID="BbkKeyboard">BBK Keyboard</Value>
 			<Value ID="BarcodeBattler">Barcode Battler</Value>
 			<Value ID="HoriTrack">Hori Track</Value>
 			<Value ID="BandaiHyperShot">Bandai Hyper Shot</Value>

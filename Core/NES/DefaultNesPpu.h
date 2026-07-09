@@ -25,7 +25,7 @@ public:
 	__forceinline void DrawPixel()
 	{
 		//This is called 3.7 million times per second - needs to be as fast as possible.
-		if(IsRenderingEnabled() || ((_videoRamAddr & 0x3F00) != 0x3F00)) {
+		if(IsRenderingEnabled() || !_paletteBgHackEnabled || ((_videoRamAddr & 0x3F00) != 0x3F00)) {
 			uint32_t color = GetPixelColor();
 			_currentOutputBuffer[(_scanline << 8) + _cycle - 1] = _paletteRam[color & 0x03 ? color : 0];
 		} else {

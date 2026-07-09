@@ -30,6 +30,8 @@
 #include "NES/Input/ExcitingBoxingController.h"
 #include "NES/Input/SuborKeyboard.h"
 #include "NES/Input/SuborMouse.h"
+#include "NES/Input/BbkMouse.h"
+#include "NES/Input/BbkKeyboard.h"
 #include "NES/Input/JissenMahjongController.h"
 #include "NES/Input/BarcodeBattlerReader.h"
 #include "NES/Input/HoriTrack.h"
@@ -98,6 +100,7 @@ shared_ptr<BaseControlDevice> NesControlManager::CreateControllerDevice(Controll
 
 		case ControllerType::SnesMouse: device.reset(new SnesMouse(_emu, port, keys)); break;
 		case ControllerType::SuborMouse: device.reset(new SuborMouse(_emu, port, keys)); break;
+		case ControllerType::BbkMouse: device.reset(new BbkMouse(_emu, port, keys)); break;
 		case ControllerType::VirtualBoyController: device.reset(new VirtualBoyController(_emu, port, keys)); break;
 
 		//Exp port devices
@@ -118,6 +121,7 @@ shared_ptr<BaseControlDevice> NesControlManager::CreateControllerDevice(Controll
 		case ControllerType::ExcitingBoxing: device.reset(new ExcitingBoxingController(_emu, keys)); break;
 		case ControllerType::JissenMahjong: device.reset(new JissenMahjongController(_emu, keys)); break;
 		case ControllerType::SuborKeyboard: device.reset(new SuborKeyboard(_emu, keys)); break;
+		case ControllerType::BbkKeyboard: device.reset(new BbkKeyboard(_emu, keys)); break;
 		case ControllerType::BarcodeBattler: device.reset(new BarcodeBattlerReader(_emu)); break;
 		case ControllerType::HoriTrack: device.reset(new HoriTrack(_emu, keys)); break;
 		case ControllerType::BandaiHyperShot: device.reset(new BandaiHyperShot(_console, keys)); break;
@@ -189,7 +193,7 @@ void NesControlManager::UpdateControlDevices()
 
 bool NesControlManager::IsKeyboardConnected()
 {
-	return HasControlDevice(ControllerType::FamilyBasicKeyboard) || HasControlDevice(ControllerType::SuborKeyboard);
+	return HasControlDevice(ControllerType::FamilyBasicKeyboard) || HasControlDevice(ControllerType::SuborKeyboard) || HasControlDevice(ControllerType::BbkKeyboard);
 }
 
 uint8_t NesControlManager::GetOpenBusMask(uint8_t port)

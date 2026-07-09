@@ -43,6 +43,8 @@ namespace Mesen.Config
 		[ObservableProperty] public partial bool FdsAutoLoadDisk { get; set; } = true;
 		[ObservableProperty] public partial bool FdsFastForwardOnLoad { get; set; } = false;
 		[ObservableProperty] public partial bool FdsAutoInsertDisk { get; set; } = false;
+		[ObservableProperty] public partial bool BbkShowDiskLed { get; set; } = false;
+		[ObservableProperty] public partial string BbkDiskFolder { get; set; } = "";
 		[ObservableProperty] public partial VsDualOutputOption VsDualVideoOutput { get; set; } = VsDualOutputOption.Both;
 		[ObservableProperty] public partial VsDualOutputOption VsDualAudioOutput { get; set; } = VsDualOutputOption.Both;
 
@@ -139,6 +141,11 @@ namespace Mesen.Config
 			Array.Copy(UserPalette, palette, UserPalette.Length);
 			bool isFullPalette = UserPalette.Length == 512;
 
+			//Encode the disk folder into the fixed 1000-byte field, leaving room for the null terminator
+			byte[] bbkDiskFolder = new byte[1000];
+			byte[] bbkDiskFolderBytes = System.Text.Encoding.UTF8.GetBytes(BbkDiskFolder ?? "");
+			Array.Copy(bbkDiskFolderBytes, bbkDiskFolder, Math.Min(bbkDiskFolderBytes.Length, 999));
+
 			ConfigApi.SetNesConfig(new InteropNesConfig() {
 				Port1 = Port1.ToInterop(),
 				Port1A = Port1.ToInterop(Port1A.Type),
@@ -165,6 +172,7 @@ namespace Mesen.Config
 				FdsAutoLoadDisk = FdsAutoLoadDisk,
 				FdsFastForwardOnLoad = FdsFastForwardOnLoad,
 				FdsAutoInsertDisk = FdsAutoInsertDisk,
+				BbkShowDiskLed = BbkShowDiskLed,
 				VsDualVideoOutput = VsDualVideoOutput,
 				VsDualAudioOutput = VsDualAudioOutput,
 
@@ -249,6 +257,8 @@ namespace Mesen.Config
 
 				IsFullColorPalette = isFullPalette,
 				UserPalette = palette,
+
+				BbkDiskFolder = bbkDiskFolder,
 			});
 		}
 
@@ -302,6 +312,7 @@ namespace Mesen.Config
 		[MarshalAs(UnmanagedType.I1)] public bool FdsAutoLoadDisk;
 		[MarshalAs(UnmanagedType.I1)] public bool FdsFastForwardOnLoad;
 		[MarshalAs(UnmanagedType.I1)] public bool FdsAutoInsertDisk;
+		[MarshalAs(UnmanagedType.I1)] public bool BbkShowDiskLed;
 		public VsDualOutputOption VsDualVideoOutput;
 		public VsDualOutputOption VsDualAudioOutput;
 
@@ -388,6 +399,9 @@ namespace Mesen.Config
 		public Int32 StereoPanningAngle;
 		public Int32 StereoCombFilterDelay;
 		public Int32 StereoCombFilterStrength;
+
+		[MarshalAs(UnmanagedType.ByValArray, SizeConst = 1000)]
+		public byte[] BbkDiskFolder;
 	}
 
 	public enum StereoFilter

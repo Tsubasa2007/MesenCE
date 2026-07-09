@@ -104,6 +104,35 @@ namespace Mesen.Interop
 
 		[DllImport(DllPath)] public static extern IntPtr GetArchiveRomList([MarshalAs(UnmanagedType.LPUTF8Str)] string filename, IntPtr outFileList, Int32 maxLength);
 
+		//True while a BBK game/BIOS is running (independent of how many disk images exist).
+		[DllImport(DllPath)][return: MarshalAs(UnmanagedType.I1)] public static extern bool IsNesBbkGame();
+
+		//Queue a .img/.ima to mount on the next BBK boot (call before loading the BBK BIOS ROM).
+		[DllImport(DllPath)] public static extern void SetBbkBootDisk([MarshalAs(UnmanagedType.LPUTF8Str)] string path);
+
+		[DllImport(DllPath, EntryPoint = "GetNesDiskList")] private static extern void GetNesDiskListWrapper(IntPtr outList, Int32 maxLength);
+		//Returns the swappable BBK floppy disk names and the index of the inserted disk (-1 if none).
+		//The list is empty for non-BBK games.
+		public static (int CurrentIndex, List<string> Disks) GetNesDiskList()
+		{
+			string raw = Utf8Utilities.CallStringApi((IntPtr outList, Int32 maxLength) => {
+				GetNesDiskListWrapper(outList, maxLength);
+			}, 100000);
+
+			int currentIndex = -1;
+			List<string> disks = new List<string>();
+			if(raw.Length > 0) {
+				string[] parts = raw.Split(new string[] { "[!|!]" }, StringSplitOptions.RemoveEmptyEntries);
+				if(parts.Length > 0) {
+					int.TryParse(parts[0], out currentIndex);
+					for(int i = 1; i < parts.Length; i++) {
+						disks.Add(parts[i]);
+					}
+				}
+			}
+			return (currentIndex, disks);
+		}
+
 		[DllImport(DllPath)] public static extern void SaveState(UInt32 stateIndex);
 		[DllImport(DllPath)] public static extern void LoadState(UInt32 stateIndex);
 		[DllImport(DllPath)] public static extern void SaveStateFile([MarshalAs(UnmanagedType.LPUTF8Str)] string filepath);

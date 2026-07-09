@@ -33,6 +33,7 @@ namespace Mesen.Config
 		public UInt16[]? ExcitingBoxingButtons { get; set; } = null;
 		public UInt16[]? JissenMahjongButtons { get; set; } = null;
 		public UInt16[]? SuborKeyboardButtons { get; set; } = null;
+		public UInt16[]? BbkKeyboardButtons { get; set; } = null;
 		public UInt16[]? BandaiMicrophoneButtons { get; set; } = null;
 		public UInt16[]? VirtualBoyButtons { get; set; } = null;
 		public UInt16[]? KonamiHyperShotButtons { get; set; } = null;
@@ -57,6 +58,7 @@ namespace Mesen.Config
 				ControllerType.ExcitingBoxing => ExcitingBoxingButtons,
 				ControllerType.JissenMahjong => JissenMahjongButtons,
 				ControllerType.SuborKeyboard => SuborKeyboardButtons,
+				ControllerType.BbkKeyboard => BbkKeyboardButtons,
 				ControllerType.VbController => VirtualBoyButtons,
 				ControllerType.KonamiHyperShot => KonamiHyperShotButtons,
 				ControllerType.FamicomArkanoidController => ArkanoidButtons,
@@ -103,7 +105,7 @@ namespace Mesen.Config
 				ControllerType.FcnsController => Enum.GetValues<NesFcnsButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.ExcitingBoxing => Enum.GetValues<NesExcitingBoxingButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.JissenMahjong => Enum.GetValues<NesJissenMahjongButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
-				ControllerType.SuborKeyboard => Enum.GetValues<NesSuborKeyboardButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
+				ControllerType.SuborKeyboard or ControllerType.BbkKeyboard => Enum.GetValues<NesSuborKeyboardButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.VbController => Enum.GetValues<NesVirtualBoyButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.KonamiHyperShot => Enum.GetValues<NesKonamiHyperShotButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.NesArkanoidController or ControllerType.FamicomArkanoidController => Enum.GetValues<NesArkanoidButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
@@ -159,6 +161,10 @@ namespace Mesen.Config
 
 				case ControllerType.SuborKeyboard:
 					SuborKeyboardButtons = new UInt16[99];
+					break;
+
+				case ControllerType.BbkKeyboard:
+					BbkKeyboardButtons = new UInt16[99];
 					break;
 
 				case ControllerType.VbController:
@@ -312,6 +318,7 @@ namespace Mesen.Config
 					};
 
 				case ControllerType.SuborKeyboard:
+				case ControllerType.BbkKeyboard:
 					return new UInt16[99] {
 						InputApi.GetKeyCode("A"), InputApi.GetKeyCode("B"), InputApi.GetKeyCode("C"), InputApi.GetKeyCode("D"),
 						InputApi.GetKeyCode("E"), InputApi.GetKeyCode("F"), InputApi.GetKeyCode("G"), InputApi.GetKeyCode("H"),
@@ -456,6 +463,7 @@ namespace Mesen.Config
 				case ControllerType.ExcitingBoxing: ExcitingBoxingButtons = GetDefaultCustomKeys(type, preset); break;
 				case ControllerType.JissenMahjong: JissenMahjongButtons = GetDefaultCustomKeys(type, preset); break;
 				case ControllerType.SuborKeyboard: SuborKeyboardButtons = GetDefaultCustomKeys(type, preset); break;
+				case ControllerType.BbkKeyboard: BbkKeyboardButtons = GetDefaultCustomKeys(type, preset); break;
 				case ControllerType.VbController: VirtualBoyButtons = GetDefaultCustomKeys(type, preset); break;
 				case ControllerType.KonamiHyperShot: KonamiHyperShotButtons = GetDefaultCustomKeys(type, preset); break;
 

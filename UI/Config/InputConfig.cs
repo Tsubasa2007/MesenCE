@@ -416,6 +416,10 @@ namespace Mesen.Config
 		WsController,
 		WsControllerVertical,
 		Pcv2Controller,
+
+		//NES - appended at the end to keep existing values stable
+		BbkMouse,
+		BbkKeyboard,
 	}
 
 	public static class ControllerTypeExtensions
@@ -492,6 +496,7 @@ namespace Mesen.Config
 				case ControllerType.FamilyTrainerMatSideA:
 				case ControllerType.FamilyTrainerMatSideB:
 				case ControllerType.SuborKeyboard:
+				case ControllerType.BbkKeyboard:
 				case ControllerType.FamilyBasicKeyboard:
 				case ControllerType.Pachinko:
 				case ControllerType.FcnsController:

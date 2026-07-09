@@ -907,6 +907,12 @@
     <ClInclude Include="NES\Input\SuborKeyboard.h">
       <Filter>NES\Input</Filter>
     </ClInclude>
+    <ClInclude Include="NES\Input\BbkMouse.h">
+      <Filter>NES\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="NES\Input\BbkKeyboard.h">
+      <Filter>NES\Input</Filter>
+    </ClInclude>
     <ClInclude Include="NES\Input\SuborMouse.h">
       <Filter>NES\Input</Filter>
     </ClInclude>
@@ -2057,6 +2063,15 @@
     </ClInclude>
     <ClInclude Include="NES\Mappers\Kaiser\Kaiser7058.h">
       <Filter>NES\Mappers\Kaiser</Filter>
+    </ClInclude>
+    <ClInclude Include="NES\Mappers\Bbk\BbkFdc.h">
+      <Filter>NES\Mappers\Bbk</Filter>
+    </ClInclude>
+    <ClInclude Include="NES\Mappers\Bbk\BbkLpcAudio.h">
+      <Filter>NES\Mappers\Bbk</Filter>
+    </ClInclude>
+    <ClInclude Include="NES\Mappers\Bbk\BbkMapper.h">
+      <Filter>NES\Mappers\Bbk</Filter>
     </ClInclude>
     <ClInclude Include="NES\Mappers\Waixing\Mapper242.h">
       <Filter>NES\Mappers\Waixing</Filter>
@@ -3423,6 +3438,9 @@
     </Filter>
     <Filter Include="NES\Mappers\Kaiser">
       <UniqueIdentifier>{202c2e13-3eb0-427f-adf8-7c762d63374d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="NES\Mappers\Bbk">
+      <UniqueIdentifier>{8f2d5c1a-4b7e-4a29-9c63-1d0e8b52a7f4}</UniqueIdentifier>
     </Filter>
     <Filter Include="NES\Mappers\Waixing">
       <UniqueIdentifier>{411607e1-ca14-4d8e-877c-eb9a48ae5413}</UniqueIdentifier>

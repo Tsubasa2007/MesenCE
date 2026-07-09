@@ -17,6 +17,8 @@
 #include "Utilities/ArchiveReader.h"
 #include "Utilities/FolderUtilities.h"
 #include "Utilities/StringUtilities.h"
+#include "Core/NES/NesConsole.h"
+#include "Core/NES/Mappers/Bbk/BbkMapper.h"
 #include "InteropNotificationListeners.h"
 
 #ifdef _WIN32
@@ -200,6 +202,42 @@ extern "C"
 		}
 
 		StringUtilities::CopyToBuffer(out.str(), outBuffer, maxLength);
+	}
+
+	//BBK floppy disk list for the "Select Disk" menu. Format: "<currentIndex>[!|!]<name0>[!|!]<name1>...".
+	//Empty output means the running game is not a BBK machine (or no console is loaded).
+	DllExport void __stdcall GetNesDiskList(char* outBuffer, uint32_t maxLength)
+	{
+		std::ostringstream out;
+		if(NesConsole* nes = dynamic_cast<NesConsole*>(_emu->GetConsole().get())) {
+			int32_t currentIndex = -1;
+			vector<string> disks = nes->GetBbkDiskList(currentIndex);
+			if(!disks.empty()) {
+				out << currentIndex << "[!|!]";
+				for(string& name : disks) {
+					out << name << "[!|!]";
+				}
+			}
+		}
+
+		StringUtilities::CopyToBuffer(out.str(), outBuffer, maxLength);
+	}
+
+	//True while a BBK learning machine game/BIOS is running, regardless of how many disk images
+	//are available - lets the UI show the disk menu (and its Change Folder option) on an empty folder.
+	DllExport bool __stdcall IsNesBbkGame()
+	{
+		if(NesConsole* nes = dynamic_cast<NesConsole*>(_emu->GetConsole().get())) {
+			return nes->IsBbkGame();
+		}
+		return false;
+	}
+
+	//Queue a specific floppy image to mount on the next BBK boot (used when a .img is opened
+	//directly from the UI, which then loads the BBK BIOS ROM). Static: no console needed yet.
+	DllExport void __stdcall SetBbkBootDisk(char* path)
+	{
+		BbkMapper::SetPendingBootDisk(path ? path : "");
 	}
 
 	DllExport bool __stdcall IsRunning()

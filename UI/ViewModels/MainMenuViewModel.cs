@@ -38,6 +38,10 @@ namespace Mesen.ViewModels
 		private RomInfo RomInfo => MainWindow.RomInfo;
 		private bool IsGameRunning => RomInfo.Format != RomFormat.Unknown;
 		private bool IsFdsGame => RomInfo.Format == RomFormat.Fds;
+		//A BBK learning machine game exposes swappable floppy disk images (.img/.ima) in its folder.
+		//Shown whenever a BBK game/BIOS is running, even with no disk images in the current folder -
+		//the Select Disk window's Change Folder button lets the user point at a folder that has some.
+		private bool IsBbkGame => IsGameRunning && EmuApi.IsNesBbkGame();
 		private bool IsVsSystemGame => RomInfo.Format == RomFormat.VsSystem || RomInfo.Format == RomFormat.VsDualSystem;
 		private bool IsVsDualSystemGame => RomInfo.Format == RomFormat.VsDualSystem;
 		private List<RecentItem> RecentItems => ConfigManager.Config.RecentFiles.Items;
@@ -249,6 +253,21 @@ namespace Mesen.ViewModels
 				new MainMenuAction(EmulatorShortcut.FdsEjectDisk) {
 					ActionType = ActionType.EjectDisk,
 					IsVisible = () => IsFdsGame,
+				},
+
+				new ContextMenuSeparator() { IsVisible = () => IsBbkGame },
+
+				new MainMenuAction() {
+					ActionType = ActionType.SelectDisk,
+					IsVisible = () => IsBbkGame,
+					//Unlike FDS (max 8 disk sides), a BBK folder can hold arbitrarily many images, so
+					//open a searchable list window instead of a (potentially huge) inline submenu.
+					OnClick = () => { _ = SelectDiskWindow.Open(wnd); }
+				},
+
+				new MainMenuAction(EmulatorShortcut.FdsEjectDisk) {
+					ActionType = ActionType.EjectDisk,
+					IsVisible = () => IsBbkGame,
 				},
 
 				new ContextMenuSeparator() { IsVisible = () => IsVsSystemGame },

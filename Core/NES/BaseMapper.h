@@ -225,6 +225,16 @@ public:
 	__forceinline bool HasVramAddressHook() { return _hasVramAddressHook; }
 	virtual void NotifyVramAddressChange(uint16_t addr);
 
+	//2C02 quirk: during forced blanking, V in $3F00-$3FFF shows that palette color instead
+	//of the backdrop. Famiclone PPUs that lack the quirk can disable it here (see DrawPixel)
+	virtual bool EnablePpuPaletteBgHack() { return true; }
+
+	//2C02 behavior: reading $2002 clears the vblank flag. Some famiclone PPUs only clear
+	//the flag at the pre-render line; software written for them can poll $2002 inside
+	//NMI-toggling loops, which on a stock 2C02 occasionally eats the NMI for a frame
+	//(see NesPpu::UpdateStatusFlag / SetControlRegister)
+	virtual bool EnablePpuVblankFlagClearOnRead() { return true; }
+
 	virtual void GetMemoryRanges(MemoryRanges& ranges) override;
 	virtual uint32_t GetInternalRamSize() { return 0x800; }
 

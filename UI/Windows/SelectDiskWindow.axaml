@@ -1,0 +1,66 @@
+<Window
+	xmlns="https://github.com/avaloniaui"
+	xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+	xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+	xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+	xmlns:l="using:Mesen.Localization"
+	xmlns:w="using:Mesen.Windows"
+	mc:Ignorable="d"
+	Width="400"
+	Height="450"
+	x:Class="Mesen.Windows.SelectDiskWindow"
+	Title="{l:Translate wndTitle}"
+	x:DataType="w:SelectDiskViewModel"
+>
+	<Window.Styles>
+		<!-- BBK disk image names are usually Simplified Chinese. The default MesenFont
+		     (Microsoft Sans Serif) has no CJK glyphs, and Avalonia's automatic fallback picks an
+		     incomplete font inconsistently (some characters render, others show as boxes - the same
+		     character can render in one row and appear as a box in another). Pin an explicit CJK font
+		     chain on this window's text so disk names render deterministically. -->
+		<Style Selector="TextBlock">
+			<Setter Property="FontFamily" Value="Microsoft Sans Serif, Microsoft YaHei, Noto Sans CJK SC, PingFang SC" />
+		</Style>
+		<Style Selector="TextBox">
+			<Setter Property="FontFamily" Value="Microsoft Sans Serif, Microsoft YaHei, Noto Sans CJK SC, PingFang SC" />
+		</Style>
+	</Window.Styles>
+
+	<DockPanel HorizontalAlignment="Stretch" Margin="3">
+		<Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto" DockPanel.Dock="Top" Margin="0 0 0 3">
+			<TextBlock Text="{l:Translate lblSearch}" VerticalAlignment="Center" Margin="0 0 5 0" />
+			<TextBox Grid.Column="1" Text="{Binding SearchString, Converter={StaticResource NullTextConverter}}" Name="Search" />
+		</Grid>
+
+		<DockPanel DockPanel.Dock="Bottom" Margin="0 3 0 0">
+			<DockPanel.Styles>
+				<Style Selector="Button">
+					<Setter Property="Margin" Value="5"/>
+					<Setter Property="MinWidth" Value="73"/>
+					<Setter Property="HorizontalContentAlignment" Value="Center"/>
+				</Style>
+			</DockPanel.Styles>
+			<Button DockPanel.Dock="Left" HorizontalAlignment="Left" Content="{l:Translate btnChangeFolder}" Click="OnChangeFolderClick" />
+			<StackPanel VerticalAlignment="Center" HorizontalAlignment="Right" Orientation="Horizontal">
+				<Button Content="{l:Translate btnInsert}" Click="OnInsertClick" IsEnabled="{Binding SelectedEntry, Converter={x:Static ObjectConverters.IsNotNull}}" />
+				<Button Content="{l:Translate btnEject}" Click="OnEjectClick" IsEnabled="{Binding HasInsertedDisk}" />
+				<Button Content="{l:Translate btnCancel}" Click="OnCancelClick" />
+			</StackPanel>
+		</DockPanel>
+
+		<ListBox
+			Name="ListBox"
+			ItemsSource="{Binding FilteredEntries}"
+			SelectedItem="{Binding SelectedEntry}"
+			DoubleTapped="OnDoubleTapped"
+			PointerReleased="OnPointerReleased"
+			ScrollViewer.AllowAutoHide="False"
+		>
+			<ListBox.Styles>
+				<Style Selector="ListBoxItem">
+					<Setter Property="Padding" Value="2" />
+				</Style>
+			</ListBox.Styles>
+		</ListBox>
+	</DockPanel>
+</Window>
