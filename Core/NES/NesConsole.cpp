@@ -25,6 +25,8 @@
 #include "NES/Mappers/NSF/NsfMapper.h"
 #include "NES/Mappers/FDS/Fds.h"
 #include "NES/Mappers/Bbk/BbkMapper.h"
+#include "NES/Mappers/Sb2k/Sb2kMapper.h"
+#include "NES/Mappers/Sb2k/Sb2kPpu.h"
 #include "Shared/Emulator.h"
 #include "Shared/Audio/SoundMixer.h"
 #include "Shared/SaveStateManager.h"
@@ -199,6 +201,9 @@ LoadRomResult NesConsole::LoadRom(VirtualFile& romFile)
 		} else if(dynamic_cast<NsfMapper*>(_mapper.get())) {
 			//Disable most of the PPU for NSFs
 			_ppu.reset(new NsfPpu(this));
+		} else if(dynamic_cast<Sb2kMapper*>(_mapper.get())) {
+			//Subor SB-2000: the UM6576 PPU has an extra native register set
+			_ppu.reset(new Sb2kPpu(this));
 		} else {
 			_ppu.reset(new DefaultNesPpu(this));
 		}
@@ -441,26 +446,32 @@ vector<string> NesConsole::GetBbkDiskList(int32_t& currentIndex)
 {
 	currentIndex = -1;
 	vector<string> result;
+	//Match on file name rather than full path: the inserted disk may have been mounted
+	//either from the folder scan (manual swap) or from the auto-mount path builder, which
+	//can format the same file's path slightly differently.
+	string current;
+	vector<string> paths;
 	if(BbkMapper* bbk = dynamic_cast<BbkMapper*>(_mapper.get())) {
-		//Match on file name rather than full path: the inserted disk may have been mounted
-		//either from the folder scan (manual swap) or from the auto-mount path builder, which
-		//can format the same file's path slightly differently.
-		string current = FolderUtilities::GetFilename(bbk->GetCurrentDiskFilename(), true);
-		vector<string> paths = bbk->GetDiskFileList();
-		for(size_t i = 0; i < paths.size(); i++) {
-			string name = FolderUtilities::GetFilename(paths[i], true);
-			if(!current.empty() && name == current) {
-				currentIndex = (int32_t)i;
-			}
-			result.push_back(name);
+		current = FolderUtilities::GetFilename(bbk->GetCurrentDiskFilename(), true);
+		paths = bbk->GetDiskFileList();
+	} else if(Sb2kMapper* sb2k = dynamic_cast<Sb2kMapper*>(_mapper.get())) {
+		current = FolderUtilities::GetFilename(sb2k->GetCurrentDiskFilename(), true);
+		paths = sb2k->GetDiskFileList();
+	}
+	for(size_t i = 0; i < paths.size(); i++) {
+		string name = FolderUtilities::GetFilename(paths[i], true);
+		if(!current.empty() && name == current) {
+			currentIndex = (int32_t)i;
 		}
+		result.push_back(name);
 	}
 	return result;
 }
 
 bool NesConsole::IsBbkGame()
 {
-	return dynamic_cast<BbkMapper*>(_mapper.get()) != nullptr;
+	//Also true for the SB-2000, which reuses the same floppy-swap UI
+	return dynamic_cast<BbkMapper*>(_mapper.get()) != nullptr || dynamic_cast<Sb2kMapper*>(_mapper.get()) != nullptr;
 }
 
 ShortcutState NesConsole::IsShortcutAllowed(EmulatorShortcut shortcut, uint32_t shortcutParam)
@@ -473,8 +484,8 @@ ShortcutState NesConsole::IsShortcutAllowed(EmulatorShortcut shortcut, uint32_t 
 	switch(shortcut) {
 		case EmulatorShortcut::FdsEjectDisk:
 		case EmulatorShortcut::FdsInsertNextDisk:
-			//Also used to swap BBK floppy disk images
-			return (ShortcutState)(isRunning && !isNetplayClient && !isMoviePlaying && (romFormat == RomFormat::Fds || dynamic_cast<BbkMapper*>(_mapper.get()) != nullptr));
+			//Also used to swap BBK/SB-2000 floppy disk images
+			return (ShortcutState)(isRunning && !isNetplayClient && !isMoviePlaying && (romFormat == RomFormat::Fds || IsBbkGame()));
 
 		case EmulatorShortcut::FdsSwitchDiskSide:
 			return (ShortcutState)(isRunning && !isNetplayClient && !isMoviePlaying && romFormat == RomFormat::Fds);
@@ -487,6 +498,9 @@ ShortcutState NesConsole::IsShortcutAllowed(EmulatorShortcut shortcut, uint32_t 
 				}
 				if(BbkMapper* bbk = dynamic_cast<BbkMapper*>(_mapper.get())) {
 					return (ShortcutState)(shortcutParam < bbk->GetDiskCount());
+				}
+				if(Sb2kMapper* sb2k = dynamic_cast<Sb2kMapper*>(_mapper.get())) {
+					return (ShortcutState)(shortcutParam < sb2k->GetDiskCount());
 				}
 			}
 			return ShortcutState::Disabled;
@@ -639,7 +653,14 @@ void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem syst
 		log("[Input] Exciting Boxing controller connected");
 		expDevice = ControllerType::ExcitingBoxing;
 	} else if(inputType == GameInputType::SuborKeyboardMouse1) {
-		if(dynamic_cast<BbkMapper*>(mapper)) {
+		if(dynamic_cast<Sb2kMapper*>(mapper)) {
+			//The SB-2000 has a PS/2-style keyboard and an HT6513B serial mouse, both
+			//wired to the mapper's extension registers rather than $4016/$4017
+			log("[Input] SB-2000 keyboard connected");
+			expDevice = ControllerType::Sb2kKeyboard;
+			log("[Input] SB-2000 mouse connected");
+			port2 = ControllerType::Sb2kMouse;
+		} else if(dynamic_cast<BbkMapper*>(mapper)) {
 			//The BBK FD-1 keyboard shares the Subor scan protocol but has a different key
 			//matrix, and its mouse is an EM84502 serial device, not the Subor mouse protocol
 			log("[Input] BBK keyboard connected");

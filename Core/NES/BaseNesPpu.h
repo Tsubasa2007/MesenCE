@@ -74,6 +74,7 @@ protected:
 	bool _writeToggle = false; //not used in rendering
 	bool _paletteBgHackEnabled = true; //Show palette color when V is in $3F00-$3FFF during forced blanking (2C02 quirk; some famiclone PPUs lack it)
 	bool _vblFlagClearOnRead = true; //2C02 clears the vblank flag on $2002 reads; some famiclone PPUs only clear it at pre-render
+	bool _paletteMirroringEnabled = true; //2C02 mirrors $3F10/$14/$18/$1C onto $3F00/$04/$08/$0C; on some famiclone PPUs all 32 entries are independent
 	bool _nmiTriggeredThisVblank = false; //Used with _vblFlagClearOnRead=false to limit NMI enable-retriggers to one per vblank
 	//160
 	NesSpriteInfo* _lastSprite = nullptr; //used by HD ppu

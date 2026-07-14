@@ -235,6 +235,12 @@ public:
 	//(see NesPpu::UpdateStatusFlag / SetControlRegister)
 	virtual bool EnablePpuVblankFlagClearOnRead() { return true; }
 
+	//2C02 behavior: $3F10/$3F14/$3F18/$3F1C mirror onto $3F00/$3F04/$3F08/$3F0C. On some
+	//famiclone PPUs all 32 palette entries are independent, so software freely uses the
+	//sprite palette's first entry without disturbing the backdrop
+	//(see BaseNesPpu::ReadPaletteRam / WritePaletteRam)
+	virtual bool EnablePpuPaletteMirroring() { return true; }
+
 	virtual void GetMemoryRanges(MemoryRanges& ranges) override;
 	virtual uint32_t GetInternalRamSize() { return 0x800; }
 

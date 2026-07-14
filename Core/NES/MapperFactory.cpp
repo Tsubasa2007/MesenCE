@@ -51,6 +51,7 @@
 #include "NES/Mappers/Kaiser/Kaiser7057.h"
 #include "NES/Mappers/Kaiser/Kaiser7058.h"
 #include "NES/Mappers/Bbk/BbkMapper.h"
+#include "NES/Mappers/Sb2k/Sb2kMapper.h"
 #include "NES/Mappers/Konami/VRC1.h"
 #include "NES/Mappers/Konami/VRC2_4.h"
 #include "NES/Mappers/Konami/VRC3.h"
@@ -447,6 +448,13 @@ BaseMapper* MapperFactory::GetMapperFromID(RomData& romData)
 			//The VirtuaNES-BBK fork reuses mapper 171 for the BBK learning machine.
 			//Real Kaiser KS-7058 games have 32K PRG + CHR ROM; the BBK BIOS is 128K PRG with CHR-RAM only.
 			if(romData.PrgRom.size() >= 0x20000 && romData.ChrRom.size() == 0) {
+				//The fork also stores a machine variant in iNES header byte 9 (its own
+				//convention): variant 1 = Subor SB-2000, variant 0 = BBK.
+				if((romData.Info.Header.Byte9 >> 1) == 1) {
+					romData.Info.System = GameSystem::Dendy;
+					romData.Info.InputType = GameInputType::SuborKeyboardMouse1;
+					return new Sb2kMapper();
+				}
 				//BBK: Dendy-timed famiclone; the FD-1 drive unit includes a keyboard+mouse and
 				//the BIOS refuses to boot from disk unless the keyboard responds. Set these
 				//before NesConsole runs its input auto-configuration.

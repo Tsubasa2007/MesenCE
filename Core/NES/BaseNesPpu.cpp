@@ -76,7 +76,7 @@ uint16_t BaseNesPpu::GetCurrentBgColor()
 uint8_t BaseNesPpu::ReadPaletteRam(uint16_t addr)
 {
 	addr &= 0x1F;
-	if(addr == 0x10 || addr == 0x14 || addr == 0x18 || addr == 0x1C) {
+	if(_paletteMirroringEnabled && (addr == 0x10 || addr == 0x14 || addr == 0x18 || addr == 0x1C)) {
 		addr &= ~0x10;
 	}
 	return _paletteRam[addr];
@@ -86,7 +86,13 @@ void BaseNesPpu::WritePaletteRam(uint16_t addr, uint8_t value)
 {
 	addr &= 0x1F;
 	value &= 0x3F;
-	if(addr == 0x00 || addr == 0x10) {
+	if(!_paletteMirroringEnabled) {
+		//Clone PPU: all 32 entries are independent
+		_paletteRam[addr] = value;
+		if(addr == 0x00) {
+			_emu->AddDebugEvent<CpuType::Nes>(DebugEventType::BgColorChange);
+		}
+	} else if(addr == 0x00 || addr == 0x10) {
 		_paletteRam[0x00] = value;
 		_paletteRam[0x10] = value;
 		_emu->AddDebugEvent<CpuType::Nes>(DebugEventType::BgColorChange);

@@ -146,7 +146,7 @@ namespace Mesen.Utilities
 				} else if(EmuApi.IsRunning() && (ext == "." + FileDialogHelper.MesenMovieExt || ext == "." + FileDialogHelper.BizHawkMovieExt || ext == "." + FileDialogHelper.GbaHawkMovieExt)) {
 					RecordApi.MoviePlay(filename);
 				} else if(ext == ".img" || ext == ".ima") {
-					OpenBbkDiskImage(filename);
+					OpenLearningMachineDisk(filename);
 				} else {
 					LoadRom(filename);
 				}
@@ -155,26 +155,53 @@ namespace Mesen.Utilities
 			}
 		}
 
-		//A BBK floppy image can't boot on its own, so mount it and start a fresh run of the BBK
-		//BIOS (the .nes next to Mesen.exe) - like loading an FDS disk boots the FDS BIOS.
-		private static async void OpenBbkDiskImage(string imgPath)
+		//A learning machine's floppy image can't boot on its own, so mount it and start a fresh run
+		//of the BIOS (a .nes next to Mesen.exe) belonging to the machine whose disk it is - like
+		//loading an FDS disk boots the FDS BIOS.
+		private static async void OpenLearningMachineDisk(string imgPath)
 		{
-			string? bios = FindBbkBios();
+			bool sb2k = IsSb2kDisk(imgPath);
+			string? bios = FindLearningMachineBios(sb2k);
 			if(bios == null) {
-				await MesenMsgBox.Show(null, "BbkBiosMissing", MessageBoxButtons.OK, MessageBoxIcon.Error);
+				string machine = sb2k ? "Subor SB-2000" : "BBK";
+				await MesenMsgBox.Show(null, "BbkBiosMissing", MessageBoxButtons.OK, MessageBoxIcon.Error, machine);
 				return;
 			}
 			EmuApi.SetBbkBootDisk(imgPath);
 			LoadRom(bios);
 		}
 
-		//Find a BBK BIOS ROM in the Mesen executable's folder, identified by its iNES header
-		//(mapper 171, >=128KB PRG, no CHR ROM - the same signature the core uses for the BBK).
-		private static string? FindBbkBios()
+		//Tell the two machines' floppies apart by the boot sector's OEM name: a BBK disk carries the
+		//machine's own 6502 DOS and boots from it, while an SB-2000 disk is an ordinary PC-formatted
+		//FAT12 floppy whose x86 boot sector the machine never runs.
+		private static bool IsSb2kDisk(string imgPath)
 		{
 			try {
-				foreach(string nes in Directory.EnumerateFiles(Program.OriginalFolder, "*.nes")) {
-					if(IsBbkBiosRom(nes)) {
+				using FileStream fs = File.OpenRead(imgPath);
+				byte[] bootSector = new byte[8];
+				if(fs.Read(bootSector, 0, 8) < 8) {
+					return false;
+				}
+				return Encoding.ASCII.GetString(bootSector, 3, 5) != "SMDOS";
+			} catch {
+				return false;
+			}
+		}
+
+		//Find a learning machine BIOS ROM in the Mesen executable's folder, identified by its iNES
+		//header - the same signature the core matches on (mapper 171, >=128KB PRG, no CHR ROM, with
+		//header byte 9 selecting which machine it is). Search the executable's own folder rather
+		//than Program.OriginalFolder: that one is the working directory, which is only the same
+		//folder when Mesen happens to be launched from it.
+		private static string? FindLearningMachineBios(bool sb2k)
+		{
+			try {
+				string? exeFolder = Path.GetDirectoryName(Program.ExePath);
+				if(exeFolder == null) {
+					return null;
+				}
+				foreach(string nes in Directory.EnumerateFiles(exeFolder, "*.nes")) {
+					if(IsLearningMachineBios(nes, sb2k)) {
 						return nes;
 					}
 				}
@@ -182,7 +209,7 @@ namespace Mesen.Utilities
 			return null;
 		}
 
-		private static bool IsBbkBiosRom(string path)
+		private static bool IsLearningMachineBios(string path, bool sb2k)
 		{
 			try {
 				using FileStream fs = File.OpenRead(path);
@@ -196,7 +223,8 @@ namespace Mesen.Utilities
 				int prg16k = h[4];               //PRG ROM in 16KB units
 				int chr8k = h[5];                //CHR ROM in 8KB units
 				int mapper = (h[6] >> 4) | (h[7] & 0xF0);
-				return mapper == 171 && prg16k >= 8 && chr8k == 0;
+				bool isSb2kBios = (h[9] >> 1) == 1; //machine variant
+				return mapper == 171 && prg16k >= 8 && chr8k == 0 && isSb2kBios == sb2k;
 			} catch {
 				return false;
 			}

@@ -249,7 +249,9 @@ enum class ControllerType
 
 	//NES - appended at the end to keep existing values stable
 	BbkMouse,
-	BbkKeyboard
+	BbkKeyboard,
+	Sb2kMouse,
+	Sb2kKeyboard
 };
 
 struct KeyMapping

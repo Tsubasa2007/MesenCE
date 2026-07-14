@@ -96,10 +96,6 @@ private:
 	inline static string _persistedDiskRom;
 	inline static string _persistedDiskPath;
 
-	//Set from the UI when a .img/.ima is opened directly: the next BBK boot mounts this image
-	//instead of the paired disk (like loading an FDS disk boots the FDS BIOS with that disk).
-	inline static string _pendingBootDiskPath;
-
 	void UpdatePrgBank8000()
 	{
 		if(_regFF14 & 0x40) {
@@ -230,10 +226,9 @@ private:
 		string baseName = FolderUtilities::GetFilename(romPath, false);
 
 		//A .img opened directly from the UI boots the BIOS and mounts that specific image,
-		//taking precedence over the paired/persisted disk (cleared so it only applies to this boot).
-		if(!_pendingBootDiskPath.empty()) {
-			string pending = _pendingBootDiskPath;
-			_pendingBootDiskPath.clear();
+		//taking precedence over the paired/persisted disk (taken, so it only applies to this boot).
+		string pending = BbkFdc::TakePendingBootDisk();
+		if(!pending.empty()) {
 			ifstream test(pending, ios::in | ios::binary);
 			if(test) {
 				test.close();
@@ -595,10 +590,6 @@ public:
 		std::sort(files.begin(), files.end());
 		return files;
 	}
-
-	//Called from the UI (interop) before loading a BBK BIOS ROM so the fresh boot mounts a
-	//specific .img the user opened directly. Static because no mapper exists yet at that point.
-	static void SetPendingBootDisk(string path) { _pendingBootDiskPath = path; }
 
 	uint32_t GetDiskCount()
 	{

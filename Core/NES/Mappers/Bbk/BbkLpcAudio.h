@@ -5,11 +5,15 @@
 #include "NES/NesConstants.h"
 #include "Utilities/Serializer.h"
 
-//LPC-10 speech synthesizer used by the BBK learning machine ($FF10/$FF18).
+//LPC-10 speech synthesizer used by the BBK learning machine ($FF10/$FF18) and, as a
+//variant, the Subor SB-2000 ($4302).
 //Ported from the VirtuaNES-BBK fork (NES/ApuEX/LPC_D6_SYNTH.C + MapperBBK LPC glue, author fanoble).
 //The original ran the decoder on a worker thread with a blocking byte-feed callback;
 //this port runs it synchronously: the CPU pushes bytes into a FIFO and one 200-sample
 //frame is decoded whenever enough data is buffered, played back at 10KHz.
+//SB-2000 variant differences: streams start with an $0A header (not $D6), the end-of-stream
+//marker parks the decoder in a Finished state (readable as "end of speech" status), and a
+//$F0 command byte restarts it for the next phrase.
 class BbkLpcAudio final : public ISerializable
 {
 private:
@@ -46,7 +50,8 @@ private:
 		Reset = 0,
 		Startup = 1,
 		Run = 2,
-		Stopped = 3
+		Stopped = 3,
+		Finished = 4 //SB-2000 only: end-of-stream reached, waiting for the $F0 restart command
 	};
 
 	struct LpcFrame
@@ -171,6 +176,10 @@ private:
 		0x0095, 0x009A, 0x009E, 0x00A5, 0x00AD, 0x00B5, 0x00BC, 0x00C2,
 		0x00C6, 0x00CA, 0x00C9, 0x00C7, 0x00C2, 0x00BA, 0x00AF, 0x00A2
 	};
+
+	//SB-2000 variant flag (see the class comment) and its end-of-speech status flag
+	bool _sb2k = false;
+	bool _speechEnd = false;
 
 	//Byte FIFO fed by $FF18 writes
 	uint8_t _fifo[FifoSize] = {};
@@ -459,11 +468,19 @@ private:
 		_frameCurr = _frameNext;
 
 		if(GetFrame(_frameNext, _framePrev)) {
-			//End of stream marker: stay in Run state, like the original decoder.
+			//End of stream marker. BBK: stay in Run state, like the original decoder.
 			//It keeps consuming the bitstream (zero bytes decode as silent frames)
 			//until the game resets it through $FF10. Switching to a stopped state
 			//here would halt FIFO draining and hang games that stream the next
 			//phrase while polling the $FF18 busy flag.
+			//SB-2000: park in the Finished state - the software polls the "end of
+			//speech" status nibble and then restarts the decoder with a $F0 command.
+			if(_sb2k) {
+				_bitsLeft = 0;
+				_dataCache = 0;
+				_state = LpcState::Finished;
+				_speechEnd = true;
+			}
 		}
 
 		SetInterpFlag();
@@ -483,11 +500,27 @@ private:
 
 		uint32_t count = GetFifoCount();
 
+		if(_state == LpcState::Finished) {
+			//SB-2000: scan for the $F0 restart command, one byte per tick. On restart the
+			//ring buffer is flushed (like the reference emulator) - the software sends the
+			//command, re-checks the status and only then streams the next phrase.
+			if(count >= 1) {
+				if(GetBits(8) == 0xF0) { //0xF0 == bit-reversed $0F, the byte the CPU writes
+					ResetSynth();
+					_fifoReadPos = _fifoWritePos;
+					_speechEnd = false;
+				}
+			}
+			return;
+		}
+
 		if(_state == LpcState::Startup) {
 			if(!_magicFound) {
-				//Byte-aligned scan for the 0xD6 stream header, one byte per tick
+				//Byte-aligned scan for the stream header ($D6 on the BBK, $0A on the
+				//SB-2000), one byte per tick
+				uint8_t magic = _sb2k ? 0x50 : 0x6B; //bit-reversed
 				if(count >= 1) {
-					if(GetBits(8) == 0x6B) { //0x6B == bit-reversed 0xD6
+					if(GetBits(8) == magic) {
 						_magicFound = true;
 					}
 				}
@@ -571,12 +604,14 @@ protected:
 
 		SV(_cycleAcc); SV(_regFF10); SV(_lastOutput);
 		SV(_subStep); SV(_prevSample); SV(_currSample);
+		SV(_speechEnd);
 	}
 
 public:
-	BbkLpcAudio(NesConsole* console)
+	BbkLpcAudio(NesConsole* console, bool sb2kVariant = false)
 	{
 		_console = console;
+		_sb2k = sb2kVariant;
 	}
 
 	void Reset()
@@ -588,8 +623,14 @@ public:
 		_subStep = 0;
 		_prevSample = 0;
 		_currSample = 0;
+		_speechEnd = false;
 		ResetSynth();
 	}
+
+	//SB-2000 $4302 status: whether the end-of-stream marker was reached, and whether the
+	//input FIFO can take more data
+	bool IsSpeechEnd() { return _speechEnd; }
+	bool IsFull() { return IsFifoFull(); }
 
 	//$FF10 write (SpeakInitPort): bit 0 rising edge resets the decoder.
 	//Unlike the original (whose decoder free-ran ahead of real time and had usually

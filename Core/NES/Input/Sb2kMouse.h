@@ -1,0 +1,92 @@
+#pragma once
+#include "pch.h"
+#include "Shared/BaseControlDevice.h"
+#include "Shared/KeyManager.h"
+#include "Shared/EmuSettings.h"
+#include "Shared/Emulator.h"
+#include "Utilities/Serializer.h"
+
+//Subor SB-2000 HT6513B serial mouse (Microsoft-compatible "M3" mode at 1200bps).
+//The serial line, plug-and-play announcement and byte pacing live in Sb2kMapper; this
+//device only accumulates host mouse input and packs it into the 3-byte report the
+//mapper transmits. Like the real mouse, nothing is sent while idle - a report goes out
+//only when the mouse moved or a button changed.
+class Sb2kMouse : public BaseControlDevice
+{
+private:
+	//Movement accumulates across frames until the mapper drains it into a packet
+	//(ClearState() wipes the base coordinate buffer every frame, so it can't be used)
+	int32_t _accumX = 0;
+	int32_t _accumY = 0;
+	uint8_t _lastButtons = 0;
+
+protected:
+	bool HasCoordinates() override { return true; }
+	enum Buttons { Left = 0, Right, Middle };
+
+	void Serialize(Serializer& s) override
+	{
+		BaseControlDevice::Serialize(s);
+		SV(_accumX); SV(_accumY); SV(_lastButtons);
+	}
+
+	void InternalSetStateFromInput() override
+	{
+		MouseMovement mov = KeyManager::GetMouseMovement(_emu, _emu->GetSettings()->GetInputConfig().MouseSensitivity);
+		_accumX += mov.dx;
+		_accumY += mov.dy;
+	}
+
+public:
+	Sb2kMouse(Emulator* emu, uint8_t port, KeyMappingSet keyMappings) : BaseControlDevice(emu, ControllerType::Sb2kMouse, port, keyMappings)
+	{
+	}
+
+	//Not on the controller bus - Sb2kMapper polls the device through its own registers
+	uint8_t ReadRam(uint16_t addr) override { return 0; }
+	void WriteRam(uint16_t addr, uint8_t value) override {}
+
+	//Builds the 3-byte M3 report: byte 0 = 01LR yyxx (sync bit, left/right buttons, top
+	//two bits of each 8-bit signed delta), bytes 1/2 = low 6 bits of dx/dy. The middle
+	//button is not reported (the reference emulator leaves its 4th byte zero).
+	//Returns false when there is nothing new to send.
+	bool GetPacket(uint8_t packet[3])
+	{
+		//Buttons read straight from the key manager, so the auto-connected device needs no
+		//mapping. Bit layout matches what the reference emulator feeds its packet builder:
+		//right=$01, middle=$02, left=$04.
+		uint8_t buttons =
+			(KeyManager::IsKeyPressed(IKeyManager::BaseMouseButtonIndex + (int)MouseButton::RightButton) ? 0x01 : 0) |
+			(KeyManager::IsKeyPressed(IKeyManager::BaseMouseButtonIndex + (int)MouseButton::MiddleButton) ? 0x02 : 0) |
+			(KeyManager::IsKeyPressed(IKeyManager::BaseMouseButtonIndex + (int)MouseButton::LeftButton) ? 0x04 : 0);
+
+		//One packet carries an 8-bit signed delta; leave any excess accumulated for the
+		//next report instead of dropping it (fast motion would get lost otherwise)
+		int32_t dx = std::clamp(_accumX, -128, 127);
+		int32_t dy = std::clamp(_accumY, -128, 127);
+
+		if(dx == 0 && dy == 0 && buttons == _lastButtons) {
+			return false;
+		}
+
+		_accumX -= dx;
+		_accumY -= dy;
+		_lastButtons = buttons;
+
+		uint8_t bx = (uint8_t)dx;
+		uint8_t by = (uint8_t)dy;
+		packet[0] = 0x40 | ((buttons & 0x01) << 4) | ((buttons & 0x04) << 3) | ((by & 0xC0) >> 4) | ((bx & 0xC0) >> 6);
+		packet[1] = bx & 0x3F;
+		packet[2] = by & 0x3F;
+		return true;
+	}
+
+	vector<DeviceButtonName> GetKeyNameAssociations() override
+	{
+		return {
+			{ "left", Buttons::Left },
+			{ "right", Buttons::Right },
+			{ "middle", Buttons::Middle },
+		};
+	}
+};

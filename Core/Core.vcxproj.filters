@@ -913,6 +913,12 @@
     <ClInclude Include="NES\Input\BbkKeyboard.h">
       <Filter>NES\Input</Filter>
     </ClInclude>
+    <ClInclude Include="NES\Input\Sb2kMouse.h">
+      <Filter>NES\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="NES\Input\Sb2kKeyboard.h">
+      <Filter>NES\Input</Filter>
+    </ClInclude>
     <ClInclude Include="NES\Input\SuborMouse.h">
       <Filter>NES\Input</Filter>
     </ClInclude>
@@ -2069,6 +2075,12 @@
     </ClInclude>
     <ClInclude Include="NES\Mappers\Bbk\BbkLpcAudio.h">
       <Filter>NES\Mappers\Bbk</Filter>
+    </ClInclude>
+    <ClInclude Include="NES\Mappers\Sb2k\Sb2kMapper.h">
+      <Filter>NES\Mappers\Sb2k</Filter>
+    </ClInclude>
+    <ClInclude Include="NES\Mappers\Sb2k\Sb2kPpu.h">
+      <Filter>NES\Mappers\Sb2k</Filter>
     </ClInclude>
     <ClInclude Include="NES\Mappers\Bbk\BbkMapper.h">
       <Filter>NES\Mappers\Bbk</Filter>
@@ -3441,6 +3453,9 @@
     </Filter>
     <Filter Include="NES\Mappers\Bbk">
       <UniqueIdentifier>{8f2d5c1a-4b7e-4a29-9c63-1d0e8b52a7f4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="NES\Mappers\Sb2k">
+      <UniqueIdentifier>{6a91e3d7-2f48-4c05-b8ae-93d4c17f5b02}</UniqueIdentifier>
     </Filter>
     <Filter Include="NES\Mappers\Waixing">
       <UniqueIdentifier>{411607e1-ca14-4d8e-877c-eb9a48ae5413}</UniqueIdentifier>

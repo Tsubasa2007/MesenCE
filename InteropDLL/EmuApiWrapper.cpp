@@ -18,7 +18,7 @@
 #include "Utilities/FolderUtilities.h"
 #include "Utilities/StringUtilities.h"
 #include "Core/NES/NesConsole.h"
-#include "Core/NES/Mappers/Bbk/BbkMapper.h"
+#include "Core/NES/Mappers/Bbk/BbkFdc.h"
 #include "InteropNotificationListeners.h"
 
 #ifdef _WIN32
@@ -233,11 +233,12 @@ extern "C"
 		return false;
 	}
 
-	//Queue a specific floppy image to mount on the next BBK boot (used when a .img is opened
-	//directly from the UI, which then loads the BBK BIOS ROM). Static: no console needed yet.
+	//Queue a specific floppy image to mount on the next boot of a learning machine (used when a
+	//.img is opened directly from the UI, which then loads that machine's BIOS ROM). The slot
+	//lives on the shared floppy controller: no mapper - and so no machine - exists yet here.
 	DllExport void __stdcall SetBbkBootDisk(char* path)
 	{
-		BbkMapper::SetPendingBootDisk(path ? path : "");
+		BbkFdc::SetPendingBootDisk(path ? path : "");
 	}
 
 	DllExport bool __stdcall IsRunning()

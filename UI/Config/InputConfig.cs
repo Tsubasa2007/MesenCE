@@ -420,6 +420,8 @@ namespace Mesen.Config
 		//NES - appended at the end to keep existing values stable
 		BbkMouse,
 		BbkKeyboard,
+		Sb2kMouse,
+		Sb2kKeyboard,
 	}
 
 	public static class ControllerTypeExtensions
@@ -497,6 +499,7 @@ namespace Mesen.Config
 				case ControllerType.FamilyTrainerMatSideB:
 				case ControllerType.SuborKeyboard:
 				case ControllerType.BbkKeyboard:
+				case ControllerType.Sb2kKeyboard:
 				case ControllerType.FamilyBasicKeyboard:
 				case ControllerType.Pachinko:
 				case ControllerType.FcnsController:
@@ -512,6 +515,7 @@ namespace Mesen.Config
 				case ControllerType.KonamiHyperShot:
 				case ControllerType.BandaiHyperShot:
 				case ControllerType.SuborMouse:
+				case ControllerType.Sb2kMouse:
 				case ControllerType.SnesMouse:
 				case ControllerType.FamicomZapper:
 				case ControllerType.NesZapper:

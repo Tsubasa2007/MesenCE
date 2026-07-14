@@ -34,6 +34,7 @@ namespace Mesen.Config
 		public UInt16[]? JissenMahjongButtons { get; set; } = null;
 		public UInt16[]? SuborKeyboardButtons { get; set; } = null;
 		public UInt16[]? BbkKeyboardButtons { get; set; } = null;
+		public UInt16[]? Sb2kKeyboardButtons { get; set; } = null;
 		public UInt16[]? BandaiMicrophoneButtons { get; set; } = null;
 		public UInt16[]? VirtualBoyButtons { get; set; } = null;
 		public UInt16[]? KonamiHyperShotButtons { get; set; } = null;
@@ -59,6 +60,7 @@ namespace Mesen.Config
 				ControllerType.JissenMahjong => JissenMahjongButtons,
 				ControllerType.SuborKeyboard => SuborKeyboardButtons,
 				ControllerType.BbkKeyboard => BbkKeyboardButtons,
+				ControllerType.Sb2kKeyboard => Sb2kKeyboardButtons,
 				ControllerType.VbController => VirtualBoyButtons,
 				ControllerType.KonamiHyperShot => KonamiHyperShotButtons,
 				ControllerType.FamicomArkanoidController => ArkanoidButtons,
@@ -67,6 +69,7 @@ namespace Mesen.Config
 				ControllerType.NesZapper => ZapperButtons,
 				ControllerType.SnesMouse => MouseButtons,
 				ControllerType.SuborMouse => MouseButtons,
+				ControllerType.Sb2kMouse => MouseButtons,
 				ControllerType.OekaKidsTablet => OekakidsButtons,
 				ControllerType.BandaiHyperShot => BandaiHypershotButtons,
 				ControllerType.BandaiMicrophone => BandaiMicrophoneButtons,
@@ -105,12 +108,12 @@ namespace Mesen.Config
 				ControllerType.FcnsController => Enum.GetValues<NesFcnsButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.ExcitingBoxing => Enum.GetValues<NesExcitingBoxingButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.JissenMahjong => Enum.GetValues<NesJissenMahjongButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
-				ControllerType.SuborKeyboard or ControllerType.BbkKeyboard => Enum.GetValues<NesSuborKeyboardButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
+				ControllerType.SuborKeyboard or ControllerType.BbkKeyboard or ControllerType.Sb2kKeyboard => Enum.GetValues<NesSuborKeyboardButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.VbController => Enum.GetValues<NesVirtualBoyButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.KonamiHyperShot => Enum.GetValues<NesKonamiHyperShotButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.NesArkanoidController or ControllerType.FamicomArkanoidController => Enum.GetValues<NesArkanoidButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.NesZapper or ControllerType.FamicomZapper => Enum.GetValues<NesZapperButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
-				ControllerType.SnesMouse or ControllerType.SuborMouse => Enum.GetValues<GenericMouseButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
+				ControllerType.SnesMouse or ControllerType.SuborMouse or ControllerType.Sb2kMouse => Enum.GetValues<GenericMouseButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.OekaKidsTablet => Enum.GetValues<NesOekakidsButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.BandaiHyperShot => Enum.GetValues<NesZapperButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.BandaiMicrophone => Enum.GetValues<NesBandaiMicrophoneButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
@@ -167,6 +170,10 @@ namespace Mesen.Config
 					BbkKeyboardButtons = new UInt16[99];
 					break;
 
+				case ControllerType.Sb2kKeyboard:
+					Sb2kKeyboardButtons = new UInt16[99];
+					break;
+
 				case ControllerType.VbController:
 					VirtualBoyButtons = new UInt16[14];
 					break;
@@ -177,6 +184,7 @@ namespace Mesen.Config
 
 				case ControllerType.SuborMouse:
 				case ControllerType.SnesMouse:
+				case ControllerType.Sb2kMouse:
 					MouseButtons = new UInt16[2];
 					break;
 
@@ -319,6 +327,7 @@ namespace Mesen.Config
 
 				case ControllerType.SuborKeyboard:
 				case ControllerType.BbkKeyboard:
+				case ControllerType.Sb2kKeyboard:
 					return new UInt16[99] {
 						InputApi.GetKeyCode("A"), InputApi.GetKeyCode("B"), InputApi.GetKeyCode("C"), InputApi.GetKeyCode("D"),
 						InputApi.GetKeyCode("E"), InputApi.GetKeyCode("F"), InputApi.GetKeyCode("G"), InputApi.GetKeyCode("H"),
@@ -393,6 +402,7 @@ namespace Mesen.Config
 
 				case ControllerType.SuborMouse:
 				case ControllerType.SnesMouse:
+				case ControllerType.Sb2kMouse:
 					return new UInt16[2] {
 						InputApi.GetKeyCode("Mouse Left"),
 						InputApi.GetKeyCode("Mouse Right")
@@ -464,6 +474,7 @@ namespace Mesen.Config
 				case ControllerType.JissenMahjong: JissenMahjongButtons = GetDefaultCustomKeys(type, preset); break;
 				case ControllerType.SuborKeyboard: SuborKeyboardButtons = GetDefaultCustomKeys(type, preset); break;
 				case ControllerType.BbkKeyboard: BbkKeyboardButtons = GetDefaultCustomKeys(type, preset); break;
+				case ControllerType.Sb2kKeyboard: Sb2kKeyboardButtons = GetDefaultCustomKeys(type, preset); break;
 				case ControllerType.VbController: VirtualBoyButtons = GetDefaultCustomKeys(type, preset); break;
 				case ControllerType.KonamiHyperShot: KonamiHyperShotButtons = GetDefaultCustomKeys(type, preset); break;
 
@@ -483,6 +494,7 @@ namespace Mesen.Config
 
 				case ControllerType.SuborMouse: MouseButtons = GetDefaultCustomKeys(type, preset); break;
 				case ControllerType.SnesMouse: MouseButtons = GetDefaultCustomKeys(type, preset); break;
+				case ControllerType.Sb2kMouse: MouseButtons = GetDefaultCustomKeys(type, preset); break;
 
 				case ControllerType.OekaKidsTablet: OekakidsButtons = GetDefaultCustomKeys(type, preset); break;
 

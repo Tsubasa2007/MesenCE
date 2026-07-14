@@ -64,6 +64,7 @@ namespace Mesen.ViewModels
 			ControllerType.SnesNttDataKeypad,
 			ControllerType.SuborMouse,
 			ControllerType.BbkMouse,
+			ControllerType.Sb2kMouse,
 			ControllerType.VbController
 		};
 
@@ -102,6 +103,7 @@ namespace Mesen.ViewModels
 			ControllerType.JissenMahjong,
 			ControllerType.SuborKeyboard,
 			ControllerType.BbkKeyboard,
+			ControllerType.Sb2kKeyboard,
 			ControllerType.BarcodeBattler,
 			ControllerType.HoriTrack,
 			ControllerType.BandaiHyperShot,

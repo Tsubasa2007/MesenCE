@@ -187,6 +187,8 @@
     <ClInclude Include="NES\Mappers\Bbk\BbkFdc.h" />
     <ClInclude Include="NES\Mappers\Bbk\BbkLpcAudio.h" />
     <ClInclude Include="NES\Mappers\Bbk\BbkMapper.h" />
+    <ClInclude Include="NES\Mappers\Sb2k\Sb2kMapper.h" />
+    <ClInclude Include="NES\Mappers\Sb2k\Sb2kPpu.h" />
     <ClInclude Include="NES\Mappers\Mmc3Variants\McAcc.h" />
     <ClInclude Include="NES\Mappers\Unlicensed\A65AS.h" />
     <ClInclude Include="NES\Mappers\Unlicensed\Ac08.h" />
@@ -503,6 +505,8 @@
     <ClInclude Include="NES\Input\SuborKeyboard.h" />
     <ClInclude Include="NES\Input\BbkMouse.h" />
     <ClInclude Include="NES\Input\BbkKeyboard.h" />
+    <ClInclude Include="NES\Input\Sb2kMouse.h" />
+    <ClInclude Include="NES\Input\Sb2kKeyboard.h" />
     <ClInclude Include="NES\Input\SuborMouse.h" />
     <ClInclude Include="NES\Input\TwoPlayerAdapter.h" />
     <ClInclude Include="NES\Input\VirtualBoyController.h" />

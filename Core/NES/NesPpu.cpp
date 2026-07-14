@@ -16,6 +16,7 @@
 #include "NES/NsfPpu.h"
 #include "NES/HdPacks/HdNesPpu.h"
 #include "NES/HdPacks/HdBuilderPpu.h"
+#include "NES/Mappers/Sb2k/Sb2kPpu.h"
 
 #include "Shared/EmuSettings.h"
 #include "Shared/Video/VideoDecoder.h"
@@ -36,6 +37,7 @@ template<class T> NesPpu<T>::NesPpu(NesConsole* console)
 	_mapper = console->GetMapper();
 	_paletteBgHackEnabled = _mapper == nullptr || _mapper->EnablePpuPaletteBgHack();
 	_vblFlagClearOnRead = _mapper == nullptr || _mapper->EnablePpuVblankFlagClearOnRead();
+	_paletteMirroringEnabled = _mapper == nullptr || _mapper->EnablePpuPaletteMirroring();
 	_masterClock = 0;
 	_masterClockDivider = 4;
 	_settings = _emu->GetSettings();
@@ -1776,6 +1778,11 @@ template NesPpu<HdNesPpu>::NesPpu(NesConsole* console);
 template uint16_t* NesPpu<HdNesPpu>::GetScreenBuffer(bool previousBuffer, bool processGrayscaleEmphasisBits);
 template void NesPpu<HdNesPpu>::Exec();
 template uint32_t NesPpu<HdNesPpu>::GetPixelBrightness(uint8_t x, uint8_t y);
+
+template NesPpu<Sb2kPpu>::NesPpu(NesConsole* console);
+template uint16_t* NesPpu<Sb2kPpu>::GetScreenBuffer(bool previousBuffer, bool processGrayscaleEmphasisBits);
+template void NesPpu<Sb2kPpu>::Exec();
+template uint32_t NesPpu<Sb2kPpu>::GetPixelBrightness(uint8_t x, uint8_t y);
 
 template NesPpu<HdBuilderPpu>::NesPpu(NesConsole* console);
 template uint16_t* NesPpu<HdBuilderPpu>::GetScreenBuffer(bool previousBuffer, bool processGrayscaleEmphasisBits);

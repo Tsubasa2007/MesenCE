@@ -32,6 +32,8 @@
 #include "NES/Input/SuborMouse.h"
 #include "NES/Input/BbkMouse.h"
 #include "NES/Input/BbkKeyboard.h"
+#include "NES/Input/Sb2kMouse.h"
+#include "NES/Input/Sb2kKeyboard.h"
 #include "NES/Input/JissenMahjongController.h"
 #include "NES/Input/BarcodeBattlerReader.h"
 #include "NES/Input/HoriTrack.h"
@@ -101,6 +103,7 @@ shared_ptr<BaseControlDevice> NesControlManager::CreateControllerDevice(Controll
 		case ControllerType::SnesMouse: device.reset(new SnesMouse(_emu, port, keys)); break;
 		case ControllerType::SuborMouse: device.reset(new SuborMouse(_emu, port, keys)); break;
 		case ControllerType::BbkMouse: device.reset(new BbkMouse(_emu, port, keys)); break;
+		case ControllerType::Sb2kMouse: device.reset(new Sb2kMouse(_emu, port, keys)); break;
 		case ControllerType::VirtualBoyController: device.reset(new VirtualBoyController(_emu, port, keys)); break;
 
 		//Exp port devices
@@ -122,6 +125,7 @@ shared_ptr<BaseControlDevice> NesControlManager::CreateControllerDevice(Controll
 		case ControllerType::JissenMahjong: device.reset(new JissenMahjongController(_emu, keys)); break;
 		case ControllerType::SuborKeyboard: device.reset(new SuborKeyboard(_emu, keys)); break;
 		case ControllerType::BbkKeyboard: device.reset(new BbkKeyboard(_emu, keys)); break;
+		case ControllerType::Sb2kKeyboard: device.reset(new Sb2kKeyboard(_emu, keys)); break;
 		case ControllerType::BarcodeBattler: device.reset(new BarcodeBattlerReader(_emu)); break;
 		case ControllerType::HoriTrack: device.reset(new HoriTrack(_emu, keys)); break;
 		case ControllerType::BandaiHyperShot: device.reset(new BandaiHyperShot(_console, keys)); break;
@@ -193,7 +197,7 @@ void NesControlManager::UpdateControlDevices()
 
 bool NesControlManager::IsKeyboardConnected()
 {
-	return HasControlDevice(ControllerType::FamilyBasicKeyboard) || HasControlDevice(ControllerType::SuborKeyboard) || HasControlDevice(ControllerType::BbkKeyboard);
+	return HasControlDevice(ControllerType::FamilyBasicKeyboard) || HasControlDevice(ControllerType::SuborKeyboard) || HasControlDevice(ControllerType::BbkKeyboard) || HasControlDevice(ControllerType::Sb2kKeyboard);
 }
 
 uint8_t NesControlManager::GetOpenBusMask(uint8_t port)
