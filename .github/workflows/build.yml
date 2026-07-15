@@ -155,7 +155,8 @@ jobs:
 
 
   macos:
-    if: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository) }}
+    # Skipped on forks: signing requires the MACOS_CERTIFICATE secret, which only exists upstream
+    if: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository) && github.repository == 'nesdev-org/MesenCE' }}
     strategy:
       matrix:
         compiler: [clang, clang_aot]
