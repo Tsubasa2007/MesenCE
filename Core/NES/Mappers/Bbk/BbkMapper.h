@@ -37,6 +37,24 @@
 // - $E000-$FEFF: mapRam ? DRAM page (FF2C & $3F) : ROM $1E000
 // - $FF00-$FFFF write: always IO registers
 // - $FF00-$FFFF read: mapRam ? DRAM : ((addr & 7) == 0 ? IO : ROM)
+//
+//BBK-98 chipset revision (detected by PRG size > 128K; the BIOS is a 2MB flash chip
+//holding a FAT12 "electronic disk" plus the system code in its top banks):
+// - $FF04: D7 selects DRAM/ROM at $8000-$BFFF (was D5), D6-D0 = 16K page over the
+//   full 2MB ROM; the fixed $C000-$FFFF region maps the last 16K of ROM
+// - 1MB DRAM with the fixed $4000-$7FFF window at 16K bank $3E, and 256K CHR-RAM
+//   (the CHR page registers are 8 bits wide here, not 5)
+// - $FF09 bit 6 is the top DRAM address line, above the page registers' 7 bits. The
+//   BIOS sizes memory by running its probe with that line clear and again with it set,
+//   then ADDING the two results ($94E1), so the half that is not fitted has to read as
+//   absent - folding it back onto the populated half reports twice the real size.
+// - $FF11 bit 7 additionally maps DRAM over $C000-$FFFF (a BIOS-call nesting counter,
+//   cleared by writing $FF19); $FF09 bit 1 exposes the IO registers to reads while
+//   that overlay is active
+// - Interrupt controller: $FF08 bit 5 + $FF01 bit 2 arm a vblank-start IRQ (the BIOS
+//   drains its VRAM upload queue there since the Dendy NMI fires too late at line 291);
+//   $FFB0 read = pending source id (6) and acknowledges, $FFB0 write = mask,
+//   $FF98 write = EOI (restores $FF09)
 class BbkMapper : public BaseMapper
 {
 private:
@@ -75,15 +93,50 @@ private:
 	bool _mapRam = false;
 	bool _ff01D4 = false;
 
+	//BBK-98 "electronic disk" model: the ROM is a 2MB flash chip (BIOS in the last 16K+banks,
+	//the rest is a FAT12 filesystem). Its Inno revision widens $FF04: bit 7 selects DRAM
+	//(instead of bit 5) and bits 0-6 are a 16K ROM bank covering the full 2MB. Detected by
+	//ROM size; the classic machines only ever shipped 128K BIOSes.
+	bool _bbk98 = false;
+	uint8_t _romBank16k = 0;
+	bool _dram8000 = false;
+	//BBK-98 $C000-$FFFF DRAM overlay: enabled by $FF11 bit 7 (a BIOS-call nesting counter),
+	//cleared by any $FF19 write. While the overlay is on, $FFxx reads hit DRAM instead of the
+	//IO registers unless $FF09 bit 1 is set - the IRQ hardware forces that bit (and $FF98
+	//restores it) so the interrupt handler can read $FFB0/$FF08 with the overlay active.
+	uint8_t _regFF09 = 0;
+	uint8_t _prevFF09 = 0;
+	uint8_t _regFF11 = 0;
+
+	//BBK-98 interrupt controller. On Dendy timing the NMI is delayed to scanline 291,
+	//so this chipset revision adds a vblank-start IRQ the BIOS uses for its VRAM upload
+	//queue: armed via $FF08 bit 5 + $FF01 bit 2, source id read from $FFB0 (bit 7 =
+	//nothing pending, low bits = source, 6 = this raster IRQ), acknowledged via $FF98.
+	uint8_t _regFF08 = 0;
+	uint8_t _regFFB0 = 0;
+	bool _lineIrqPending = false;
+
 	//Holtek ASIC state
 	bool _splitMode = false;
 	bool _enableIrq = false;
 	uint16_t _lineCount = 0;
 	uint8_t _nrOfSR = 0;
 	uint8_t _nrOfVR = 0;
-	uint8_t _queueSR[32] = {};
-	uint8_t _queueVR[32] = {};
+	uint8_t _queueSR[64] = {};
+	uint8_t _queueVR[64] = {};
 	uint8_t _queueIndex = 0;
+
+	//The BBK-98 revision double-buffers the split queue: $FF0A/$FF1A push entries into a
+	//staging queue that $FF22 commits, so the ~16 bands the BIOS rewrites every frame can
+	//never corrupt the bands currently on screen. $FF12 clears the live queue, $FF2A
+	//restarts it from the top. Its band counter is a plain 8-bit counter reloaded from the
+	//queue whenever it wraps.
+	uint8_t _stageSR[64] = {};
+	uint8_t _stageVR[64] = {};
+	uint8_t _stageCount = 0;
+	uint8_t _stageCountVR = 0;
+	uint8_t _splitLine = 0;
+	bool _renderEnabled = false;
 
 	int32_t _lastPpuScanline = -2;
 	bool _irqPending = false;
@@ -96,10 +149,47 @@ private:
 	inline static string _persistedDiskRom;
 	inline static string _persistedDiskPath;
 
+	//8K DRAM page mask: 6 bits (512K) on the classic models, 7 bits on the BBK-98 - whose
+	//page registers only carry the low 7 bits, with $FF09 bit 6 supplying the top DRAM
+	//address line (the BIOS sizes memory by probing with that line both ways, so anything
+	//past the fitted 1MB has to fold back onto it)
+	uint8_t DramBankMask() { return _bbk98 ? 0x7F : 0x3F; }
+
+	uint8_t DramPage(uint8_t reg)
+	{
+		//$FF09 bit 6 sits above the register's 7 bits
+		return _bbk98 ? (uint8_t)((reg & 0x7F) | ((_regFF09 & 0x40) << 1)) : (uint8_t)(reg & 0x3F);
+	}
+
+	//True when the selected page is past the DRAM actually fitted. The BIOS sizes memory by
+	//probing with $FF09's top address line both ways and ADDING the two results, so the
+	//unpopulated half has to read as absent rather than fold back onto the populated one.
+	bool IsDramPageAbsent(uint8_t page) { return page * 0x2000u >= _workRamSize; }
+
+	//Maps an 8K DRAM window, leaving it unmapped when that page is not populated
+	void MapDramPage(uint16_t start, uint16_t end, uint8_t page)
+	{
+		if(IsDramPageAbsent(page)) {
+			RemoveCpuMemoryMapping(start, end);
+		} else {
+			SetCpuMemoryMapping(start, end, page, PrgMemoryType::WorkRam, MemoryAccessType::ReadWrite);
+		}
+	}
+
+	//Offset of the fixed $4000-$7FFF DRAM window: 16K bank $3E on the 98, $1E otherwise
+	uint32_t FixedDramWindow() { return (_bbk98 ? 0x3E : 0x1E) * 0x4000; }
+
+	//DRAM vs ROM at $8000-$BFFF: the classic models encode the selector in _regFF14 bit 6
+	//(original $FF04 D5, shifted left); the 98 moved it to $FF04 D7, tracked separately
+	//because the shift pushes it out of the 8-bit bank value
+	bool DramAt8000() { return _bbk98 ? _dram8000 : (_regFF14 & 0x40) != 0; }
+
 	void UpdatePrgBank8000()
 	{
-		if(_regFF14 & 0x40) {
-			SetCpuMemoryMapping(0x8000, 0x9FFF, _regFF14 & 0x3F, PrgMemoryType::WorkRam, MemoryAccessType::ReadWrite);
+		if(DramAt8000()) {
+			MapDramPage(0x8000, 0x9FFF, DramPage(_regFF14));
+		} else if(_bbk98) {
+			SelectPrgPage(0, _romBank16k * 2);
 		} else {
 			SelectPrgPage(0, _regFF14 & 0x0F);
 		}
@@ -108,36 +198,43 @@ private:
 	void UpdatePrgBankA000()
 	{
 		//The DRAM/ROM selector for $A000-$BFFF is $FF14's bit 6 (not $FF1C's)
-		if(_regFF14 & 0x40) {
-			SetCpuMemoryMapping(0xA000, 0xBFFF, _regFF1C & 0x3F, PrgMemoryType::WorkRam, MemoryAccessType::ReadWrite);
+		if(DramAt8000()) {
+			MapDramPage(0xA000, 0xBFFF, DramPage(_regFF1C));
+		} else if(_bbk98) {
+			SelectPrgPage(1, _romBank16k * 2 + 1);
 		} else {
 			SelectPrgPage(1, _regFF1C & 0x0F);
 		}
 	}
 
+	//DRAM at $C000-$FFFF: classic models use $FF01 bit 3 only; the 98 also maps it via $FF11 bit 7
+	bool DramAtC000() { return _mapRam || (_bbk98 && (_regFF11 & 0x80)); }
+
 	void UpdatePrgBankC000()
 	{
-		if(_mapRam) {
-			SetCpuMemoryMapping(0xC000, 0xDFFF, _regFF24 & 0x3F, PrgMemoryType::WorkRam, MemoryAccessType::ReadWrite);
+		if(DramAtC000()) {
+			MapDramPage(0xC000, 0xDFFF, DramPage(_regFF24));
 		} else {
-			SelectPrgPage(2, 0x0E);
+			//Last 16K of ROM (== the fork's fixed $1C000 for a 128K BIOS)
+			SelectPrgPage(2, GetPrgPageCount() - 2);
 		}
 	}
 
 	void UpdatePrgBankE000()
 	{
 		//$FF00-$FFFF is additionally covered by the register handlers
-		if(_mapRam) {
-			SetCpuMemoryMapping(0xE000, 0xFFFF, _regFF2C & 0x3F, PrgMemoryType::WorkRam, MemoryAccessType::ReadWrite);
+		if(DramAtC000()) {
+			MapDramPage(0xE000, 0xFFFF, DramPage(_regFF2C));
 		} else {
-			SelectPrgPage(3, 0x0F);
+			SelectPrgPage(3, GetPrgPageCount() - 1);
 		}
 	}
 
 	void SelectChrPage2k(uint8_t slot2k, uint8_t page2k)
 	{
-		SelectChrPage(slot2k * 2, (page2k & 0x0F) * 2);
-		SelectChrPage(slot2k * 2 + 1, (page2k & 0x0F) * 2 + 1);
+		uint16_t mask = _bbk98 ? 0xFF : 0x1F;
+		SelectChrPage(slot2k * 2, (page2k * 2) & mask);
+		SelectChrPage(slot2k * 2 + 1, (page2k * 2 + 1) & mask);
 	}
 
 	//Applies the split queue entry at _queueIndex (scanline count + two 2K CHR banks for $0000-$0FFF)
@@ -169,7 +266,7 @@ private:
 
 	bool CheckIrq()
 	{
-		if(EvaluateIrq()) {
+		if(EvaluateIrq() || (_bbk98 && _lineIrqPending)) {
 			_console->GetCpu()->SetIrqSource(IRQSource::External);
 			return true;
 		}
@@ -181,8 +278,65 @@ private:
 	//line numbering follows the reference emulator: 0 = dummy line, 1-239 = visible, 240+ = vblank.
 	//The IRQ line state is evaluated here (before the counter increments, like the
 	//original) but only applied later in the line - see ProcessCpuClock.
+	//Applies the live queue entry at _queueIndex on the BBK-98 (two 2K CHR banks packed in
+	//one byte, plus the reload value for the band counter)
+	void ApplySplitEntry98()
+	{
+		uint8_t idx = _queueIndex & 0x3F;
+		uint8_t banks = _queueVR[idx];
+		SelectChrPage2k(0, banks & 0x0F);
+		SelectChrPage2k(1, (banks >> 4) & 0x0F);
+		_splitLine = _queueSR[idx];
+		_queueIndex++;
+	}
+
+	void RaiseLineIrq()
+	{
+		_lineIrqPending = true;
+		//Expose the IO registers to the handler even if the $FF11 DRAM overlay is active;
+		//the $FF98 EOI restores the previous $FF09 value
+		_prevFF09 = _regFF09;
+		_regFF09 |= 0x02;
+		_console->GetCpu()->SetIrqSource(IRQSource::External);
+	}
+
+	//The 98 revision's raster engine. In split mode the band counter is reloaded from the
+	//queue each time it wraps and the frame IRQ fires at the end of the visible area (the
+	//BIOS drains its VRAM upload queue there, since the Dendy NMI arrives too late at
+	//scanline 291); otherwise the counter free-runs over the rendered lines.
+	void HSync98(int32_t scanline)
+	{
+		if(_splitMode) {
+			if(scanline >= 240) {
+				//Vblank restarts the sequence for the next frame
+				_queueIndex = 0;
+				_splitLine = 0;
+			} else {
+				_splitLine++;
+			}
+
+			if(_splitLine == 0 && _queueIndex < _nrOfSR && _queueIndex < _nrOfVR) {
+				ApplySplitEntry98();
+			}
+
+			if(scanline == 239 && _enableIrq && !_lineIrqPending) {
+				RaiseLineIrq();
+			}
+		} else if(scanline < 240 && _renderEnabled) {
+			_splitLine++;
+			if(_splitLine == 0 && _enableIrq && !_lineIrqPending) {
+				RaiseLineIrq();
+			}
+		}
+	}
+
 	void HSync(int32_t scanline)
 	{
+		if(_bbk98) {
+			HSync98(scanline);
+			return;
+		}
+
 		//Restart the split sequence at the top of each frame while IRQ handling is pending
 		if(scanline == 0 && _splitMode) {
 			//Continue using the settings of the last frame
@@ -276,9 +430,13 @@ private:
 protected:
 	uint16_t GetPrgPageSize() override { return 0x2000; }
 	uint16_t GetChrPageSize() override { return 0x400; }
-	uint32_t GetChrRamSize() override { return 0x8000; }
+	//256K on the BBK-98 (its CHR bank registers are 8 bits wide), 32K on the classic models
+	uint32_t GetChrRamSize() override { return _prgSize > 0x20000 ? 0x40000 : 0x8000; }
 	uint16_t GetChrRamPageSize() override { return 0x400; }
-	uint32_t GetWorkRamSize() override { return 0x80000; }
+	//1MB of DRAM on the BBK-98 (the BIOS finds the size by probing for the point where the
+	//banks start repeating, then declares it through $5FF9), 512K on the classic models.
+	//_prgSize is not set yet when this is called, so the header tells them apart.
+	uint32_t GetWorkRamSize() override { return _romInfo.Header.GetPrgSize() > 0x20000 ? 0x100000 : 0x80000; }
 	uint32_t GetWorkRamPageSize() override { return 0x2000; }
 	bool ForceWorkRamSize() override { return true; }
 	uint32_t GetSaveRamSize() override { return 0; }
@@ -328,8 +486,29 @@ protected:
 		AddRegisterRange(0x2000, 0x3FFF, MemoryOperation::Write);
 #endif
 
-		//$4000-$7FFF (from $4100, below the APU/input registers): fixed DRAM window at $78000
-		SetCpuMemoryMapping(0x4100, 0x7FFF, PrgMemoryType::WorkRam, 0x78100, MemoryAccessType::ReadWrite);
+		_bbk98 = _prgSize > 0x20000;
+
+		//$4000-$7FFF (from $4100, below the APU/input registers): fixed DRAM window near the
+		//top of DRAM - $F8000 on the BBK-98 (1MB region), $78000 on the classic models
+		SetCpuMemoryMapping(0x4100, 0x7FFF, PrgMemoryType::WorkRam, FixedDramWindow() + 0x100, MemoryAccessType::ReadWrite);
+
+		if(_bbk98) {
+			//The 98's BIOS sizes DRAM by probing it, and its video upload builds tiles out
+			//of whatever the target bank holds - both need the zero-filled power-on state
+			//the hardware (and the reference emulator) provide
+			memset(_workRam, 0, _workRamSize);
+			memset(_chrRam, 0, _chrRamSize);
+
+		}
+
+		_romBank16k = 0;
+		_dram8000 = false;
+		_regFF09 = 0;
+		_prevFF09 = 0;
+		_regFF11 = 0;
+		_regFF08 = 0;
+		_regFFB0 = 0;
+		_lineIrqPending = false;
 
 		_regFF14 = 0;
 		_regFF1C = 0;
@@ -343,6 +522,10 @@ protected:
 		_lineCount = 0;
 		_nrOfSR = _nrOfVR = 0;
 		_queueIndex = 0;
+		_stageCount = _stageCountVR = 0;
+		_splitLine = 0;
+		memset(_stageSR, 0, sizeof(_stageSR));
+		memset(_stageVR, 0, sizeof(_stageVR));
 		memset(_queueSR, 0, sizeof(_queueSR));
 		memset(_queueVR, 0, sizeof(_queueVR));
 
@@ -373,13 +556,33 @@ protected:
 
 	uint8_t ReadRegister(uint16_t addr) override
 	{
-		//$FF00-$FFFF reads: DRAM when mapRam is set, otherwise IO at addr % 8 == 0, ROM elsewhere
-		if(_mapRam) {
-			return _workRam[(_regFF2C & 0x3F) * 0x2000 + (addr & 0x1FFF)];
+		//$FF00-$FFFF reads: DRAM when mapped there, otherwise IO at addr % 8 == 0, ROM elsewhere.
+		//With the overlay enabled via $FF11 alone, $FF09 bit 1 lets IO reads through (set by
+		//the IRQ hardware so the handler can read $FFB0 while the overlay is active).
+		if(_mapRam || (_bbk98 && (_regFF11 & 0x80) && !(_regFF09 & 0x02))) {
+			uint8_t page = DramPage(_regFF2C);
+			return IsDramPageAbsent(page) ? 0 : _workRam[page * 0x2000 + (addr & 0x1FFF)];
 		}
 
 		if((addr & 0x07) == 0) {
 			//IO read
+			if(_bbk98) {
+				//The 98's interrupt controller shadows part of the FDC range
+				switch(addr) {
+					case 0xFFB0:
+						//Reading the pending-source port acknowledges the IRQ - the handler
+						//re-enables interrupts (CLI) before dispatching, so the line must
+						//drop as soon as the source id is read
+						_lineIrqPending = false;
+						CheckIrq();
+						return 0x06;
+					//$FF98 reads fall through to the FDC (IRQ status, port 3) - only the
+					//write side belongs to the interrupt controller (EOI)
+					case 0xFF08: return _regFF08;
+					default: break;
+				}
+			}
+
 			if(addr >= 0xFF80 && addr <= 0xFFB8) {
 				CheckForDiskImage();
 				_fdc.MarkActivity();
@@ -407,13 +610,67 @@ protected:
 			//separate bottom tileset via these writes).
 			_console->GetPpu()->WriteRam(addr, value);
 
+			if((addr & 0x07) == 0x01) {
+				//$2001: track whether the display is on (the PPU's own flag is not public)
+				_renderEnabled = (value & 0x18) != 0;
+			}
+
 			if((addr & 0x02) == 0 && _mapRam && !_ff01D4) {
-				_workRam[0x7A000 + (addr & 0x1FFF)] = value;
+				_workRam[(_bbk98 ? 0xFA000 : 0x7A000) + (addr & 0x1FFF)] = value;
 			}
 			return;
 		}
 
 		//$FF00-$FFFF: writes always hit IO
+		if(_bbk98) {
+			if(addr == 0xFFB0) {
+				//IRQ mask - writing also acknowledges the pending IRQ
+				_regFFB0 = value;
+				_lineIrqPending = false;
+				CheckIrq();
+				return;
+			}
+			if(addr == 0xFF98) {
+				//EOI / mask restore - acknowledges the vblank IRQ and restores $FF09
+				//(the IRQ hardware forced its bit 1 on to expose the IO registers)
+				_regFF09 = _prevFF09;
+				_lineIrqPending = false;
+				CheckIrq();
+				return;
+			}
+			if(addr == 0xFF08) {
+				//Bit 5: vblank IRQ master enable
+				_regFF08 = value;
+				return;
+			}
+			if(addr == 0xFF09) {
+				//Bit 6 is the top DRAM address line, so the banked windows have to follow it
+				bool addrLineChanged = ((_regFF09 ^ value) & 0x40) != 0;
+				_regFF09 = value;
+				if(addrLineChanged) {
+					UpdatePrgBank8000();
+					UpdatePrgBankA000();
+					UpdatePrgBankC000();
+					UpdatePrgBankE000();
+				}
+				return;
+			}
+			if(addr == 0xFF11) {
+				//BIOS-call nesting counter; bit 7 maps DRAM over $C000-$FFFF
+				_regFF11 = value;
+				UpdatePrgBankC000();
+				UpdatePrgBankE000();
+				return;
+			}
+			if(addr == 0xFF19) {
+				//Written at the start of a BIOS call - drops the $C000-$FFFF DRAM overlay
+				_regFF11 = 0;
+				UpdatePrgBankC000();
+				UpdatePrgBankE000();
+				return;
+			}
+		}
+
 		if(addr >= 0xFF80 && addr <= 0xFFB8) {
 			CheckForDiskImage();
 			_fdc.MarkActivity();
@@ -456,35 +713,56 @@ protected:
 				_lineCount |= (value & 0x0F) << 4;
 				break;
 
-			case 0xFF04: //DRAMPagePort (16K granularity, ROM/DRAM select on D5)
-				_regFF14 = (value << 1) & 0x7F;
-				_regFF1C = ((value << 1) & 0x3F) | 0x01;
+			case 0xFF04: //DRAMPagePort (16K granularity; ROM/DRAM select on D5, or D7 on the BBK-98)
+				if(_bbk98) {
+					//D7 selects DRAM/ROM, D6-D0 = 16K page of either; D7 shifts out of
+					//the 8-bit DRAM bank value so it is tracked separately
+					_dram8000 = (value & 0x80) != 0;
+					if(!_dram8000) {
+						_romBank16k = value & 0x7F;
+					}
+					_regFF14 = (uint8_t)(value << 1);
+					_regFF1C = (uint8_t)(value << 1) | 0x01;
+				} else {
+					_regFF14 = (value << 1) & 0x7F;
+					_regFF1C = ((value << 1) & 0x3F) | 0x01;
+				}
 				UpdatePrgBank8000();
 				UpdatePrgBankA000();
 				break;
 
 			case 0xFF14: //DRAM page for $8000-$9FFF
-				_regFF14 = (value & 0x3F) | 0x40;
+				if(_bbk98) {
+					_regFF14 = value;
+					_dram8000 = true;
+				} else {
+					_regFF14 = (value & 0x3F) | 0x40;
+				}
 				UpdatePrgBank8000();
 				UpdatePrgBankA000();
 				break;
 
 			case 0xFF1C: //DRAM page for $A000-$BFFF
-				_regFF1C = value & 0x3F;
+				if(_bbk98) {
+					_regFF1C = value;
+					_dram8000 = true;
+				} else {
+					_regFF1C = value & 0x3F;
+				}
 				//The fork clears the ROM-select here as well (bank at $8000 stays as-is
 				//because _regFF14 bit 6 drives both slots)
 				UpdatePrgBankA000();
 				break;
 
 			case 0xFF24: //DRAM page for $C000-$DFFF
-				_regFF24 = value & 0x3F;
+				_regFF24 = value & DramBankMask();
 				if(_mapRam) {
 					UpdatePrgBankC000();
 				}
 				break;
 
 			case 0xFF2C: //DRAM page for $E000-$FFFF
-				_regFF2C = value & 0x3F;
+				_regFF2C = value & DramBankMask();
 				if(_mapRam) {
 					UpdatePrgBankE000();
 				}
@@ -492,6 +770,13 @@ protected:
 
 			//Holtek split engine
 			case 0xFF12: //Init
+				if(_bbk98) {
+					//Clears the live queue
+					_nrOfSR = 0;
+					_nrOfVR = 0;
+					_queueIndex = 0;
+					break;
+				}
 				if(!_enableIrq) {
 					_nrOfSR = 0;
 					_nrOfVR = 0;
@@ -503,6 +788,12 @@ protected:
 				break;
 
 			case 0xFF0A: //Scanline count queue
+				if(_bbk98) {
+					if(_stageCount < 64) {
+						_stageSR[_stageCount++] = value;
+					}
+					break;
+				}
 				_queueSR[_nrOfSR & 0x1F] = value;
 				if(_enableIrq) {
 					_nrOfSR = 0;
@@ -513,6 +804,12 @@ protected:
 				break;
 
 			case 0xFF1A: //Video bank queue
+				if(_bbk98) {
+					if(_stageCountVR < 64) {
+						_stageVR[_stageCountVR++] = value;
+					}
+					break;
+				}
 				_queueVR[_nrOfVR & 0x1F] = value;
 				if(_enableIrq) {
 					_nrOfVR = 0;
@@ -523,6 +820,16 @@ protected:
 				break;
 
 			case 0xFF22: //Start
+				if(_bbk98) {
+					//Commits the staged queue for the frames that follow
+					memcpy(_queueSR, _stageSR, sizeof(_queueSR));
+					memcpy(_queueVR, _stageVR, sizeof(_queueVR));
+					_nrOfSR = _stageCount;
+					_nrOfVR = _stageCountVR;
+					_stageCount = 0;
+					_stageCountVR = 0;
+					break;
+				}
 				if(_splitMode) {
 					if(!_enableIrq) {
 						_queueIndex = 0;
@@ -533,21 +840,27 @@ protected:
 				CheckIrq();
 				break;
 
+			case 0xFF2A: //Restart the split queue from the top (BBK-98 only)
+				if(_bbk98) {
+					_queueIndex = 0;
+				}
+				break;
+
 			//CHR banking - 2K pages for $0000-$1FFF
 			case 0xFF03: SelectChrPage2k(0, value); break;
 			case 0xFF0B: SelectChrPage2k(1, value); break;
 			case 0xFF13: SelectChrPage2k(2, value); break;
 			case 0xFF1B: SelectChrPage2k(3, value); break;
 
-			//CHR banking - 1K pages
-			case 0xFF23: SelectChrPage(0, value & 0x1F); break;
-			case 0xFF2B: SelectChrPage(1, value & 0x1F); break;
-			case 0xFF33: SelectChrPage(2, value & 0x1F); break;
-			case 0xFF3B: SelectChrPage(3, value & 0x1F); break;
-			case 0xFF43: SelectChrPage(4, value & 0x1F); break;
-			case 0xFF4B: SelectChrPage(5, value & 0x1F); break;
-			case 0xFF53: SelectChrPage(6, value & 0x1F); break;
-			case 0xFF5B: SelectChrPage(7, value & 0x1F); break;
+			//CHR banking - 1K pages (8-bit registers on the BBK-98, 5-bit on the classic models)
+			case 0xFF23: SelectChrPage(0, value & (_bbk98 ? 0xFF : 0x1F)); break;
+			case 0xFF2B: SelectChrPage(1, value & (_bbk98 ? 0xFF : 0x1F)); break;
+			case 0xFF33: SelectChrPage(2, value & (_bbk98 ? 0xFF : 0x1F)); break;
+			case 0xFF3B: SelectChrPage(3, value & (_bbk98 ? 0xFF : 0x1F)); break;
+			case 0xFF43: SelectChrPage(4, value & (_bbk98 ? 0xFF : 0x1F)); break;
+			case 0xFF4B: SelectChrPage(5, value & (_bbk98 ? 0xFF : 0x1F)); break;
+			case 0xFF53: SelectChrPage(6, value & (_bbk98 ? 0xFF : 0x1F)); break;
+			case 0xFF5B: SelectChrPage(7, value & (_bbk98 ? 0xFF : 0x1F)); break;
 
 			//LPC speech synthesizer
 			case 0xFF10: _lpcAudio->WriteControl(value); break;
@@ -571,10 +884,15 @@ protected:
 
 		SV(_regFF14); SV(_regFF1C); SV(_regFF24); SV(_regFF2C);
 		SV(_mapRam); SV(_ff01D4);
+		SV(_romBank16k); SV(_dram8000); SV(_regFF08); SV(_regFFB0); SV(_lineIrqPending);
+		SV(_regFF09); SV(_prevFF09); SV(_regFF11);
 		SV(_splitMode); SV(_enableIrq); SV(_lineCount);
 		SV(_nrOfSR); SV(_nrOfVR); SV(_queueIndex);
-		SVArray(_queueSR, 32);
-		SVArray(_queueVR, 32);
+		SVArray(_queueSR, 64);
+		SVArray(_queueVR, 64);
+		SVArray(_stageSR, 64);
+		SVArray(_stageVR, 64);
+		SV(_stageCount); SV(_stageCountVR); SV(_splitLine); SV(_renderEnabled);
 		SV(_lastPpuScanline); SV(_irqPending); SV(_irqApplied);
 	}
 

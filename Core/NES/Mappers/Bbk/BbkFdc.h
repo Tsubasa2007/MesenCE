@@ -116,9 +116,13 @@ private:
 	void SetupChsTransfer(uint8_t c, uint8_t h, uint8_t r, uint8_t n)
 	{
 		int32_t lba = c * 36 + h * 18 + (r - 1);
-		if(lba > 2879) {
-			lba = 2879;
+		//Clamp to the mounted image (a 1.44MB floppy is 2880 sectors, but the BBK-98's
+		//electronic-disk image is a 2MB "floppy" addressed with the same 18-sector geometry)
+		int32_t maxLba = _diskData.empty() ? 0 : (int32_t)(_diskData.size() / 512) - 1;
+		if(lba > maxLba) {
+			lba = maxLba;
 		}
+		int32_t cylCount = std::max(80, (maxLba + 36) / 36);
 		_currentLba = lba;
 		_dataPos = lba * 512;
 		_dataBytes = 512;
@@ -131,7 +135,7 @@ private:
 			if(h == 2) {
 				h = 0;
 				c++;
-				if(c == 80) {
+				if(c == cylCount) {
 					c = 0;
 				}
 			}
