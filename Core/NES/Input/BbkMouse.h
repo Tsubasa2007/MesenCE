@@ -31,8 +31,9 @@ private:
 	uint8_t _txCount = 0;
 	uint8_t _data[3] = {};
 
-	//Mouse movement accumulates across frames until the BIOS issues READ_DATA (ClearState()
-	//wipes the base coordinate buffer every frame, so it can't be used for this)
+	//Movement has to survive until the BIOS issues READ_DATA, which is usually several polls
+	//later, while the state buffer is cleared on every poll - so each poll's delta is folded
+	//into these accumulators in OnAfterSetState(), after movie playback had its say
 	int32_t _accumX = 0;
 	int32_t _accumY = 0;
 
@@ -63,6 +64,10 @@ protected:
 	bool HasCoordinates() override { return true; }
 	enum Buttons { Left = 0, Right, Middle };
 
+	//One character per button, which is what puts the buttons in the recorded input state
+	//(movies store GetTextState(): the coordinates, then a column per named button)
+	string GetKeyNames() override { return "LRM"; }
+
 	void Serialize(Serializer& s) override
 	{
 		BaseControlDevice::Serialize(s);
@@ -74,11 +79,23 @@ protected:
 
 	void InternalSetStateFromInput() override
 	{
-		//Movement accumulates across frames until READ_DATA (buttons are sampled directly at
-		//READ_DATA time in PackReadData, so no per-frame button latching is needed here)
-		MouseMovement mov = KeyManager::GetMouseMovement(_emu, _emu->GetSettings()->GetInputConfig().MouseSensitivity);
-		_accumX += mov.dx;
-		_accumY += mov.dy;
+		//Movement and buttons both go through the state buffer, so they end up in movies and
+		//are replaced by the recorded input during playback. The buttons are read from the
+		//physical mouse rather than a key mapping, so the auto-connected device needs no setup.
+		SetMovement(KeyManager::GetMouseMovement(_emu, _emu->GetSettings()->GetInputConfig().MouseSensitivity));
+		SetPressedState(Buttons::Left, KeyManager::IsKeyPressed(IKeyManager::BaseMouseButtonIndex + (int)MouseButton::LeftButton));
+		SetPressedState(Buttons::Right, KeyManager::IsKeyPressed(IKeyManager::BaseMouseButtonIndex + (int)MouseButton::RightButton));
+		SetPressedState(Buttons::Middle, KeyManager::IsKeyPressed(IKeyManager::BaseMouseButtonIndex + (int)MouseButton::MiddleButton));
+	}
+
+	void OnAfterSetState() override
+	{
+		//Runs after any input provider replaced the state, so a replayed movie accumulates the
+		//same movement the recording captured. Reads the coordinates without clearing them -
+		//the input recorder runs after this and needs to see them.
+		MousePosition pos = GetCoordinates();
+		_accumX += pos.X;
+		_accumY += pos.Y;
 	}
 
 	void PackReadData()
@@ -94,13 +111,12 @@ protected:
 		if(dx > 255 || dx < -256) { flag |= 0x80; dx = 0; }
 		if(dy > 255 || dy < -256) { flag |= 0x40; dy = 0; }
 
-		//Read the physical mouse buttons straight from the key manager, so the auto-connected
-		//device needs no button mapping. Bit layout matches the hardware/BIOS (as fed by the
-		//VirtuaNES-BBK fork): right=0x01, middle=0x02, left=0x04 (NOT the unused BBK_MS_* defines).
+		//Bit layout matches the hardware/BIOS (as fed by the reference emulator): right=0x01,
+		//middle=0x02, left=0x04 (NOT the unused BBK_MS_* defines).
 		uint8_t keys =
-			(KeyManager::IsKeyPressed(IKeyManager::BaseMouseButtonIndex + (int)MouseButton::RightButton) ? 0x01 : 0) |
-			(KeyManager::IsKeyPressed(IKeyManager::BaseMouseButtonIndex + (int)MouseButton::MiddleButton) ? 0x02 : 0) |
-			(KeyManager::IsKeyPressed(IKeyManager::BaseMouseButtonIndex + (int)MouseButton::LeftButton) ? 0x04 : 0);
+			(IsPressed(Buttons::Right) ? 0x01 : 0) |
+			(IsPressed(Buttons::Middle) ? 0x02 : 0) |
+			(IsPressed(Buttons::Left) ? 0x04 : 0);
 
 		_data[0] = keys | flag;
 		_data[1] = (uint8_t)dy;

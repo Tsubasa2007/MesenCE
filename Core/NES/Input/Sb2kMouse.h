@@ -14,8 +14,9 @@
 class Sb2kMouse : public BaseControlDevice
 {
 private:
-	//Movement accumulates across frames until the mapper drains it into a packet
-	//(ClearState() wipes the base coordinate buffer every frame, so it can't be used)
+	//Movement has to survive until the mapper drains it into a packet, while the state buffer
+	//is cleared on every poll - so each poll's delta is folded into these accumulators in
+	//OnAfterSetState(), after movie playback had its say
 	int32_t _accumX = 0;
 	int32_t _accumY = 0;
 	uint8_t _lastButtons = 0;
@@ -23,6 +24,10 @@ private:
 protected:
 	bool HasCoordinates() override { return true; }
 	enum Buttons { Left = 0, Right, Middle };
+
+	//One character per button, which is what puts the buttons in the recorded input state
+	//(movies store GetTextState(): the coordinates, then a column per named button)
+	string GetKeyNames() override { return "LRM"; }
 
 	void Serialize(Serializer& s) override
 	{
@@ -32,9 +37,23 @@ protected:
 
 	void InternalSetStateFromInput() override
 	{
-		MouseMovement mov = KeyManager::GetMouseMovement(_emu, _emu->GetSettings()->GetInputConfig().MouseSensitivity);
-		_accumX += mov.dx;
-		_accumY += mov.dy;
+		//Movement and buttons both go through the state buffer, so they end up in movies and
+		//are replaced by the recorded input during playback. The buttons are read from the
+		//physical mouse rather than a key mapping, so the auto-connected device needs no setup.
+		SetMovement(KeyManager::GetMouseMovement(_emu, _emu->GetSettings()->GetInputConfig().MouseSensitivity));
+		SetPressedState(Buttons::Left, KeyManager::IsKeyPressed(IKeyManager::BaseMouseButtonIndex + (int)MouseButton::LeftButton));
+		SetPressedState(Buttons::Right, KeyManager::IsKeyPressed(IKeyManager::BaseMouseButtonIndex + (int)MouseButton::RightButton));
+		SetPressedState(Buttons::Middle, KeyManager::IsKeyPressed(IKeyManager::BaseMouseButtonIndex + (int)MouseButton::MiddleButton));
+	}
+
+	void OnAfterSetState() override
+	{
+		//Runs after any input provider replaced the state, so a replayed movie accumulates the
+		//same movement the recording captured. Reads the coordinates without clearing them -
+		//the input recorder runs after this and needs to see them.
+		MousePosition pos = GetCoordinates();
+		_accumX += pos.X;
+		_accumY += pos.Y;
 	}
 
 public:
@@ -52,13 +71,12 @@ public:
 	//Returns false when there is nothing new to send.
 	bool GetPacket(uint8_t packet[3])
 	{
-		//Buttons read straight from the key manager, so the auto-connected device needs no
-		//mapping. Bit layout matches what the reference emulator feeds its packet builder:
+		//Bit layout matches what the reference emulator feeds its packet builder:
 		//right=$01, middle=$02, left=$04.
 		uint8_t buttons =
-			(KeyManager::IsKeyPressed(IKeyManager::BaseMouseButtonIndex + (int)MouseButton::RightButton) ? 0x01 : 0) |
-			(KeyManager::IsKeyPressed(IKeyManager::BaseMouseButtonIndex + (int)MouseButton::MiddleButton) ? 0x02 : 0) |
-			(KeyManager::IsKeyPressed(IKeyManager::BaseMouseButtonIndex + (int)MouseButton::LeftButton) ? 0x04 : 0);
+			(IsPressed(Buttons::Right) ? 0x01 : 0) |
+			(IsPressed(Buttons::Middle) ? 0x02 : 0) |
+			(IsPressed(Buttons::Left) ? 0x04 : 0);
 
 		//One packet carries an 8-bit signed delta; leave any excess accumulated for the
 		//next report instead of dropping it (fast motion would get lost otherwise)

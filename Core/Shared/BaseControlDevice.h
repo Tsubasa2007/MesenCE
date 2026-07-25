@@ -80,6 +80,10 @@ public:
 	MousePosition GetCoordinates();
 	void SetCoordinates(MousePosition pos);
 
+	//Same, but without the "is input enabled" check - for state that is being restored rather
+	//than read from the host (movie playback, netplay), which must not depend on window focus
+	void RestoreCoordinates(MousePosition pos);
+
 	void Connect();
 	void Disconnect();
 	bool IsConnected();

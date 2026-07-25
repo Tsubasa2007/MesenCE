@@ -137,7 +137,10 @@ void BaseControlDevice::SetTextState(string textState)
 					pos.X = -1;
 					pos.Y = -1;
 				}
-				SetCoordinates(pos);
+				//Restored state, not host input: the button bits below are applied
+				//unconditionally, so the coordinates must be too, or a movie replays
+				//differently depending on whether the window happens to be focused
+				RestoreCoordinates(pos);
 				textState = data[2];
 			}
 		}
@@ -272,6 +275,11 @@ void BaseControlDevice::SetCoordinates(MousePosition pos)
 		return;
 	}
 
+	RestoreCoordinates(pos);
+}
+
+void BaseControlDevice::RestoreCoordinates(MousePosition pos)
+{
 	auto lock = _stateLock.AcquireSafe();
 	EnsureCapacity(-1);
 
