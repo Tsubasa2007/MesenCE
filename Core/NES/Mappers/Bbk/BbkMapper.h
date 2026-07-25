@@ -138,10 +138,27 @@ private:
 	uint8_t _splitLine = 0;
 	bool _renderEnabled = false;
 
+	//BBK-98 CHR bank registers, latched until the split engine is off (see UpdateChrBanks98)
+	uint8_t _chrReg[8] = {};
+
 	int32_t _lastPpuScanline = -2;
 	bool _irqPending = false;
 	bool _irqApplied = true;
 	bool _diskChecked = false;
+
+	//MMC3-clone banking mode ($FF01 bit 5). Cartridge-style games bank $8000-$BFFF through
+	//a private MMC3 register file mapped into DRAM (not the plain $FF04/$FF14 windows), with
+	//an MMC3 scanline-counter IRQ. Ported from the reference emulator's MapperBBK2 MMC3 path.
+	bool _mmc3Mode = false;
+	uint8_t _mmc3Cmd = 0;
+	uint8_t _mmc3Prg0 = 0;
+	uint8_t _mmc3Prg1 = 0;
+	uint8_t _mmc3Chr01 = 0, _mmc3Chr23 = 2, _mmc3Chr4 = 4, _mmc3Chr5 = 5, _mmc3Chr6 = 6, _mmc3Chr7 = 7;
+	uint8_t _mmc3IrqLatch = 0xFF, _mmc3IrqCounter = 0, _mmc3IrqPreset = 0, _mmc3IrqPresetVbl = 0;
+	bool _mmc3IrqEnable = false;
+	uint8_t _regFF3C = 0;
+	//PRG/CHR page masks: PRAM from DRAM size (0x7F for the 1MB BBK-98), YPRAM/YCRAM from $FF3C
+	uint8_t _pramMask = 0x7F, _ypramMask = 0x3F, _ycramMask = 0x7F;
 
 	//A power cycle recreates the mapper, so the inserted disk is remembered here (like a floppy
 	//physically staying in the drive) and re-mounted instead of the paired boot disk. Scoped to
@@ -186,6 +203,8 @@ private:
 
 	void UpdatePrgBank8000()
 	{
+		//In MMC3-clone mode the whole $8000-$FFFF map is owned by Mmc3Sync
+		if(_mmc3Mode) { return; }
 		if(DramAt8000()) {
 			MapDramPage(0x8000, 0x9FFF, DramPage(_regFF14));
 		} else if(_bbk98) {
@@ -197,6 +216,7 @@ private:
 
 	void UpdatePrgBankA000()
 	{
+		if(_mmc3Mode) { return; }
 		//The DRAM/ROM selector for $A000-$BFFF is $FF14's bit 6 (not $FF1C's)
 		if(DramAt8000()) {
 			MapDramPage(0xA000, 0xBFFF, DramPage(_regFF1C));
@@ -212,6 +232,7 @@ private:
 
 	void UpdatePrgBankC000()
 	{
+		//$C000-$FFFF stays overlay/BIOS-controlled even in MMC3 mode
 		if(DramAtC000()) {
 			MapDramPage(0xC000, 0xDFFF, DramPage(_regFF24));
 		} else {
@@ -235,6 +256,47 @@ private:
 		uint16_t mask = _bbk98 ? 0xFF : 0x1F;
 		SelectChrPage(slot2k * 2, (page2k * 2) & mask);
 		SelectChrPage(slot2k * 2 + 1, (page2k * 2 + 1) & mask);
+	}
+
+	//The BBK-98's CHR bank registers are latched rather than applied on the spot: the video
+	//controller only copies them into the 1K slots while the split engine is off. In split mode
+	//the queue owns $0000-$0FFF and $1000-$1FFF keeps whatever was selected before it was turned
+	//on - applying the registers there instead would fight the queue and scramble the banded
+	//screens the disk software draws (the BIOS turns split off around its CHR-RAM uploads).
+	void UpdateChrBanks98()
+	{
+		if(_splitMode) {
+			return;
+		}
+
+		for(int i = 0; i < 8; i++) {
+			SelectChrPage(i, _chrReg[i]);
+		}
+	}
+
+	//$FF03/$FF0B/$FF13/$FF1B: 2K page for a pair of 1K slots
+	void WriteChrReg2k(uint8_t slot2k, uint8_t value)
+	{
+		if(!_bbk98) {
+			SelectChrPage2k(slot2k, value);
+			return;
+		}
+
+		_chrReg[slot2k * 2] = (uint8_t)(value * 2);
+		_chrReg[slot2k * 2 + 1] = (uint8_t)(value * 2 + 1);
+		UpdateChrBanks98();
+	}
+
+	//$FF23-$FF5B: 1K page (8-bit registers on the BBK-98, 5-bit on the classic models)
+	void WriteChrReg1k(uint8_t slot1k, uint8_t value)
+	{
+		if(!_bbk98) {
+			SelectChrPage(slot1k, value & 0x1F);
+			return;
+		}
+
+		_chrReg[slot1k] = value;
+		UpdateChrBanks98();
 	}
 
 	//Applies the split queue entry at _queueIndex (scanline count + two 2K CHR banks for $0000-$0FFF)
@@ -330,8 +392,118 @@ private:
 		}
 	}
 
+	//===== MMC3-clone mode ($FF01 bit 5) =====
+	//The switchable PRG banks pass through FixPrg (small game bank numbers 0x30-0x3F relocate
+	//into the DRAM handler region at +0x70=112); every bank is then masked by PRAM_mask.
+	uint8_t Mmc3SetPrg(uint8_t v) { return v & _pramMask; }
+	uint8_t Mmc3SetChr(uint8_t v) { return v & _ycramMask; }
+	uint8_t Mmc3FixPrg(uint8_t v)
+	{
+		if((v & _ypramMask) == (uint8_t)(_ypramMask - 3)) return 0;
+		if((v & _ypramMask) == (uint8_t)(_ypramMask - 2)) return 1;
+		return (uint8_t)((v & _ypramMask) + (_pramMask - _ypramMask));
+	}
+
+	//Map the four 8K PRG banks + eight 1K CHR banks per the current MMC3 register state
+	void Mmc3Sync()
+	{
+		bool pwrap = (_mmc3Cmd & 0x40) != 0;
+		bool cwrap = (_mmc3Cmd & 0x80) != 0;
+		//MMC3 only banks $8000-$BFFF. $C000-$FFFF stays under the BBK BIOS/overlay control
+		//(the games run with the $C000-$FFFF DRAM overlay active there); remapping it here
+		//would yank the ground from under the BIOS game-start code that is still executing at
+		//$E000-$FFFF when it flips into MMC3 mode.
+		MapDramPage(0x8000, 0x9FFF, Mmc3SetPrg(pwrap ? 0xFE : _mmc3Prg0));
+		MapDramPage(0xA000, 0xBFFF, Mmc3SetPrg(_mmc3Prg1));
+
+		uint8_t c[8] = {
+			Mmc3SetChr((uint8_t)(_mmc3Chr01 + 0)), Mmc3SetChr((uint8_t)(_mmc3Chr01 + 1)),
+			Mmc3SetChr((uint8_t)(_mmc3Chr23 + 0)), Mmc3SetChr((uint8_t)(_mmc3Chr23 + 1)),
+			Mmc3SetChr(_mmc3Chr4), Mmc3SetChr(_mmc3Chr5), Mmc3SetChr(_mmc3Chr6), Mmc3SetChr(_mmc3Chr7)
+		};
+		for(int i = 0; i < 8; i++) {
+			SelectChrPage((uint16_t)(cwrap ? ((i + 4) & 7) : i), c[i]);
+		}
+	}
+
+	void Mmc3Write(uint16_t addr, uint8_t value)
+	{
+		switch(addr & 0xE001) {
+			case 0x8000: _mmc3Cmd = value; Mmc3Sync(); break;
+			case 0x8001:
+				switch(_mmc3Cmd & 0x07) {
+					case 0: _mmc3Chr01 = value & 0xFE; break;
+					case 1: _mmc3Chr23 = value & 0xFE; break;
+					case 2: _mmc3Chr4 = value; break;
+					case 3: _mmc3Chr5 = value; break;
+					case 4: _mmc3Chr6 = value; break;
+					case 5: _mmc3Chr7 = value; break;
+					case 6: _mmc3Prg0 = Mmc3FixPrg(value); break;
+					case 7: _mmc3Prg1 = Mmc3FixPrg(value); break;
+				}
+				Mmc3Sync();
+				break;
+			case 0xA000:
+				SetMirroringType((value & 0x01) ? MirroringType::Horizontal : MirroringType::Vertical);
+				break;
+			case 0xC000:
+				_mmc3IrqLatch = value;
+				break;
+			case 0xC001:
+				_mmc3IrqCounter |= 0x80;
+				if(_console->GetPpu()->GetCurrentScanline() < 240) {
+					_mmc3IrqPreset = 0xFF;
+				} else {
+					_mmc3IrqPresetVbl = 0xFF;
+					_mmc3IrqPreset = 0;
+				}
+				break;
+			case 0xE000:
+				_mmc3IrqEnable = false;
+				_console->GetCpu()->ClearIrqSource(IRQSource::External);
+				break;
+			case 0xE001:
+				_mmc3IrqEnable = true;
+				break;
+		}
+	}
+
+	//Per-scanline IRQ counter (not A12-based), evaluated once per visible line while rendering
+	void Mmc3IrqSync(int32_t scanline)
+	{
+		if(scanline >= 0 && scanline <= 239 && _renderEnabled) {
+			if(_mmc3IrqPresetVbl) { _mmc3IrqCounter = _mmc3IrqLatch; _mmc3IrqPresetVbl = 0; }
+			if(_mmc3IrqPreset) { _mmc3IrqCounter = _mmc3IrqLatch; _mmc3IrqPreset = 0; }
+			else if(_mmc3IrqCounter > 0) { _mmc3IrqCounter--; }
+			if(_mmc3IrqCounter == 0) {
+				if(_mmc3IrqEnable) { _console->GetCpu()->SetIrqSource(IRQSource::External); }
+				_mmc3IrqPreset = 0xFF;
+			}
+		}
+	}
+
+	//Reset the MMC3 register file to its power-on defaults (FixPrg(0)/FixPrg(1) already point
+	//$8000/$A000 at the DRAM handler region, e.g. page 0x70=112 on the BBK-98)
+	void Mmc3Reset()
+	{
+		_mmc3Cmd = 0;
+		_mmc3Prg0 = Mmc3FixPrg(0);
+		_mmc3Prg1 = Mmc3FixPrg(1);
+		_mmc3Chr01 = 0; _mmc3Chr23 = 2; _mmc3Chr4 = 4; _mmc3Chr5 = 5; _mmc3Chr6 = 6; _mmc3Chr7 = 7;
+		_mmc3IrqEnable = false;
+		_mmc3IrqCounter = 0;
+		_mmc3IrqLatch = 0xFF;
+		_mmc3IrqPreset = 0;
+		_mmc3IrqPresetVbl = 0;
+	}
+
 	void HSync(int32_t scanline)
 	{
+		if(_mmc3Mode) {
+			Mmc3IrqSync(scanline);
+			return;
+		}
+
 		if(_bbk98) {
 			HSync98(scanline);
 			return;
@@ -339,9 +511,14 @@ private:
 
 		//Restart the split sequence at the top of each frame while IRQ handling is pending
 		if(scanline == 0 && _splitMode) {
-			//Continue using the settings of the last frame
+			//Continue using the settings of the last frame, but only while the queue actually
+			//holds entries - $FF12 empties it, and re-applying a stale entry would re-point the
+			//CHR banks at the start of every frame, overriding the ones the bank registers
+			//select and leaving the screen showing whichever pages the previous program used.
 			_queueIndex = 0;
-			ApplySplitEntry();
+			if(_nrOfSR > 0) {
+				ApplySplitEntry();
+			}
 		}
 
 		if(scanline >= 240) {
@@ -531,12 +708,22 @@ protected:
 
 		_lastPpuScanline = -2;
 
+		//MMC3-clone mode is off until a game sets $FF01 bit 5. PRAM mask follows the DRAM size
+		//(0x7F for the 1MB BBK-98, 0xFF for a 2MB part); YPRAM/YCRAM come from $FF3C at entry.
+		_mmc3Mode = false;
+		_regFF3C = 0;
+		_pramMask = (uint8_t)((_workRamSize >> 13) - 1);
+		_ypramMask = 0x3F;
+		_ycramMask = 0x7F;
+		Mmc3Reset();
+
 		UpdatePrgBank8000();
 		UpdatePrgBankA000();
 		UpdatePrgBankC000();
 		UpdatePrgBankE000();
 
 		for(int i = 0; i < 8; i++) {
+			_chrReg[i] = (uint8_t)i;
 			SelectChrPage(i, i);
 		}
 
@@ -615,9 +802,27 @@ protected:
 				_renderEnabled = (value & 0x18) != 0;
 			}
 
-			if((addr & 0x02) == 0 && _mapRam && !_ff01D4) {
+			//The shadow lets software read its own PPU register state back - the BIOS interrupt
+			//handler restores $2001 from it every frame. The 98's Inno revision mirrors
+			//$2000/$2001/$2005 whenever the $C000 DRAM overlay is active ($FF01 D3 *or* $FF11
+			//bit 7); gating it on $FF01 D3 alone left the shadow stale at "rendering enabled",
+			//so the handler switched rendering back on in the middle of the CHR-RAM uploads the
+			//disk software performs with the display off, scattering them across CHR-RAM.
+			uint8_t reg = addr & 0x07;
+			bool shadow = _bbk98
+				? (DramAtC000() && (reg == 0 || reg == 1 || reg == 5))
+				: ((addr & 0x02) == 0 && _mapRam && !_ff01D4);
+			if(shadow) {
 				_workRam[(_bbk98 ? 0xFA000 : 0x7A000) + (addr & 0x1FFF)] = value;
 			}
+			return;
+		}
+
+		//In MMC3-clone mode, $8000-$FEFF writes are MMC3 register accesses (bank select/data,
+		//mirroring, IRQ), not DRAM stores. $FF00-$FFFF stays BBK IO (the games drive MMC3
+		//entirely via $8000-$E001, all below $FF00).
+		if(_mmc3Mode && addr >= 0x8000 && addr < 0xFF00) {
+			Mmc3Write(addr, value);
 			return;
 		}
 
@@ -697,11 +902,39 @@ protected:
 				_enableIrq = (value & 0x04) != 0;
 				CheckIrq();
 
+				//Leaving split mode hands $0000-$1FFF back to the bank registers
+				if(_bbk98) {
+					UpdateChrBanks98();
+				}
+
 				_ff01D4 = (value & 0x10) != 0;
 
 				_mapRam = (value & 0x08) != 0;
 				UpdatePrgBankC000();
 				UpdatePrgBankE000();
+
+				//D5: MMC3-clone banking mode. Games run entirely through the MMC3 register
+				//file mapped into DRAM; masks come from $FF3C (set just before this write).
+				{
+					bool mmc3 = (value & 0x20) != 0;
+					if(mmc3) {
+						_ypramMask = ~(_regFF3C & 0xF0) & 0x3F;    //0x0F:128K / 0x1F:256K / 0x3F:512K
+						_ycramMask = (_regFF3C & 0x04) ? 0xFF : 0x7F;
+						if(!_mmc3Mode) {
+							_mmc3Mode = true;
+							AddRegisterRange(0x8000, 0xFEFF, MemoryOperation::Write);
+						}
+						Mmc3Reset();
+						Mmc3Sync();
+					} else if(_mmc3Mode) {
+						_mmc3Mode = false;
+						RemoveRegisterRange(0x8000, 0xFEFF, MemoryOperation::Write);
+						UpdatePrgBank8000();
+						UpdatePrgBankA000();
+						UpdatePrgBankC000();
+						UpdatePrgBankE000();
+					}
+				}
 				break;
 
 			case 0xFF02: //IntCountPortL
@@ -756,16 +989,23 @@ protected:
 
 			case 0xFF24: //DRAM page for $C000-$DFFF
 				_regFF24 = value & DramBankMask();
-				if(_mapRam) {
+				//Re-map whenever DRAM is actually there - on the BBK-98 the overlay can come from
+				//$FF11 bit 7 instead of $FF01 bit 3, and gating on the latter alone left the window
+				//pointing at the previously selected page (the fork re-applies both from SetBank())
+				if(DramAtC000()) {
 					UpdatePrgBankC000();
 				}
 				break;
 
 			case 0xFF2C: //DRAM page for $E000-$FFFF
 				_regFF2C = value & DramBankMask();
-				if(_mapRam) {
+				if(DramAtC000()) {
 					UpdatePrgBankE000();
 				}
+				break;
+
+			case 0xFF3C: //MMC3-clone size/mask config (upper nibble = YPRAM mask, bit 2 = YCRAM)
+				_regFF3C = value;
 				break;
 
 			//Holtek split engine
@@ -847,20 +1087,20 @@ protected:
 				break;
 
 			//CHR banking - 2K pages for $0000-$1FFF
-			case 0xFF03: SelectChrPage2k(0, value); break;
-			case 0xFF0B: SelectChrPage2k(1, value); break;
-			case 0xFF13: SelectChrPage2k(2, value); break;
-			case 0xFF1B: SelectChrPage2k(3, value); break;
+			case 0xFF03: WriteChrReg2k(0, value); break;
+			case 0xFF0B: WriteChrReg2k(1, value); break;
+			case 0xFF13: WriteChrReg2k(2, value); break;
+			case 0xFF1B: WriteChrReg2k(3, value); break;
 
-			//CHR banking - 1K pages (8-bit registers on the BBK-98, 5-bit on the classic models)
-			case 0xFF23: SelectChrPage(0, value & (_bbk98 ? 0xFF : 0x1F)); break;
-			case 0xFF2B: SelectChrPage(1, value & (_bbk98 ? 0xFF : 0x1F)); break;
-			case 0xFF33: SelectChrPage(2, value & (_bbk98 ? 0xFF : 0x1F)); break;
-			case 0xFF3B: SelectChrPage(3, value & (_bbk98 ? 0xFF : 0x1F)); break;
-			case 0xFF43: SelectChrPage(4, value & (_bbk98 ? 0xFF : 0x1F)); break;
-			case 0xFF4B: SelectChrPage(5, value & (_bbk98 ? 0xFF : 0x1F)); break;
-			case 0xFF53: SelectChrPage(6, value & (_bbk98 ? 0xFF : 0x1F)); break;
-			case 0xFF5B: SelectChrPage(7, value & (_bbk98 ? 0xFF : 0x1F)); break;
+			//CHR banking - 1K pages
+			case 0xFF23: WriteChrReg1k(0, value); break;
+			case 0xFF2B: WriteChrReg1k(1, value); break;
+			case 0xFF33: WriteChrReg1k(2, value); break;
+			case 0xFF3B: WriteChrReg1k(3, value); break;
+			case 0xFF43: WriteChrReg1k(4, value); break;
+			case 0xFF4B: WriteChrReg1k(5, value); break;
+			case 0xFF53: WriteChrReg1k(6, value); break;
+			case 0xFF5B: WriteChrReg1k(7, value); break;
 
 			//LPC speech synthesizer
 			case 0xFF10: _lpcAudio->WriteControl(value); break;
@@ -892,8 +1132,14 @@ protected:
 		SVArray(_queueVR, 64);
 		SVArray(_stageSR, 64);
 		SVArray(_stageVR, 64);
+		SVArray(_chrReg, 8);
 		SV(_stageCount); SV(_stageCountVR); SV(_splitLine); SV(_renderEnabled);
 		SV(_lastPpuScanline); SV(_irqPending); SV(_irqApplied);
+
+		SV(_mmc3Mode); SV(_mmc3Cmd); SV(_mmc3Prg0); SV(_mmc3Prg1);
+		SV(_mmc3Chr01); SV(_mmc3Chr23); SV(_mmc3Chr4); SV(_mmc3Chr5); SV(_mmc3Chr6); SV(_mmc3Chr7);
+		SV(_mmc3IrqLatch); SV(_mmc3IrqCounter); SV(_mmc3IrqPreset); SV(_mmc3IrqPresetVbl); SV(_mmc3IrqEnable);
+		SV(_regFF3C); SV(_pramMask); SV(_ypramMask); SV(_ycramMask);
 	}
 
 public:
