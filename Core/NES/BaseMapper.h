@@ -229,11 +229,9 @@ public:
 	//of the backdrop. Famiclone PPUs that lack the quirk can disable it here (see DrawPixel)
 	virtual bool EnablePpuPaletteBgHack() { return true; }
 
-	//2C02 behavior: reading $2002 clears the vblank flag. Some famiclone PPUs only clear
-	//the flag at the pre-render line; software written for them can poll $2002 inside
-	//NMI-toggling loops, which on a stock 2C02 occasionally eats the NMI for a frame
-	//(see NesPpu::UpdateStatusFlag / SetControlRegister)
-	virtual bool EnablePpuVblankFlagClearOnRead() { return true; }
+	//2C02 race: reading $2002 one PPU dot before the vblank flag is set reads it as clear and
+	//suppresses that frame's NMI. Some famiclone PPUs (e.g. the BBK's) don't have this race.
+	virtual bool EnablePpuNmiSuppressRace() { return true; }
 
 	//2C02 behavior: $3F10/$3F14/$3F18/$3F1C mirror onto $3F00/$3F04/$3F08/$3F0C. On some
 	//famiclone PPUs all 32 palette entries are independent, so software freely uses the

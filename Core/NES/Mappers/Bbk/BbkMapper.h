@@ -532,7 +532,9 @@ private:
 			if(_queueIndex != _nrOfSR) {
 				ApplySplitEntry();
 			}
-		} else if(_splitMode || _enableIrq) {
+		} else if(_splitMode || (_enableIrq && _renderEnabled)) {
+			//The reference gates the non-split scanline counter on the display being on
+			//(IsDispON); counting through blanked lines fires the IRQ at a shifted scanline.
 			_lineCount++;
 		}
 	}
@@ -629,12 +631,12 @@ public:
 	//palette hack", so showing it here flashes color bands the real machine never showed
 	bool EnablePpuPaletteBgHack() override { return false; }
 
-	//BBK software polls $2002 inside NMI-toggling copy loops; on a stock 2C02 a read
-	//between vblank-flag-set and the next NMI enable clears the flag and eats the NMI
-	//(losing that frame's PPUCTRL/OAM refresh - visible as a one-frame wrong-pattern-
-	//table flash at screen transitions). The clone PPU evidently only clears
-	//the flag at the pre-render line.
-	bool EnablePpuVblankFlagClearOnRead() override { return false; }
+	//BBK software polls $2002 inside NMI-toggling copy loops. Its clone PPU clears the vblank
+	//flag on $2002 reads like a 2C02 (so the standard behaviour applies), but it does NOT have
+	//the 2C02 "$2002 read one dot before vblank suppresses the NMI" race - that race would drop
+	//an occasional NMI when the poll happens to hit the vblank edge, losing a frame's
+	//PPUCTRL/OAM refresh (a one-frame flash at screen transitions).
+	bool EnablePpuNmiSuppressRace() override { return false; }
 
 protected:
 
