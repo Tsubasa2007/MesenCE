@@ -102,11 +102,17 @@ private:
 	bool _dram8000 = false;
 	//BBK-98 $C000-$FFFF DRAM overlay: enabled by $FF11 bit 7 (a BIOS-call nesting counter),
 	//cleared by any $FF19 write. While the overlay is on, $FFxx reads hit DRAM instead of the
-	//IO registers unless $FF09 bit 1 is set - the IRQ hardware forces that bit (and $FF98
-	//restores it) so the interrupt handler can read $FFB0/$FF08 with the overlay active.
+	//IO registers unless $FF09 bit 1 is set - the BIOS sets it at boot and leaves it set, so
+	//software can read $FF18/$FFB0 while running with the overlay active.
 	uint8_t _regFF09 = 0;
-	uint8_t _prevFF09 = 0;
 	uint8_t _regFF11 = 0;
+	//A raster IRQ exposes the IO registers to the handler for the duration of the interrupt
+	//even if $FF09 bit 1 is clear; the $FF98 EOI ends that. Tracked separately instead of
+	//forcing the bit into $FF09 and restoring the old value at the EOI: the BIOS writes $FF98
+	//at the end of every interrupt, including ones this chip did not raise, and restoring a
+	//stale value there wiped the bit the BIOS had set at boot - after which the speech-status
+	//poll ($FF18, read with only $FF01 D3 cleared) read DRAM instead of the LPC and hung.
+	bool _ff09IrqIoOverride = false;
 
 	//BBK-98 interrupt controller. On Dendy timing the NMI is delayed to scanline 291,
 	//so this chipset revision adds a vblank-start IRQ the BIOS uses for its VRAM upload
@@ -355,10 +361,9 @@ private:
 	void RaiseLineIrq()
 	{
 		_lineIrqPending = true;
-		//Expose the IO registers to the handler even if the $FF11 DRAM overlay is active;
-		//the $FF98 EOI restores the previous $FF09 value
-		_prevFF09 = _regFF09;
-		_regFF09 |= 0x02;
+		//Expose the IO registers to the handler even if the $FF11 DRAM overlay is active
+		//(ended by the $FF98 EOI)
+		_ff09IrqIoOverride = true;
 		_console->GetCpu()->SetIrqSource(IRQSource::External);
 	}
 
@@ -683,7 +688,7 @@ protected:
 		_romBank16k = 0;
 		_dram8000 = false;
 		_regFF09 = 0;
-		_prevFF09 = 0;
+		_ff09IrqIoOverride = false;
 		_regFF11 = 0;
 		_regFF08 = 0;
 		_regFFB0 = 0;
@@ -745,15 +750,18 @@ protected:
 
 	uint8_t ReadRegister(uint16_t addr) override
 	{
-		//$FF00-$FFFF reads: DRAM when mapped there, otherwise IO at addr % 8 == 0, ROM elsewhere.
-		//With the overlay enabled via $FF11 alone, $FF09 bit 1 lets IO reads through (set by
-		//the IRQ hardware so the handler can read $FFB0 while the overlay is active).
-		if(_mapRam || (_bbk98 && (_regFF11 & 0x80) && !(_regFF09 & 0x02))) {
-			uint8_t page = DramPage(_regFF2C);
-			return IsDramPageAbsent(page) ? 0 : _workRam[page * 0x2000 + (addr & 0x1FFF)];
-		}
+		//$FF00-$FFFF reads: IO at addr % 8 == 0, otherwise DRAM when mapped there, ROM elsewhere.
+		//DRAM normally hides the IO ports; with the overlay enabled via $FF11 alone, $FF09 bit 1
+		//punches them back through (also forced for the duration of a raster IRQ, so the handler
+		//can read $FFB0). Only the 8-aligned ports are affected - the rest of the page stays
+		//DRAM, which is where the interrupt vectors software installs for itself live. Letting
+		//the exposure spill onto the whole page made $FFFE/$FFFF read the BIOS ROM vector, so a
+		//program's own handler never ran and whatever it was meant to acknowledge (the APU frame
+		//counter here) held the line asserted, re-entering the BIOS dispatcher until the stack wrapped.
+		bool dramHere = _mapRam || (_bbk98 && (_regFF11 & 0x80));
+		bool ioVisible = !dramHere || (_bbk98 && !_mapRam && ((_regFF09 & 0x02) || _ff09IrqIoOverride));
 
-		if((addr & 0x07) == 0) {
+		if((addr & 0x07) == 0 && ioVisible) {
 			//IO read
 			if(_bbk98) {
 				//The 98's interrupt controller shadows part of the FDC range
@@ -783,6 +791,11 @@ protected:
 				case 0xFF50: return 0; //PC Card
 				default: return 0;
 			}
+		}
+
+		if(dramHere) {
+			uint8_t page = DramPage(_regFF2C);
+			return IsDramPageAbsent(page) ? 0 : _workRam[page * 0x2000 + (addr & 0x1FFF)];
 		}
 
 		//BIOS ROM, fixed last 8K page
@@ -838,9 +851,8 @@ protected:
 				return;
 			}
 			if(addr == 0xFF98) {
-				//EOI / mask restore - acknowledges the vblank IRQ and restores $FF09
-				//(the IRQ hardware forced its bit 1 on to expose the IO registers)
-				_regFF09 = _prevFF09;
+				//EOI - acknowledges the vblank IRQ and drops the IO-register exposure it forced
+				_ff09IrqIoOverride = false;
 				_lineIrqPending = false;
 				CheckIrq();
 				return;
@@ -1127,7 +1139,7 @@ protected:
 		SV(_regFF14); SV(_regFF1C); SV(_regFF24); SV(_regFF2C);
 		SV(_mapRam); SV(_ff01D4);
 		SV(_romBank16k); SV(_dram8000); SV(_regFF08); SV(_regFFB0); SV(_lineIrqPending);
-		SV(_regFF09); SV(_prevFF09); SV(_regFF11);
+		SV(_regFF09); SV(_ff09IrqIoOverride); SV(_regFF11);
 		SV(_splitMode); SV(_enableIrq); SV(_lineCount);
 		SV(_nrOfSR); SV(_nrOfVR); SV(_queueIndex);
 		SVArray(_queueSR, 64);
