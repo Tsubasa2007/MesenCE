@@ -78,12 +78,45 @@ private:
 	int32_t _currentLba = 0; //Sector set up by the last read/write (Format Track fills it)
 	int32_t _delayCycles = 0;
 	int32_t _activityCycles = 0; //Non-zero while the drive was recently accessed (LED)
+	int32_t _cylCount = 80; //Cylinders on the mounted image, for CHS wrap
 
 	bool _dirty = false;
 	bool _abortCommand = false; //Set by a command that gives no response at all (Read ID on an empty drive)
 	bool _diskChanged = false; //DSKCHG line: set when a disk is swapped, cleared by the next head step
 	vector<uint8_t> _diskData;
 	string _diskFilename;
+
+	//Steps a CHS position on by whole sectors, wrapping head then cylinder like the drive does
+	void AdvanceChs(uint8_t c, uint8_t h, uint8_t r, int32_t sectors)
+	{
+		for(int32_t i = 0; i < sectors; i++) {
+			r++;
+			if(r == 19) {
+				r = 1;
+				h++;
+				if(h == 2) {
+					h = 0;
+					c++;
+					if(_cylCount > 0 && c == _cylCount) {
+						c = 0;
+					}
+				}
+			}
+		}
+		_results[3] = c;
+		_results[4] = h;
+		_results[5] = r;
+	}
+
+	//Reports where the transfer actually stopped, so the caller can tell how much moved
+	void FinalizeTransferResult()
+	{
+		int32_t done = (_dataPos - _currentLba * 512 + 511) / 512;
+		if(done < 1) {
+			done = 1;
+		}
+		AdvanceChs(_commands[2], _commands[3], _commands[4], done);
+	}
 
 	void ArmTransferDelay()
 	{
@@ -125,21 +158,24 @@ private:
 		int32_t cylCount = std::max(80, (maxLba + 36) / 36);
 		_currentLba = lba;
 		_dataPos = lba * 512;
-		_dataBytes = 512;
 		_delayCycles = SectorDelayCycles;
 
-		r++;
-		if(r == 19) {
-			r = 1;
-			h++;
-			if(h == 2) {
-				h = 0;
-				c++;
-				if(c == cylCount) {
-					c = 0;
-				}
-			}
+		//Read/Write Data run from R to EOT rather than a single sector, and continue onto the
+		//second head when MT is set; the transfer normally ends early on terminal count. Sizing
+		//this at one sector let the data keep streaming (the position advances regardless) while
+		//the result still reported a single sector, so software that derives "sectors
+		//transferred" from the result phase saw 1 no matter how much it had actually read.
+		uint8_t eot = _commands[6];
+		int32_t sectors = (eot >= r) ? (eot - r + 1) : 1;
+		if((_commands[0] & 0x80) && h == 0) {
+			//Multi-track: the other head's sectors 1..EOT follow
+			sectors += eot;
 		}
+		_dataBytes = sectors * 512;
+		_cylCount = cylCount;
+
+		//Default result position (one sector on), replaced by the real one when the transfer ends
+		AdvanceChs(c, h, r, 1);
 
 		_status[0] = 0;
 
@@ -149,9 +185,7 @@ private:
 		_results[0] = nonDma ? St0Ic0 : _status[0];
 		_results[1] = nonDma ? St1EndOfCylinder : _status[1];
 		_results[2] = 0;
-		_results[3] = c;
-		_results[4] = h;
-		_results[5] = r;
+		//_results[3..5] hold the CHS position, filled by AdvanceChs above
 		_results[6] = n;
 	}
 
@@ -393,13 +427,15 @@ public:
 	{
 		switch(port) {
 			case 0: //FDCDMADackIO
-			case 1: { //FDCDMATcIO
+			case 1: { //FDCDMATcIO - fetching through this port asserts terminal count
 				uint8_t value = ReadDiskByte();
 				if(_dataBytes > 0) {
 					_dataBytes--;
-					if(_dataBytes == 0) {
-						_phase = FdcPhase::Result;
-					}
+				}
+				if(port == 1 || _dataBytes == 0) {
+					_dataBytes = 0;
+					FinalizeTransferResult();
+					_phase = FdcPhase::Result;
 				}
 				return value;
 			}
@@ -587,7 +623,7 @@ public:
 	void Serialize(Serializer& s) override
 	{
 		SV(_irq); SV(_hwReset); SV(_softReset); SV(_dmaInt); SV(_drvSel); SV(_motor);
-		SV(_mainStatus); SV(_cycle); SV(_cmdIndex); SV(_lastCommand); SV(_phase); SV(_cylinder); SV(_dataPos); SV(_dataBytes); SV(_currentLba); SV(_delayCycles); SV(_activityCycles); SV(_dirty); SV(_diskChanged);
+		SV(_mainStatus); SV(_cycle); SV(_cmdIndex); SV(_lastCommand); SV(_phase); SV(_cylinder); SV(_dataPos); SV(_dataBytes); SV(_currentLba); SV(_delayCycles); SV(_cylCount); SV(_activityCycles); SV(_dirty); SV(_diskChanged);
 		SVArray(_status, 4);
 		SVArray(_commands, 10);
 		SVArray(_results, 8);
