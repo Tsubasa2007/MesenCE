@@ -823,9 +823,14 @@ protected:
 			//bit 7); gating it on $FF01 D3 alone left the shadow stale at "rendering enabled",
 			//so the handler switched rendering back on in the middle of the CHR-RAM uploads the
 			//disk software performs with the display off, scattering them across CHR-RAM.
+			//$FF01 D4 switches the shadow off, and software relies on that: it lands in the
+			//fixed $4000-$7FFF window at $6000/$6001/$6005, which cartridge-style titles use as
+			//their save RAM, so the loader sets D4 in the same write that enables MMC3-clone
+			//mode. Ignoring D4 here left every $2000/$2001 write overwriting those bytes for as
+			//long as the game ran.
 			uint8_t reg = addr & 0x07;
 			bool shadow = _bbk98
-				? (DramAtC000() && (reg == 0 || reg == 1 || reg == 5))
+				? (DramAtC000() && !_ff01D4 && (reg == 0 || reg == 1 || reg == 5))
 				: ((addr & 0x02) == 0 && _mapRam && !_ff01D4);
 			if(shadow) {
 				_workRam[(_bbk98 ? 0xFA000 : 0x7A000) + (addr & 0x1FFF)] = value;
