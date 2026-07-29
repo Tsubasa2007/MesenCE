@@ -48,8 +48,9 @@
 //   BIOS sizes memory by running its probe with that line clear and again with it set,
 //   then ADDING the two results ($94E1), so the half that is not fitted has to read as
 //   absent - folding it back onto the populated half reports twice the real size.
-// - $FF11 bit 7 additionally maps DRAM over $C000-$FFFF (a BIOS-call nesting counter,
-//   cleared by writing $FF19); $FF09 bit 1 exposes the IO registers to reads while
+// - $FF11 bit 7 maps DRAM over $C000-$FFFF here, taking that job over from $FF01 bit 3
+//   (a BIOS-call nesting counter, cleared by writing $FF19, so a call always runs with
+//   the ROM swapped back in); $FF09 bit 1 exposes the IO registers to reads while
 //   that overlay is active
 // - Interrupt controller: $FF08 bit 5 + $FF01 bit 2 arm a vblank-start IRQ (the BIOS
 //   drains its VRAM upload queue there since the Dendy NMI fires too late at line 291);
@@ -233,8 +234,13 @@ private:
 		}
 	}
 
-	//DRAM at $C000-$FFFF: classic models use $FF01 bit 3 only; the 98 also maps it via $FF11 bit 7
-	bool DramAtC000() { return _mapRam || (_bbk98 && (_regFF11 & 0x80)); }
+	//DRAM at $C000-$FFFF: classic models use $FF01 bit 3; the 98 replaced it with $FF11 bit 7.
+	//The distinction is load-bearing: the BIOS call gate posts the function number to $FF19,
+	//which clears $FF11 and so swaps the ROM back in for the duration of the call - the
+	//dispatcher the gate jumps to only exists in ROM. Letting $FF01 bit 3 hold the overlay up
+	//as well leaves every call after software sets that bit landing on whatever the RAM copy
+	//happens to hold at the same address.
+	bool DramAtC000() { return _bbk98 ? (_regFF11 & 0x80) != 0 : _mapRam; }
 
 	void UpdatePrgBankC000()
 	{
@@ -758,7 +764,7 @@ protected:
 		//the exposure spill onto the whole page made $FFFE/$FFFF read the BIOS ROM vector, so a
 		//program's own handler never ran and whatever it was meant to acknowledge (the APU frame
 		//counter here) held the line asserted, re-entering the BIOS dispatcher until the stack wrapped.
-		bool dramHere = _mapRam || (_bbk98 && (_regFF11 & 0x80));
+		bool dramHere = DramAtC000();
 		bool ioVisible = !dramHere || (_bbk98 && !_mapRam && ((_regFF09 & 0x02) || _ff09IrqIoOverride));
 
 		if((addr & 0x07) == 0 && ioVisible) {
