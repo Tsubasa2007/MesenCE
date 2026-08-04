@@ -133,7 +133,16 @@ public:
 				uint8_t value = ((~GetActiveKeys(_row, _column)) << 1) & 0x1E;
 				return value;
 			} else {
-				return 0x1E;
+				//Deselected: release the bus instead of holding the idle pattern. Bit 1 is
+				//also the expansion-port controller 2 data line, and cartridge software that
+				//merges $4017 bits 0 and 1 into one pad state reads a permanently asserted
+				//bit 1 as "every button held" - which leaves its newly-pressed edge detection
+				//with nothing to report, so the pad appears dead. The BIOS always selects the
+				//keyboard ($4016 bit 2) before scanning it, so it never observes this.
+				//NOTE: SuborKeyboard has the same read and therefore the same defect. It is
+				//left alone here because no Subor title is known to trip it; if one turns up
+				//with unresponsive controls, apply this exact change there.
+				return 0;
 			}
 		}
 		return 0;
