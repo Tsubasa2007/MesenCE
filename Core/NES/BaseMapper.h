@@ -289,10 +289,14 @@ public:
 		return value;
 	}
 
-	void DebugWriteVram(uint16_t addr, uint8_t value, bool disableSideEffects = true);
+	virtual void DebugWriteVram(uint16_t addr, uint8_t value, bool disableSideEffects = true);
 	void WriteVram(uint16_t addr, uint8_t value);
 
-	uint8_t DebugReadVram(uint16_t addr, bool disableSideEffects = true);
+	virtual uint8_t DebugReadVram(uint16_t addr, bool disableSideEffects = true);
+
+	//Size of the PPU address space as the debugger should present it. The 2C02 bus is
+	//14 bits; clones with a wider video bus (e.g. the UM6576) override this.
+	virtual uint32_t GetPpuAddressSpaceSize() { return 0x4000; }
 
 	void CopyChrTile(uint32_t address, uint8_t* dest);
 

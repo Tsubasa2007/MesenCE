@@ -99,7 +99,10 @@ uint32_t MemoryDumper::GetMemorySize(MemoryType type)
 		case MemoryType::St018Memory: return 0x20000;
 		case MemoryType::GameboyMemory: return 0x10000;
 		case MemoryType::NesMemory: return 0x10000;
-		case MemoryType::NesPpuMemory: return 0x4000;
+		case MemoryType::NesPpuMemory:
+			//The 2C02 bus is 14 bits, but NES-on-a-chip clones can be wider (the UM6576 in
+			//the Subor SB-2000 has a 16-bit video bus), so let the mapper state its size.
+			return _nesConsole ? _nesConsole->GetPpuAddressSpaceSize() : 0x4000;
 		case MemoryType::PceMemory: return 0x10000;
 		case MemoryType::SmsMemory: return 0x10000;
 		case MemoryType::GbaMemory: return 0x10000000;
@@ -187,8 +190,9 @@ void MemoryDumper::GetMemoryState(MemoryType type, uint8_t* buffer)
 
 		case MemoryType::NesPpuMemory: {
 			if(_nesConsole) {
-				for(int i = 0; i < 0x4000; i++) {
-					buffer[i] = _nesConsole->DebugReadVram(i);
+				uint32_t size = _nesConsole->GetPpuAddressSpaceSize();
+				for(uint32_t i = 0; i < size; i++) {
+					buffer[i] = _nesConsole->DebugReadVram((uint16_t)i);
 				}
 			}
 			break;

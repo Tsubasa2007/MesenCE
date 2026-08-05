@@ -580,9 +580,17 @@ void NesConsole::DebugWrite(uint16_t addr, uint8_t value, bool disableSideEffect
 	_memoryManager->DebugWrite(addr, value, disableSideEffects);
 }
 
+uint32_t NesConsole::GetPpuAddressSpaceSize()
+{
+	return _mapper->GetPpuAddressSpaceSize();
+}
+
 uint8_t NesConsole::DebugReadVram(uint16_t addr)
 {
-	if(addr >= 0x3F00) {
+	//On the 2C02 the palette is mapped into the PPU bus at $3F00. Clones with a wider
+	//video bus (UM6576) address plain video RAM there and expose their palette through
+	//separate registers, so the special case has to be skipped for them.
+	if(addr >= 0x3F00 && _mapper->GetPpuAddressSpaceSize() <= 0x4000) {
 		return _ppu->ReadPaletteRam(addr);
 	} else {
 		return _mapper->DebugReadVram(addr);
@@ -591,7 +599,10 @@ uint8_t NesConsole::DebugReadVram(uint16_t addr)
 
 void NesConsole::DebugWriteVram(uint16_t addr, uint8_t value)
 {
-	if(addr >= 0x3F00) {
+	//On the 2C02 the palette is mapped into the PPU bus at $3F00. Clones with a wider
+	//video bus (UM6576) address plain video RAM there and expose their palette through
+	//separate registers, so the special case has to be skipped for them.
+	if(addr >= 0x3F00 && _mapper->GetPpuAddressSpaceSize() <= 0x4000) {
 		_ppu->WritePaletteRam(addr, value);
 	} else {
 		_mapper->DebugWriteVram(addr, value);

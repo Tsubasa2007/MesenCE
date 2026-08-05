@@ -184,8 +184,10 @@ private:
 	int32_t _mousePollTimer = 0;
 
 	//UM6576-mode video RAM (10KB used by the chip; sized like the reference emulator's
-	//shared buffer because the DMA engine can address the full 32KB window)
-	uint8_t _cram[0x8000] = {};
+	//shared buffer because the DMA engine can address the full 32KB window). Held in
+	//BaseMapper's mapper-RAM buffer so it shows up in the debugger, is serialized and
+	//is power-on initialized like every other mapper-owned RAM.
+	static constexpr uint32_t CramSize = 0x8000;
 
 	int32_t _lastPpuScanline = -2;
 
@@ -478,9 +480,9 @@ private:
 			}
 		} else {
 			//CRAM destination
-			len = std::min<int32_t>(len, (int32_t)sizeof(_cram) - dstAddr);
+			len = std::min<int32_t>(len, (int32_t)CramSize - dstAddr);
 			if(len > 0) {
-				memcpy(_cram + dstAddr, src, len);
+				memcpy(_mapperRam + dstAddr, src, len);
 			}
 		}
 	}
@@ -875,6 +877,9 @@ protected:
 	uint16_t GetPrgPageSize() override { return 0x1000; }
 	uint16_t GetChrPageSize() override { return 0x400; }
 	uint32_t GetChrRamSize() override { return 0x80000; }
+	//CRAM - the low half of the UM6576 video bus. Exposed as mapper RAM so it is
+	//visible in the debugger; the DMA engine fills it far more often than EVRAM.
+	uint32_t GetMapperRamSize() override { return CramSize; }
 	uint16_t GetChrRamPageSize() override { return 0x400; }
 	uint32_t GetWorkRamSize() override { return 0x82800; }
 	uint32_t GetWorkRamPageSize() override { return 0x1000; }
@@ -982,7 +987,7 @@ protected:
 		memset(_workRam, 0, _workRamSize);
 		memset(_chrRam, 0, _chrRamSize);
 
-		memset(_cram, 0, sizeof(_cram));
+		memset(_mapperRam, 0, _mapperRamSize);
 		_lastPpuScanline = -2;
 
 		UpdatePrgMapping();
@@ -1108,7 +1113,7 @@ public:
 	uint8_t VideoRead(uint16_t addr)
 	{
 		if(addr < 0x8000) {
-			return _cram[addr];
+			return _mapperRam[addr];
 		}
 		return _chrRam[_vbank * 0x8000 + (addr & 0x7FFF)];
 	}
@@ -1116,11 +1121,31 @@ public:
 	void VideoWrite(uint16_t addr, uint8_t value)
 	{
 		if(addr < 0x8000) {
-			_cram[addr] = value;
+			_mapperRam[addr] = value;
 		} else {
 			_chrRam[_vbank * 0x8000 + (addr & 0x7FFF)] = value;
 		}
 	}
+
+	//The debugger has to follow the same bus the chip uses. In UM6576 mode that bus is
+	//16 bits wide - CRAM below $8000, the $4300-banked EVRAM window above it - so the
+	//stock path (which masks to $3FFF and walks the CHR/nametable mapping) would show
+	//unrelated memory. Famiclone mode keeps the 2C02 behaviour.
+	uint8_t DebugReadVram(uint16_t addr, bool disableSideEffects = true) override
+	{
+		return IsUm6576Mode() ? VideoRead(addr) : BaseMapper::DebugReadVram(addr, disableSideEffects);
+	}
+
+	void DebugWriteVram(uint16_t addr, uint8_t value, bool disableSideEffects = true) override
+	{
+		if(IsUm6576Mode()) {
+			VideoWrite(addr, value);
+		} else {
+			BaseMapper::DebugWriteVram(addr, value, disableSideEffects);
+		}
+	}
+
+	uint32_t GetPpuAddressSpaceSize() override { return IsUm6576Mode() ? 0x10000 : 0x4000; }
 
 	void ProcessCpuClock() override
 	{
@@ -1192,7 +1217,6 @@ public:
 		SVArray(_mouseRetData, sizeof(_mouseRetData));
 		SV(_mouseRetIndex); SV(_mouseRetLength); SV(_mouseRetDelay); SV(_mouseRetDelayReload);
 		SV(_mouseInitialized); SV(_mousePollTimer);
-		SVArray(_cram, sizeof(_cram));
 		SV(_lastPpuScanline);
 
 		if(!s.IsSaving()) {

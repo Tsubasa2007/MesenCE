@@ -75,6 +75,9 @@ public:
 	NesApu* GetApu() { return _apu.get(); }
 	NesMemoryManager* GetMemoryManager() { return _memoryManager.get(); }
 	BaseMapper* GetMapper() { return _mapper.get(); }
+	//Width of the PPU address space for the debugger (14 bits on a 2C02, wider on some
+	//clones). Forwarded from the mapper so callers do not need the mapper definition.
+	uint32_t GetPpuAddressSpaceSize();
 
 	//Returns the list of swappable disk image names for BBK games (empty for anything else).
 	//currentIndex is set to the inserted disk's index, or -1 when none/not applicable.
