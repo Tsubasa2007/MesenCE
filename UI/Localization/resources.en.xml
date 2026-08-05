@@ -298,6 +298,7 @@
 
 			<Control ID="lblBbkSettings">BBK Learning Machine Settings</Control>
 			<Control ID="chkBbkShowDiskLed">Show disk activity LED (top-right corner)</Control>
+			<Control ID="chkBbkAttributeLag">Color tiles with the previous column's attribute (classic models, experimental)</Control>
 
 			<Control ID="lblVsDualSystem">VS. DualSystem Settings</Control>
 			<Control ID="lblVsDualPlayAudio">Play audio for:</Control>

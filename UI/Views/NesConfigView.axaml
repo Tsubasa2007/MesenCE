@@ -78,6 +78,7 @@
 
 					<c:OptionSection Header="{l:Translate lblBbkSettings}">
 						<CheckBox IsChecked="{Binding Config.BbkShowDiskLed}" Content="{l:Translate chkBbkShowDiskLed}" />
+						<c:CheckBoxWarning IsChecked="{Binding Config.BbkAttributeLag}" Text="{l:Translate chkBbkAttributeLag}" />
 					</c:OptionSection>
 
 					<c:OptionSection Header="{l:Translate lblVsDualSystem}">

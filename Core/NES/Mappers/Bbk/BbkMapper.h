@@ -649,6 +649,18 @@ public:
 	//PPUCTRL/OAM refresh (a one-frame flash at screen transitions).
 	bool EnablePpuNmiSuppressRace() override { return false; }
 
+	//Off by default - an experiment, NOT emulated behaviour. It makes a tile take the attribute
+	//fetched for the tile column before it, which cleans up the banded-framebuffer screens on
+	//some titles and corrupts them on others, with no hardware-visible difference between the
+	//two cases, so it cannot be applied unconditionally. The 98 revision is excluded because it
+	//shifts the colors on its desktop.
+	//The PPU latches this in its constructor, which NesConsole runs before InitSpecificMapper,
+	//so _bbk98 is not set yet; the header tells the revisions apart (as in GetWorkRamSize).
+	bool EnablePpuAttributeLag() override
+	{
+		return _romInfo.Header.GetPrgSize() <= 0x20000 && _console->GetNesConfig().BbkAttributeLag;
+	}
+
 protected:
 
 	void InitMapper(RomData& romData) override
