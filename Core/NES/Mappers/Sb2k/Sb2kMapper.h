@@ -221,28 +221,43 @@ private:
 		}
 	}
 
+	//Maps one 1KB CHR page. A RAM-booted program is a cartridge game whose CHR ROM was
+	//loaded into EVRAM from disk, and it is written for a board where that window is ROM:
+	//the startup code clears the whole PPU address space, so a writable window would erase
+	//the tiles it is about to display (the banks are all zero at that point, which wipes
+	//the first 8KB of EVRAM). The window ignores writes while a program is running.
+	void SelectChrBank(uint16_t slot, uint32_t page)
+	{
+		if(_ramBoot) {
+			uint16_t start = slot * 0x400;
+			SetPpuMemoryMapping(start, start + 0x3FF, ChrMemoryType::ChrRam, (page & 0x1FF) * 0x400, MemoryAccessType::Read);
+		} else {
+			SelectChrPage(slot, (uint16_t)page);
+		}
+	}
+
 	void UpdateChrMapping()
 	{
 		//MMC3 CHR banking in 1KB pages of EVRAM, within the current 128KB EBank slice
 		uint16_t base = _eBank * 0x80;
 		if(_c3Sel & 0x80) {
-			SelectChrPage(0, base + (_c3Reg[2] & 0x7F));
-			SelectChrPage(1, base + (_c3Reg[3] & 0x7F));
-			SelectChrPage(2, base + (_c3Reg[4] & 0x7F));
-			SelectChrPage(3, base + (_c3Reg[5] & 0x7F));
-			SelectChrPage(4, base + (_c3Reg[0] & 0x7E));
-			SelectChrPage(5, base + (_c3Reg[0] & 0x7E) + 1);
-			SelectChrPage(6, base + (_c3Reg[1] & 0x7E));
-			SelectChrPage(7, base + (_c3Reg[1] & 0x7E) + 1);
+			SelectChrBank(0, base + (_c3Reg[2] & 0x7F));
+			SelectChrBank(1, base + (_c3Reg[3] & 0x7F));
+			SelectChrBank(2, base + (_c3Reg[4] & 0x7F));
+			SelectChrBank(3, base + (_c3Reg[5] & 0x7F));
+			SelectChrBank(4, base + (_c3Reg[0] & 0x7E));
+			SelectChrBank(5, base + (_c3Reg[0] & 0x7E) + 1);
+			SelectChrBank(6, base + (_c3Reg[1] & 0x7E));
+			SelectChrBank(7, base + (_c3Reg[1] & 0x7E) + 1);
 		} else {
-			SelectChrPage(0, base + (_c3Reg[0] & 0x7E));
-			SelectChrPage(1, base + (_c3Reg[0] & 0x7E) + 1);
-			SelectChrPage(2, base + (_c3Reg[1] & 0x7E));
-			SelectChrPage(3, base + (_c3Reg[1] & 0x7E) + 1);
-			SelectChrPage(4, base + (_c3Reg[2] & 0x7F));
-			SelectChrPage(5, base + (_c3Reg[3] & 0x7F));
-			SelectChrPage(6, base + (_c3Reg[4] & 0x7F));
-			SelectChrPage(7, base + (_c3Reg[5] & 0x7F));
+			SelectChrBank(0, base + (_c3Reg[0] & 0x7E));
+			SelectChrBank(1, base + (_c3Reg[0] & 0x7E) + 1);
+			SelectChrBank(2, base + (_c3Reg[1] & 0x7E));
+			SelectChrBank(3, base + (_c3Reg[1] & 0x7E) + 1);
+			SelectChrBank(4, base + (_c3Reg[2] & 0x7F));
+			SelectChrBank(5, base + (_c3Reg[3] & 0x7F));
+			SelectChrBank(6, base + (_c3Reg[4] & 0x7F));
+			SelectChrBank(7, base + (_c3Reg[5] & 0x7F));
 		}
 	}
 
