@@ -6,6 +6,7 @@
 #include "NES/NesCpu.h"
 #include "NES/Mappers/Bbk/BbkFdc.h"
 #include "NES/Mappers/Bbk/BbkLpcAudio.h"
+#include "NES/Mappers/Bbk/BbkPrinter.h"
 #include "Shared/MessageManager.h"
 #include "Shared/NotificationManager.h"
 #include "Shared/Interfaces/INotificationListener.h"
@@ -27,6 +28,8 @@
 // - LPC-10 speech synthesizer ($FF10/$FF18) - see BbkLpcAudio.
 // - uPD765 floppy controller at $FF80-$FFB8 - see BbkFdc. A disk image named
 //   "<rom name>.img" next to the ROM is mounted automatically.
+// - Parallel port printer ($FF40/$FF48/$FF50) - see BbkPrinter. Pages come out as PNGs
+//   in the screenshot folder.
 //
 //Address decode rules (from the fork's MapAddr, OPT_ADDR_MAP path):
 // - $2000-$3FFF write: PPU registers; also shadowed to DRAM $7A000+ when mapRam && !ff01D4 && !(addr & 2)
@@ -84,6 +87,8 @@ private:
 
 	BbkFdc _fdc;
 	unique_ptr<BbkLpcAudio> _lpcAudio;
+	BbkPrinter _printer;
+	bool _printerNamed = false;
 	shared_ptr<DiskSwapListener> _swapListener;
 
 	//Inno ASIC registers
@@ -753,6 +758,20 @@ protected:
 		}
 
 		_lpcAudio->Reset();
+
+		_printerNamed = false;
+		_printer.Reset();
+	}
+
+	//Printed pages are named after the ROM, but the emulator's rom info is not filled in
+	//yet while the mapper is being set up - resolve it on first use, like the disk image does.
+	BbkPrinter& Printer()
+	{
+		if(!_printerNamed) {
+			_printerNamed = true;
+			_printer.SetRomName(FolderUtilities::GetFilename(_emu->GetRomInfo().RomFile.GetFilePath(), false));
+		}
+		return _printer;
 	}
 
 	void GetMemoryRanges(MemoryRanges& ranges) override
@@ -806,6 +825,8 @@ protected:
 
 			switch(addr) {
 				case 0xFF18: return _lpcAudio->ReadStatus();
+				case 0xFF40: return 0; //Printer data port is write-only
+				case 0xFF48: return _printer.ReadStatus();
 				case 0xFF50: return 0; //PC Card
 				default: return 0;
 			}
@@ -1143,9 +1164,11 @@ protected:
 			case 0xFF10: _lpcAudio->WriteControl(value); break;
 			case 0xFF18: _lpcAudio->WriteData(value); break;
 
-			//PC-Card / parallel port (not emulated)
-			case 0xFF40: case 0xFF48: case 0xFF50:
-				break;
+			//Parallel port printer ($FF48 is the host-to-machine data/handshake half of the
+			//PC-card link, which nothing on these disks uses)
+			case 0xFF40: Printer().WriteData(value); break;
+			case 0xFF48: break;
+			case 0xFF50: Printer().WriteControl(value); break;
 
 			default:
 				break;
@@ -1158,6 +1181,7 @@ protected:
 
 		SV(_fdc);
 		SV(_lpcAudio);
+		SV(_printer);
 
 		SV(_regFF14); SV(_regFF1C); SV(_regFF24); SV(_regFF2C);
 		SV(_mapRam); SV(_ff01D4);
@@ -1254,6 +1278,7 @@ public:
 
 		_lpcAudio->Clock();
 		_fdc.Clock();
+		_printer.Clock();
 
 		//Run the per-scanline Holtek logic once per line, during hblank after the sprite
 		//fetches (PPU cycle >= 321). The reference emulator renders its line N *then*
