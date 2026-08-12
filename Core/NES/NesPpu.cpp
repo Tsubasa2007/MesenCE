@@ -357,11 +357,7 @@ template<class T> uint8_t NesPpu<T>::ReadRam(uint16_t addr)
 	uint8_t returnValue = 0;
 	switch(GetRegisterID(addr)) {
 		case PpuRegisters::Status:
-			//A PPU that latches $2005 and $2006 separately only resets the scroll one here - its
-			//VRAM address latch is driven by $2006 alone (see EnablePpuSharedWriteToggle)
-			if(_sharedWriteToggleEnabled) {
-				_writeToggle = false;
-			}
+			_writeToggle = false;
 			_scrollWriteToggle = false;
 			returnValue =
 				((uint8_t)_statusFlags.SpriteOverflow << 5) |
@@ -533,6 +529,12 @@ template<class T> void NesPpu<T>::WriteRam(uint16_t addr, uint8_t value)
 			break;
 
 		case PpuRegisters::VideoMemoryData:
+			//A PPU that latches $2005 and $2006 separately re-aligns the address latch when a data
+			//transfer starts, so a $2006 pair split by an interrupt costs one access instead of
+			//inverting the latch for good (see EnablePpuSharedWriteToggle)
+			if(!_sharedWriteToggleEnabled) {
+				_writeToggle = false;
+			}
 			// The write to VRAM does not occur until the CPU write ends, and 2 more ppu cycles have passed.
 			_ppuMemoryDataWriteStateMachine = 5;
 			_ppuMemoryDataWriteLatch = value;
