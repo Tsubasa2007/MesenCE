@@ -77,6 +77,7 @@ protected:
 	bool _nmiSuppressRaceEnabled = true; //2C02 suppresses the NMI when $2002 is read one dot before vblank; some famiclone PPUs (BBK) lack this race
 	bool _paletteMirroringEnabled = true; //2C02 mirrors $3F10/$14/$18/$1C onto $3F00/$04/$08/$0C; on some famiclone PPUs all 32 entries are independent
 	bool _attributeLagEnabled = false; //Test switch - color a tile with the previous tile column's attribute
+	bool _vramWriteGlitchEnabled = true; //A $2007 write during rendering smears the bus address' LSB into VRAM (2C02; unconfirmed, and some famiclone PPUs simply drop the write)
 	//160
 	NesSpriteInfo* _lastSprite = nullptr; //used by HD ppu
 	NesConsole* _console = nullptr;

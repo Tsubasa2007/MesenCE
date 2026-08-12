@@ -245,6 +245,11 @@ public:
 	//correct behaviour - kept only as a test switch (see BbkMapper::EnablePpuAttributeLag)
 	virtual bool EnablePpuAttributeLag() { return false; }
 
+	//A $2007 write while rendering is active writes the PPU bus address' own LSB into VRAM at
+	//whatever address the render pipeline has the bus pointing at. Return false for PPUs that
+	//simply drop the write instead (see BbkMapper::EnablePpuVramWriteGlitch).
+	virtual bool EnablePpuVramWriteGlitch() { return true; }
+
 	virtual void GetMemoryRanges(MemoryRanges& ranges) override;
 	virtual uint32_t GetInternalRamSize() { return 0x800; }
 

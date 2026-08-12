@@ -660,6 +660,17 @@ public:
 	//PPUCTRL/OAM refresh (a one-frame flash at screen transitions).
 	bool EnablePpuNmiSuppressRace() override { return false; }
 
+	//A 2C02 turns a $2007 write made while rendering is active into a write of the PPU bus
+	//address' own low byte, at whatever address the render pipeline currently has on the bus.
+	//That behaviour is unconfirmed even for the 2C02 (Mesen derives it from Visual NES), and the
+	//machine's clone PPU does not do it: BBK software drains its VRAM queue one $2006/$2006/$2007
+	//triple at a time and routinely spills the last few entries past the end of vblank onto the
+	//pre-render line, where the smear would drop a byte of bus address into CHR-RAM. Because CHR
+	//here is RAM and nothing rewrites it, a single spilled write permanently defaces a glyph -
+	//e.g. it turns the text-window space tile into a dash. Dropping the write instead leaves the
+	//tile alone, which is what the machine (and the reference emulator) show.
+	bool EnablePpuVramWriteGlitch() override { return false; }
+
 	//Off by default - an experiment, NOT emulated behaviour. It makes a tile take the attribute
 	//fetched for the tile column before it, which cleans up the banded-framebuffer screens on
 	//some titles and corrupts them on others, with no hardware-visible difference between the

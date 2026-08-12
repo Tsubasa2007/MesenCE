@@ -39,6 +39,7 @@ template<class T> NesPpu<T>::NesPpu(NesConsole* console)
 	_nmiSuppressRaceEnabled = _mapper == nullptr || _mapper->EnablePpuNmiSuppressRace();
 	_paletteMirroringEnabled = _mapper == nullptr || _mapper->EnablePpuPaletteMirroring();
 	_attributeLagEnabled = _mapper != nullptr && _mapper->EnablePpuAttributeLag();
+	_vramWriteGlitchEnabled = _mapper == nullptr || _mapper->EnablePpuVramWriteGlitch();
 	_masterClock = 0;
 	_masterClockDivider = 4;
 	_settings = _emu->GetSettings();
@@ -1633,9 +1634,12 @@ template<class T> void NesPpu<T>::UpdateState()
 			} else {
 				if(_scanline >= 240 || !IsRenderingEnabled()) {
 					_mapper->WriteVram(_ppuBusAddress & 0x3FFF, _ppuMemoryDataWriteLatch);
-				} else {
+				} else if(_vramWriteGlitchEnabled) {
 					//During rendering, the value written is ignored, and instead the address' LSB is used (not confirmed, based on Visual NES)
 					_mapper->WriteVram(_ppuBusAddress & 0x3FFF, _ppuBusAddress & 0xFF);
+					_emu->BreakIfDebugging(CpuType::Nes, BreakSource::NesInvalidVramAccess);
+				} else {
+					//Clone PPUs that just drop the write leave VRAM alone (see EnablePpuVramWriteGlitch)
 					_emu->BreakIfDebugging(CpuType::Nes, BreakSource::NesInvalidVramAccess);
 				}
 			}
