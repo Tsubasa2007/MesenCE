@@ -671,6 +671,20 @@ public:
 	//tile alone, which is what the machine (and the reference emulator) show.
 	bool EnablePpuVramWriteGlitch() override { return false; }
 
+	//A 2C02 drives $2005 and $2006 from a single first/second-write toggle that a $2002 read
+	//clears. This machine's clone PPU latches the two registers separately and leaves the $2006
+	//latch alone on a $2002 read - its VRAM address latch flips on $2006 writes and nothing else.
+	//
+	//The machine cannot work any other way: the BIOS owns the NMI vector and its handler reads
+	//$2002 before chaining to the program's own handler, so an NMI can split any unguarded
+	//$2006,$2006 or $2005,$2005 pair. Converted software does exactly that - set an address, then
+	//restore the scroll, with no $2002 guard - hundreds of times per frame while it builds a
+	//screen. On the 2C02 model one such split inverts the toggle permanently: every later address
+	//is latched high/low swapped, so the writes land in CHR space and whole columns of the screen
+	//are never written. Deriving it the other way round, the only latch arrangement under which
+	//the BIOS interrupt is harmless to a $2006 pair is this one.
+	bool EnablePpuSharedWriteToggle() override { return false; }
+
 	//Off by default - an experiment, NOT emulated behaviour. It makes a tile take the attribute
 	//fetched for the tile column before it, which cleans up the banded-framebuffer screens on
 	//some titles and corrupts them on others, with no hardware-visible difference between the

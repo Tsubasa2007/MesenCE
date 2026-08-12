@@ -40,6 +40,7 @@ template<class T> NesPpu<T>::NesPpu(NesConsole* console)
 	_paletteMirroringEnabled = _mapper == nullptr || _mapper->EnablePpuPaletteMirroring();
 	_attributeLagEnabled = _mapper != nullptr && _mapper->EnablePpuAttributeLag();
 	_vramWriteGlitchEnabled = _mapper == nullptr || _mapper->EnablePpuVramWriteGlitch();
+	_sharedWriteToggleEnabled = _mapper == nullptr || _mapper->EnablePpuSharedWriteToggle();
 	_masterClock = 0;
 	_masterClockDivider = 4;
 	_settings = _emu->GetSettings();
@@ -109,6 +110,7 @@ template<class T> void NesPpu<T>::Reset(bool softReset)
 	_spriteRamAddr = 0;
 	_xScroll = 0;
 	_writeToggle = false;
+	_scrollWriteToggle = false;
 
 	_control = {};
 	_mask = {};
@@ -355,7 +357,12 @@ template<class T> uint8_t NesPpu<T>::ReadRam(uint16_t addr)
 	uint8_t returnValue = 0;
 	switch(GetRegisterID(addr)) {
 		case PpuRegisters::Status:
-			_writeToggle = false;
+			//A PPU that latches $2005 and $2006 separately only resets the scroll one here - its
+			//VRAM address latch is driven by $2006 alone (see EnablePpuSharedWriteToggle)
+			if(_sharedWriteToggleEnabled) {
+				_writeToggle = false;
+			}
+			_scrollWriteToggle = false;
 			returnValue =
 				((uint8_t)_statusFlags.SpriteOverflow << 5) |
 				((uint8_t)_statusFlags.Sprite0Hit << 6) |
@@ -490,15 +497,20 @@ template<class T> void NesPpu<T>::WriteRam(uint16_t addr, uint8_t value)
 				return;
 			}
 
-			if(_writeToggle) {
-				_tmpVideoRamAddr = (_tmpVideoRamAddr & ~0x73E0) | ((value & 0xF8) << 2) | ((value & 0x07) << 12);
-			} else {
-				_xScroll = value & 0x07;
+			{
+				//On a 2C02 this is the same toggle $2006 uses; a PPU that latches the two registers
+				//separately gets its own one here (see EnablePpuSharedWriteToggle)
+				bool& toggle = _sharedWriteToggleEnabled ? _writeToggle : _scrollWriteToggle;
+				if(toggle) {
+					_tmpVideoRamAddr = (_tmpVideoRamAddr & ~0x73E0) | ((value & 0xF8) << 2) | ((value & 0x07) << 12);
+				} else {
+					_xScroll = value & 0x07;
 
-				uint16_t newAddr = (_tmpVideoRamAddr & ~0x001F) | (value >> 3);
-				ProcessTmpAddrScrollGlitch(newAddr, _console->GetMemoryManager()->GetOpenBus() >> 3, 0x001F);
+					uint16_t newAddr = (_tmpVideoRamAddr & ~0x001F) | (value >> 3);
+					ProcessTmpAddrScrollGlitch(newAddr, _console->GetMemoryManager()->GetOpenBus() >> 3, 0x001F);
+				}
+				toggle = !toggle;
 			}
-			_writeToggle = !_writeToggle;
 			break;
 
 		case PpuRegisters::VideoMemoryAddr:
@@ -1674,6 +1686,7 @@ template<class T> void NesPpu<T>::Serialize(Serializer& s)
 	SV(_xScroll);
 	SV(_tmpVideoRamAddr);
 	SV(_writeToggle);
+	SV(_scrollWriteToggle);
 	SV(_highBitShift);
 	SV(_lowBitShift);
 	SV(_control.VerticalWrite);

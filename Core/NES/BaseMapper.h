@@ -250,6 +250,14 @@ public:
 	//simply drop the write instead (see BbkMapper::EnablePpuVramWriteGlitch).
 	virtual bool EnablePpuVramWriteGlitch() { return true; }
 
+	//A 2C02 drives $2005 and $2006 from one shared first/second-write toggle, which a $2002 read
+	//clears. Return false for PPUs that latch the two registers separately and leave the $2006
+	//latch alone on a $2002 read, so the VRAM address latch is driven by $2006 writes only
+	//(see BbkMapper::EnablePpuSharedWriteToggle). Software that reads $2002 and then writes one
+	//register twice behaves identically either way; the difference only shows when a $2006 or
+	//$2005 pair is split by something that reads $2002 in between.
+	virtual bool EnablePpuSharedWriteToggle() { return true; }
+
 	virtual void GetMemoryRanges(MemoryRanges& ranges) override;
 	virtual uint32_t GetInternalRamSize() { return 0x800; }
 

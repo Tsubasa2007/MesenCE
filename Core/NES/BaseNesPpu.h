@@ -78,6 +78,8 @@ protected:
 	bool _paletteMirroringEnabled = true; //2C02 mirrors $3F10/$14/$18/$1C onto $3F00/$04/$08/$0C; on some famiclone PPUs all 32 entries are independent
 	bool _attributeLagEnabled = false; //Test switch - color a tile with the previous tile column's attribute
 	bool _vramWriteGlitchEnabled = true; //A $2007 write during rendering smears the bus address' LSB into VRAM (2C02; unconfirmed, and some famiclone PPUs simply drop the write)
+	bool _sharedWriteToggleEnabled = true; //$2005 and $2006 share one first/second-write toggle (2C02); some famiclone PPUs latch them separately (see EnablePpuSharedWriteToggle)
+	bool _scrollWriteToggle = false; //$2005's own toggle, used only when _sharedWriteToggleEnabled is false
 	//160
 	NesSpriteInfo* _lastSprite = nullptr; //used by HD ppu
 	NesConsole* _console = nullptr;
