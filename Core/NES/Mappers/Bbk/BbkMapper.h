@@ -541,16 +541,22 @@ private:
 			return;
 		}
 
-		_irqPending = EvaluateIrq();
+		//The counter itself free-runs while the display is off (below), but the line IRQ must
+		//not be raised then: software blanks the screen for its CHR/nametable uploads and an
+		//IRQ taken in the middle of one pre-empts it at a scanline it never expects.
+		_irqPending = EvaluateIrq() && _renderEnabled;
 		_irqApplied = false;
 
 		if(_lineCount == 255) {
 			if(_queueIndex != _nrOfSR) {
 				ApplySplitEntry();
 			}
-		} else if(_splitMode || (_enableIrq && _renderEnabled)) {
-			//The reference gates the non-split scanline counter on the display being on
-			//(IsDispON); counting through blanked lines fires the IRQ at a shifted scanline.
+		} else if(_splitMode || _enableIrq) {
+			//The classic Holtek counter free-runs over the visible lines whether or not the
+			//display is on (MapperBBK::HSync in the reference has no IsDispON gate - only the
+			//98's MapperBBK2 does). Freezing it while blanked leaves a queue programmed by the
+			//previous program un-consumed, so it is still live when the next one turns rendering
+			//back on and its entries then overwrite that program's own CHR bank registers.
 			_lineCount++;
 		}
 	}
