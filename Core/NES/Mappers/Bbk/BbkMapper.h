@@ -548,15 +548,18 @@ private:
 		_irqApplied = false;
 
 		if(_lineCount == 255) {
-			if(_queueIndex != _nrOfSR) {
+			//Only the split engine repoints the CHR banks. With split mode off the counter is
+			//just a raster IRQ timer, and a queue left behind by an earlier program must not be
+			//walked: its entries would land on top of the bank registers the current program
+			//selected, one entry every time the IRQ counter wraps, until the queue runs out.
+			if(_splitMode && _queueIndex != _nrOfSR) {
 				ApplySplitEntry();
 			}
 		} else if(_splitMode || _enableIrq) {
 			//The classic Holtek counter free-runs over the visible lines whether or not the
 			//display is on (MapperBBK::HSync in the reference has no IsDispON gate - only the
-			//98's MapperBBK2 does). Freezing it while blanked leaves a queue programmed by the
-			//previous program un-consumed, so it is still live when the next one turns rendering
-			//back on and its entries then overwrite that program's own CHR bank registers.
+			//98's MapperBBK2 does): software blanks the screen for its uploads and still expects
+			//the line IRQ it armed to arrive on schedule.
 			_lineCount++;
 		}
 	}
