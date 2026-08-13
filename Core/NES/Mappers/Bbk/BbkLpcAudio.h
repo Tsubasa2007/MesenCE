@@ -88,8 +88,11 @@ private:
 	//The reflection-coefficient tables store negative Q15 values as their raw hex bit
 	//patterns (e.g. 0x8100), so the (int16_t) casts intentionally truncate - MesenCE
 	//builds Core with warnings-as-errors, so C4310 is suppressed just for these tables.
+	//Guarded: the pragma is MSVC-only and clang builds with -Werror,-Wunknown-pragmas.
+#ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable: 4310)
+#endif
 	static constexpr int16_t _k1Tab[64] = {
 		(int16_t)0x8100, (int16_t)0x8240, (int16_t)0x8340, (int16_t)0x8480, (int16_t)0x85C0, (int16_t)0x8700, (int16_t)0x8840, (int16_t)0x89C0,
 		(int16_t)0x8B40, (int16_t)0x8CC0, (int16_t)0x8E40, (int16_t)0x9000, (int16_t)0x91C0, (int16_t)0x9380, (int16_t)0x9580, (int16_t)0x9740,
@@ -152,7 +155,9 @@ private:
 	static constexpr int16_t _k10Tab[8] = {
 		(int16_t)0xC300, (int16_t)0xE600, (int16_t)0xF300, (int16_t)0xFD00, 0x0600, 0x1100, 0x1E00, 0x4300
 	};
+#ifdef _MSC_VER
 #pragma warning(pop)
+#endif
 
 	static constexpr int16_t _excitTab[160] = {
 		0x00A2, 0x00AF, 0x00BA, 0x00C2, 0x00C7, 0x00C9, 0x00CA, 0x00C6,
