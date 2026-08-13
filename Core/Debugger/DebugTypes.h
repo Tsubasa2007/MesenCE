@@ -279,7 +279,8 @@ enum class StackFrameFlags
 {
 	None = 0,
 	Nmi = 1,
-	Irq = 2
+	Irq = 2,
+	Halt = 4
 };
 
 struct StackFrameInfo
@@ -555,4 +556,10 @@ struct DebugControllerState
 	{
 		return A || B || X || Y || L || R || U || D || Up || Down || Left || Right || Select || Start;
 	}
+};
+
+enum class ByteCodeFormat
+{
+	Bytes,
+	HexValue
 };
