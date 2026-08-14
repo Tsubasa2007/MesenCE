@@ -140,6 +140,10 @@ private:
 	uint8_t _mmc3IrqLatch = 0xFF, _mmc3IrqCounter = 0, _mmc3IrqPreset = 0, _mmc3IrqPresetVbl = 0;
 	bool _mmc3IrqEnable = false;
 	int32_t _lastPpuScanline = -2;
+	int32_t _lastBandScanline = -2;
+
+	//Band currently mapped at $1000-$1FFF in the 4-band split; $FF = needs rebanking
+	uint8_t _lastSplitBand = 0xFF;
 
 	//The V9.2 models power on as a VCD player. Ejecting the disc leaves that mode and
 	//soft-resets into the learning machine - the reference emulator does the same thing
@@ -201,14 +205,18 @@ private:
 	//comes from the screen column - which packs four 8x8 monochrome glyphs into the space
 	//of one 2bpp tile, enough character shapes for Chinese text.
 	//
-	//With $5500 bit 7 set the chip instead splits the screen into four bands that each get
-	//their own 4KB CRAM bank. That variant is not emulated: none of the software available
-	//here sets the bit, so there is nothing to verify an implementation against.
+	//With $5500 bit 7 set the chip instead splits the screen into four bands of eight tile
+	//rows, each taking the $1000-$1FFF half of its pattern data from its own 4KB CRAM bank.
+	//The learning-machine side of the V9.2 models draws its desktop this way; without it
+	//every band renders from the same bank and the screen shows the same strip four times.
 	bool IsSplit2Screen() { return (_reg4800 & 0x80) && !(_reg5500 & 0x80); }
+	bool IsSplit4Screen() { return (_reg4800 & 0x80) && (_reg5500 & 0x80); }
 
 	void UpdateSplitMode()
 	{
-		_console->GetPpu()->SetSplitBgFetch(IsSplit2Screen());
+		//Force the next fetch to rebank - the band bank depends on $5501 as well as the mode
+		_lastSplitBand = 0xFF;
+		_console->GetPpu()->SetSplitBgFetch(IsSplit2Screen() ? 1 : 0);
 	}
 
 	//The mouse reports on a different bit of the controller port while the VCD side is
@@ -231,6 +239,14 @@ private:
 	void MapCram1k(uint16_t page, int32_t bank)
 	{
 		SelectChrPage(page, (uint16_t)(bank & 0x1FF));
+	}
+
+	//4K CRAM window (used for the 4-band split's $1000-$1FFF half)
+	void MapCram4k(uint16_t page, int32_t bank)
+	{
+		for(uint16_t i = 0; i < 4; i++) {
+			MapCram1k(page + i, bank * 4 + i);
+		}
 	}
 
 	//===== MMC3-clone mode ($5501 bit 7) =====
@@ -467,6 +483,7 @@ protected:
 	uint16_t RegisterEndAddress() override { return 0x5FFF; }
 	bool AllowRegisterRead() override { return true; }
 	bool EnableCpuClockHook() override { return true; }
+	bool EnableVramAddressHook() override { return true; }
 
 	void ProcessCpuClock() override
 	{
@@ -477,7 +494,14 @@ protected:
 		//fire it during that line's hblank (after the sprite fetches, PPU cycle >= 321) -
 		//the same placement the BBK port uses.
 		int32_t scanline = _console->GetPpu()->GetCurrentScanline();
-		if(scanline != _lastPpuScanline && _console->GetPpu()->GetCurrentCycle() >= 321) {
+		uint32_t cycle = _console->GetPpu()->GetCurrentCycle();
+
+		if(scanline != _lastBandScanline && cycle >= 257) {
+			_lastBandScanline = scanline;
+			LatchSplitBand();
+		}
+
+		if(scanline != _lastPpuScanline && cycle >= 321) {
 			_lastPpuScanline = scanline;
 			if(_mmc3Mode) {
 				Mmc3IrqSync(scanline);
@@ -535,6 +559,7 @@ protected:
 		_lpcNibbleCount = 0;
 		_lpcByte = 0;
 		_lastPpuScanline = -2;
+		_lastBandScanline = -2;
 		Mmc3Reset();
 
 		if(!_swapListener) {
@@ -670,6 +695,7 @@ protected:
 			case 0x5501:
 				_reg5501 = value;
 				MapCram8k(_reg5501 & _cramMask);
+				_lastSplitBand = 0xFF;
 				//Bit 7 hands $8000-$FFFF over to the MMC3 clone
 				_mmc3Mode = (value & 0x80) != 0;
 				if(_mmc3Mode) {
@@ -722,15 +748,63 @@ protected:
 		_workRam[((uint32_t)bank % 0x80) * 0x2000 + (addr & 0x1FFF)] = value;
 	}
 
-	//Background tile fetch for the 2-screen split. Bit 12 comes from the nametable row
-	//rather than $2000 bit 4 (so the screen's halves use different glyph banks), and bit 3
-	//from the parity of the screen column being fetched - the leftmost column is even, and
-	//in Mesen's pipeline that column is fetched at cycle 321 of the previous scanline.
-	uint16_t GetSplitBgTileAddr(uint8_t tileIndex, uint16_t videoRamAddr, uint16_t cycle) override
+	//Both split modes key off the nametable row's top two bits - the reference emulator
+	//latches them once per scanline from the same place in the scroll address.
+	//
+	//2-screen: bit 12 of the tile address comes from that row rather than $2000 bit 4 (so
+	//the screen's halves use different glyph banks) and bit 3 from the parity of the screen
+	//column being fetched - the leftmost column is even, and in Mesen's pipeline that column
+	//is fetched at cycle 321 of the previous scanline.
+	//
+	//4-band: the fetch is an ordinary 2bpp one, but $1000-$1FFF is rebanked per band.
+	void ApplySplitBgFetch(uint8_t tileIndex, uint16_t videoRamAddr, uint16_t cycle, uint16_t& tileAddr) override
 	{
-		uint16_t halfSelect = (videoRamAddr & 0x0200) ? 0x1000 : 0;
+		uint8_t band = (uint8_t)((videoRamAddr >> 8) & 0x03);
+		uint16_t halfSelect = (band & 0x02) ? 0x1000 : 0;
 		uint16_t column = (uint16_t)((((cycle - 1) >> 3) & 1) << 3);
-		return halfSelect | ((uint16_t)tileIndex << 4) | column | (videoRamAddr >> 12);
+		tileAddr = halfSelect | ((uint16_t)tileIndex << 4) | column | (videoRamAddr >> 12);
+	}
+
+	//4-band split: the video chip latches the row once per scanline and banks $1000-$1FFF
+	//from it for that whole line, sprites included. Doing it per background fetch instead
+	//looked equivalent - the row bits do not change within a line - but it is not: a $5501
+	//write part way down the screen then took effect at the next tile rather than the next
+	//line, which made a loaded game's text and score flicker between right and wrong.
+	//
+	//Latched at cycle 257, after the scroll address has stepped to the next row and before
+	//that row's sprite patterns (257-320) and background prefetch (321-336) are fetched.
+	void LatchSplitBand()
+	{
+		if(!IsSplit4Screen() || !_console->GetPpu()->IsDisplayOn()) {
+			return;
+		}
+		uint8_t band = (uint8_t)((_console->GetPpu()->GetVideoRamAddr() >> 8) & 0x03);
+		if(band != _lastSplitBand) {
+			_lastSplitBand = band;
+			MapCram4k(4, (band << 3) | ((_reg5501 & 0x03) << 1) | 1);
+		}
+	}
+
+	//A pattern-table address on the PPU bus while the display is off is software pointing
+	//$2006 at video RAM to upload through $2007. The reference emulator puts the full 8KB
+	//window back for that; otherwise the upload would land in whichever band bank the last
+	//rendered scanline happened to leave mapped.
+	void NotifyVramAddressChange(uint16_t addr) override
+	{
+		if(addr >= 0x2000 || !IsSplit4Screen()) {
+			return;
+		}
+
+		//Tell a CPU-driven access apart from a rendering fetch by *when* it happens, not by
+		//the $2001 mask: software leaves rendering enabled across vblank, so testing the mask
+		//meant this never fired for the usual vblank upload and the data landed in whichever
+		//band bank the last rendered scanline left mapped.
+		int32_t scanline = _console->GetPpu()->GetCurrentScanline();
+		bool rendering = _console->GetPpu()->IsDisplayOn() && scanline >= 0 && scanline < 240;
+		if(!rendering) {
+			MapCram8k(_reg5501 & _cramMask);
+			_lastSplitBand = 0xFF;
+		}
 	}
 
 	//$4700 command port. $00 resets the decoder, $FF opens a data stream, and each $Cx
@@ -922,7 +996,7 @@ public:
 		SV(_mmc3Cmd); SV(_mmc3Prg0); SV(_mmc3Prg1);
 		SV(_mmc3Chr01); SV(_mmc3Chr23); SV(_mmc3Chr4); SV(_mmc3Chr5); SV(_mmc3Chr6); SV(_mmc3Chr7);
 		SV(_mmc3IrqLatch); SV(_mmc3IrqCounter); SV(_mmc3IrqPreset); SV(_mmc3IrqPresetVbl);
-		SV(_mmc3IrqEnable); SV(_lastPpuScanline);
+		SV(_mmc3IrqEnable); SV(_lastPpuScanline); SV(_lastBandScanline); SV(_lastSplitBand);
 		SV(_lpcReceiving); SV(_lpcNibbleCount); SV(_lpcByte);
 		SV(_fdc);
 		_vcd.Serialize(s);
