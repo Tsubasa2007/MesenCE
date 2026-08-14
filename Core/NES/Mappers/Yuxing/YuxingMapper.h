@@ -172,6 +172,22 @@ private:
 		}
 	}
 
+	//$4800 bit 7 turns on the video chip's split-screen mode. With $5500 bit 7 clear it is
+	//the 2-screen split: the screen's top and bottom halves take their glyphs from
+	//different halves of CRAM, the background becomes 1bpp, and the tile address' bit 3
+	//comes from the screen column - which packs four 8x8 monochrome glyphs into the space
+	//of one 2bpp tile, enough character shapes for Chinese text.
+	//
+	//With $5500 bit 7 set the chip instead splits the screen into four bands that each get
+	//their own 4KB CRAM bank. That variant is not emulated: none of the software available
+	//here sets the bit, so there is nothing to verify an implementation against.
+	bool IsSplit2Screen() { return (_reg4800 & 0x80) && !(_reg5500 & 0x80); }
+
+	void UpdateSplitMode()
+	{
+		_console->GetPpu()->SetSplitBgFetch(IsSplit2Screen());
+	}
+
 	void DetectMachineType()
 	{
 		uint32_t crc = _romInfo.Hash.PrgCrc32;
@@ -342,6 +358,7 @@ protected:
 
 		//Reset state: ROM bank 0 over $8000-$FFFF, CRAM bank 0 in the pattern tables, and
 		//the $6000 window where UpdatePrgMapping() would put it with all registers clear
+		UpdateSplitMode();
 		UpdatePrgMapping();
 		MapCram8k(0);
 	}
@@ -424,11 +441,13 @@ protected:
 
 			case 0x4800:
 				_reg4800 = value;
+				UpdateSplitMode();
 				UpdatePrgMapping();
 				break;
 
 			case 0x5500:
 				_reg5500 = value;
+				UpdateSplitMode();
 				UpdatePrgMapping();
 				break;
 
@@ -483,6 +502,17 @@ protected:
 			bank = _pramMask * 2 + (cpuPage - 6);
 		}
 		_workRam[((uint32_t)bank % 0x80) * 0x2000 + (addr & 0x1FFF)] = value;
+	}
+
+	//Background tile fetch for the 2-screen split. Bit 12 comes from the nametable row
+	//rather than $2000 bit 4 (so the screen's halves use different glyph banks), and bit 3
+	//from the parity of the screen column being fetched - the leftmost column is even, and
+	//in Mesen's pipeline that column is fetched at cycle 321 of the previous scanline.
+	uint16_t GetSplitBgTileAddr(uint8_t tileIndex, uint16_t videoRamAddr, uint16_t cycle) override
+	{
+		uint16_t halfSelect = (videoRamAddr & 0x0200) ? 0x1000 : 0;
+		uint16_t column = (uint16_t)((((cycle - 1) >> 3) & 1) << 3);
+		return halfSelect | ((uint16_t)tileIndex << 4) | column | (videoRamAddr >> 12);
 	}
 
 	bool IsVcdActive() { return _vcdMode && _vcd.IsDiscInserted(); }
@@ -634,5 +664,10 @@ public:
 		SV(_keyRowMask); SV(_reg5002); SV(_reg4800); SV(_reg5500); SV(_reg5501);
 		SV(_reg8000); SV(_mmc3Mode); SV(_vcdMode); SV(_vcdKeyboardSelected);
 		_vcd.Serialize(s);
+
+		if(!s.IsSaving()) {
+			//The PPU caches the split-screen flag, so put it back after a state load
+			UpdateSplitMode();
+		}
 	}
 };

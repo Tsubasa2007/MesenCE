@@ -79,6 +79,7 @@ protected:
 	bool _attributeLagEnabled = false; //Test switch - color a tile with the previous tile column's attribute
 	bool _vramWriteGlitchEnabled = true; //A $2007 write during rendering smears the bus address' LSB into VRAM (2C02; unconfirmed, and some famiclone PPUs simply drop the write)
 	bool _sharedWriteToggleEnabled = true; //$2005 and $2006 share one first/second-write toggle (2C02); some famiclone PPUs latch them separately (see EnablePpuSharedWriteToggle)
+	bool _splitBgFetchEnabled = false; //The YuXing video chip's 2-screen split mode replaces the background tile fetch (see YuxingMapper)
 	bool _scrollWriteToggle = false; //$2005's own toggle, used only when _sharedWriteToggleEnabled is false
 	//160
 	NesSpriteInfo* _lastSprite = nullptr; //used by HD ppu
@@ -139,6 +140,11 @@ protected:
 public:
 	virtual void Reset(bool softReset) = 0;
 	virtual void Run(uint64_t runTo) = 0;
+
+	//The YuXing video chip's 2-screen split mode. While it is on, the background tile
+	//address comes from the mapper instead of $2000 bit 4 and both bit planes read the
+	//same byte, and sprites are colored from two entries further into the palette.
+	void SetSplitBgFetch(bool enabled) { _splitBgFetchEnabled = enabled; }
 
 	uint32_t GetFrameCount() { return _frameCount; }
 	uint32_t GetCurrentCycle() { return _cycle; }

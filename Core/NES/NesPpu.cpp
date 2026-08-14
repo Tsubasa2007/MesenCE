@@ -737,7 +737,11 @@ template<class T> void NesPpu<T>::LoadTileInfo()
 
 		case 1: {
 			uint8_t tileIndex = ReadVram(GetNameTableAddr());
-			_tile.TileAddr = (tileIndex << 4) | (_videoRamAddr >> 12) | _control.BackgroundPatternAddr;
+			if(_splitBgFetchEnabled) {
+				_tile.TileAddr = _mapper->GetSplitBgTileAddr(tileIndex, _videoRamAddr, (uint16_t)_cycle);
+			} else {
+				_tile.TileAddr = (tileIndex << 4) | (_videoRamAddr >> 12) | _control.BackgroundPatternAddr;
+			}
 			((T*)this)->StoreTileInformation(); //Used by HD packs
 			break;
 		}
@@ -753,7 +757,9 @@ template<class T> void NesPpu<T>::LoadTileInfo()
 			break;
 
 		case 7:
-			_tile.HighByte = ReadVram(_tile.TileAddr + 8);
+			//The YuXing split mode is 1bpp - the chip feeds the same byte to both planes,
+			//so every set bit comes out as color 3
+			_tile.HighByte = ReadVram(_tile.TileAddr + (_splitBgFetchEnabled ? 0 : 8));
 			break;
 	}
 }
@@ -783,7 +789,8 @@ template<class T> void NesPpu<T>::LoadSprite(uint8_t spriteY, uint8_t tileIndex,
 
 	NesSpriteInfo& info = _spriteTiles[_spriteIndex];
 	info.BackgroundPriority = backgroundPriority;
-	info.PaletteOffset = ((attributes & 0x03) << 2) | 0x10;
+	//The YuXing split mode shifts sprites two entries further into the sprite palette
+	info.PaletteOffset = (((attributes & 0x03) << 2) | 0x10) + (_splitBgFetchEnabled ? 2 : 0);
 	if(extraSprite) {
 		//Use DebugReadVram for extra sprites to prevent side-effects.
 		info.LowByte = _mapper->DebugReadVram(tileAddr);
