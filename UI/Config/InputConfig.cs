@@ -519,6 +519,7 @@ namespace Mesen.Config
 				case ControllerType.BandaiHyperShot:
 				case ControllerType.SuborMouse:
 				case ControllerType.Sb2kMouse:
+				case ControllerType.YuxingMouse:
 				case ControllerType.SnesMouse:
 				case ControllerType.FamicomZapper:
 				case ControllerType.NesZapper:

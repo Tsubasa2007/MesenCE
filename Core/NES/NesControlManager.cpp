@@ -35,6 +35,7 @@
 #include "NES/Input/Sb2kMouse.h"
 #include "NES/Input/Sb2kKeyboard.h"
 #include "NES/Input/YuxingKeyboard.h"
+#include "NES/Input/YuxingMouse.h"
 #include "NES/Input/JissenMahjongController.h"
 #include "NES/Input/BarcodeBattlerReader.h"
 #include "NES/Input/HoriTrack.h"
@@ -105,6 +106,7 @@ shared_ptr<BaseControlDevice> NesControlManager::CreateControllerDevice(Controll
 		case ControllerType::SuborMouse: device.reset(new SuborMouse(_emu, port, keys)); break;
 		case ControllerType::BbkMouse: device.reset(new BbkMouse(_emu, port, keys)); break;
 		case ControllerType::Sb2kMouse: device.reset(new Sb2kMouse(_emu, port, keys)); break;
+		case ControllerType::YuxingMouse: device.reset(new YuxingMouse(_emu, port, keys)); break;
 		case ControllerType::VirtualBoyController: device.reset(new VirtualBoyController(_emu, port, keys)); break;
 
 		//Exp port devices

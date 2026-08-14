@@ -2045,6 +2045,7 @@ E
 			<Value ID="BbkKeyboard">BBK Keyboard</Value>
 			<Value ID="Sb2kKeyboard">SB-2000 Keyboard</Value>
 			<Value ID="YuxingKeyboard">YuXing Keyboard</Value>
+			<Value ID="YuxingMouse">YuXing Mouse</Value>
 			<Value ID="BarcodeBattler">Barcode Battler</Value>
 			<Value ID="HoriTrack">Hori Track</Value>
 			<Value ID="BandaiHyperShot">Bandai Hyper Shot</Value>

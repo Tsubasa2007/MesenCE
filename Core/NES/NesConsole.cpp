@@ -684,6 +684,8 @@ void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem syst
 			//and their mouse is the 3-byte serial device NintendulatorNRS documents
 			log("[Input] YuXing keyboard connected");
 			expDevice = ControllerType::YuxingKeyboard;
+			log("[Input] YuXing mouse connected");
+			port2 = ControllerType::YuxingMouse;
 		} else if(dynamic_cast<BbkMapper*>(mapper)) {
 			//The BBK FD-1 keyboard shares the Subor scan protocol but has a different key
 			//matrix, and its mouse is an EM84502 serial device, not the Subor mouse protocol

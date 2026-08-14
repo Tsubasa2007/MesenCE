@@ -916,6 +916,9 @@
     <ClInclude Include="NES\Input\YuxingKeyboard.h">
       <Filter>NES\Input</Filter>
     </ClInclude>
+    <ClInclude Include="NES\Input\YuxingMouse.h">
+      <Filter>NES\Input</Filter>
+    </ClInclude>
     <ClInclude Include="NES\Input\Sb2kMouse.h">
       <Filter>NES\Input</Filter>
     </ClInclude>

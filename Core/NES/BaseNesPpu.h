@@ -146,6 +146,10 @@ public:
 	//same byte, and sprites are colored from two entries further into the palette.
 	void SetSplitBgFetch(bool enabled) { _splitBgFetchEnabled = enabled; }
 
+	//Whether $2001 has the display turned on. Mappers whose per-scanline logic is gated on
+	//it (see YuxingMapper's MMC3 clone) need this without the cost of a full GetState().
+	bool IsDisplayOn() { return _mask.BackgroundEnabled || _mask.SpritesEnabled; }
+
 	uint32_t GetFrameCount() { return _frameCount; }
 	uint32_t GetCurrentCycle() { return _cycle; }
 	int32_t GetCurrentScanline() { return _scanline; }

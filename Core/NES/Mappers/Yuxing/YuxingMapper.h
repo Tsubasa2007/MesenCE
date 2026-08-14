@@ -5,6 +5,8 @@
 #include "NES/NesConsole.h"
 #include "NES/NesCpu.h"
 #include "NES/Input/YuxingKeyboard.h"
+#include "NES/Input/YuxingMouse.h"
+#include "NES/Mappers/Bbk/BbkFdc.h"
 #include "NES/Mappers/Yuxing/YuxingVcdDrive.h"
 #include "NES/NesControlManager.h"
 #include "Shared/BaseControlManager.h"
@@ -66,6 +68,18 @@ private:
 	shared_ptr<DiscSwapListener> _swapListener;
 	bool _discChecked = false;
 
+	//The 软驱一号 floppy add-on, the same uPD765 controller the BBK and SB-2000 drive
+	//units use, decoded at a third set of addresses. Untested: no YuXing floppy image is
+	//available here, so only the register mapping is ported from the reference emulator.
+	BbkFdc _fdc;
+
+	//Speech synthesizer command state ($4700). The chip is fed the LPC-10 bitstream one
+	//byte at a time, each byte split across two $Cx writes (low nibble first) and
+	//scrambled with $41.
+	bool _lpcReceiving = false;
+	uint8_t _lpcNibbleCount = 0;
+	uint8_t _lpcByte = 0;
+
 	//A power cycle recreates the mapper, so the inserted disc is remembered here and
 	//re-mounted. Scoped to the ROM path so a different machine doesn't inherit it.
 	inline static string _persistedDiscRom;
@@ -115,8 +129,17 @@ private:
 	//Bank latch written through the $8000-$FFFF window while $5500 bit 2 is set
 	uint8_t _reg8000 = 0;
 
-	//True while $5501 bit 7 has handed banking over to the MMC3 clone
+	//MMC3-clone banking mode ($5501 bit 7). Cartridge-style software banks the whole
+	//$8000-$FFFF window and both pattern tables through a private MMC3 register file, out
+	//of PRAM/CRAM rather than ROM, with a per-scanline (not A12-based) counter IRQ.
+	//Ported from the reference emulator's MMC3Base.
 	bool _mmc3Mode = false;
+	uint8_t _mmc3Cmd = 0;
+	uint8_t _mmc3Prg0 = 0, _mmc3Prg1 = 1;
+	uint8_t _mmc3Chr01 = 0, _mmc3Chr23 = 2, _mmc3Chr4 = 4, _mmc3Chr5 = 5, _mmc3Chr6 = 6, _mmc3Chr7 = 7;
+	uint8_t _mmc3IrqLatch = 0xFF, _mmc3IrqCounter = 0, _mmc3IrqPreset = 0, _mmc3IrqPresetVbl = 0;
+	bool _mmc3IrqEnable = false;
+	int32_t _lastPpuScanline = -2;
 
 	//The V9.2 models power on as a VCD player. Ejecting the disc leaves that mode and
 	//soft-resets into the learning machine - the reference emulator does the same thing
@@ -186,6 +209,146 @@ private:
 	void UpdateSplitMode()
 	{
 		_console->GetPpu()->SetSplitBgFetch(IsSplit2Screen());
+	}
+
+	//The mouse reports on a different bit of the controller port while the VCD side is
+	//running, so it has to be told which mode the machine is in.
+	//
+	//This has to be re-applied periodically, not just when the mode changes: the control
+	//manager rebuilds its devices whenever the input configuration is touched, and a fresh
+	//YuxingMouse defaults to the computer-side bit. A mouse left reporting on bit 0 drives
+	//its serial stream straight into the joypad's data line, which the guest reads as
+	//random button presses - menus wander up and down on their own.
+	void UpdateMouseMode()
+	{
+		shared_ptr<YuxingMouse> mouse = _console->GetControlManager()->GetControlDevice<YuxingMouse>();
+		if(mouse) {
+			mouse->SetVcdMode(_vcdMode);
+		}
+	}
+
+	//1K CRAM window
+	void MapCram1k(uint16_t page, int32_t bank)
+	{
+		SelectChrPage(page, (uint16_t)(bank & 0x1FF));
+	}
+
+	//===== MMC3-clone mode ($5501 bit 7) =====
+	uint8_t Mmc3SetPrg(uint8_t value) { return value & 0x3F; }
+
+	//The clone's CHR bank number is not laid out the way the MMC3 expects: the 8KB bank it
+	//selects has its low two bit-pairs swapped before the 1K page index is put back on.
+	uint16_t Mmc3SetChr(uint8_t value)
+	{
+		uint8_t bank = (uint8_t)((value >> 3) & _cramMask);
+		uint8_t fixed = (uint8_t)((bank & 0x10) | ((bank << 2) & 0x0C) | ((bank >> 2) & 0x03));
+		return (uint16_t)((fixed << 3) | (value & 0x07));
+	}
+
+	//Map the four 8K PRG banks + eight 1K CHR banks per the current MMC3 register state.
+	//Unlike the BBK's clone this one owns the whole $8000-$FFFF window.
+	void Mmc3Sync()
+	{
+		bool pwrap = (_mmc3Cmd & 0x40) != 0;
+		bool cwrap = (_mmc3Cmd & 0x80) != 0;
+
+		MapPramPage(pwrap ? 6 : 4, Mmc3SetPrg(_mmc3Prg0));
+		MapPramPage(5, Mmc3SetPrg(_mmc3Prg1));
+		MapPramPage(pwrap ? 4 : 6, Mmc3SetPrg(0xFE));
+		MapPramPage(7, Mmc3SetPrg(0xFF));
+
+		uint16_t c[8] = {
+			Mmc3SetChr((uint8_t)(_mmc3Chr01 + 0)), Mmc3SetChr((uint8_t)(_mmc3Chr01 + 1)),
+			Mmc3SetChr((uint8_t)(_mmc3Chr23 + 0)), Mmc3SetChr((uint8_t)(_mmc3Chr23 + 1)),
+			Mmc3SetChr(_mmc3Chr4), Mmc3SetChr(_mmc3Chr5), Mmc3SetChr(_mmc3Chr6), Mmc3SetChr(_mmc3Chr7)
+		};
+		for(uint16_t i = 0; i < 8; i++) {
+			MapCram1k(cwrap ? (uint16_t)((i + 4) & 7) : i, c[i]);
+		}
+	}
+
+	void Mmc3Write(uint16_t addr, uint8_t value)
+	{
+		switch(addr & 0xE001) {
+			case 0x8000: _mmc3Cmd = value; Mmc3Sync(); break;
+
+			case 0x8001:
+				switch(_mmc3Cmd & 0x07) {
+					case 0: _mmc3Chr01 = value & 0xFE; break;
+					case 1: _mmc3Chr23 = value & 0xFE; break;
+					case 2: _mmc3Chr4 = value; break;
+					case 3: _mmc3Chr5 = value; break;
+					case 4: _mmc3Chr6 = value; break;
+					case 5: _mmc3Chr7 = value; break;
+					case 6: _mmc3Prg0 = value; break;
+					case 7: _mmc3Prg1 = value; break;
+				}
+				Mmc3Sync();
+				break;
+
+			case 0xA000:
+				SetMirroringType((value & 0x01) ? MirroringType::Horizontal : MirroringType::Vertical);
+				break;
+
+			case 0xC000:
+				_mmc3IrqLatch = value;
+				break;
+
+			case 0xC001:
+				_mmc3IrqCounter |= 0x80;
+				if(_console->GetPpu()->GetCurrentScanline() < 240) {
+					_mmc3IrqPreset = 0xFF;
+				} else {
+					_mmc3IrqPresetVbl = 0xFF;
+					_mmc3IrqPreset = 0;
+				}
+				break;
+
+			case 0xE000:
+				_mmc3IrqEnable = false;
+				_console->GetCpu()->ClearIrqSource(IRQSource::External);
+				break;
+
+			case 0xE001:
+				_mmc3IrqEnable = true;
+				break;
+		}
+	}
+
+	//Per-scanline IRQ counter, evaluated once per visible line while the display is on
+	void Mmc3IrqSync(int32_t scanline)
+	{
+		if(scanline < 0 || scanline > 239 || !_console->GetPpu()->IsDisplayOn()) {
+			return;
+		}
+
+		if(_mmc3IrqPresetVbl) { _mmc3IrqCounter = _mmc3IrqLatch; _mmc3IrqPresetVbl = 0; }
+		if(_mmc3IrqPreset) {
+			_mmc3IrqCounter = _mmc3IrqLatch;
+			_mmc3IrqPreset = 0;
+		} else if(_mmc3IrqCounter > 0) {
+			_mmc3IrqCounter--;
+		}
+
+		if(_mmc3IrqCounter == 0) {
+			if(_mmc3IrqEnable) {
+				_console->GetCpu()->SetIrqSource(IRQSource::External);
+			}
+			_mmc3IrqPreset = 0xFF;
+		}
+	}
+
+	void Mmc3Reset()
+	{
+		_mmc3Cmd = 0;
+		_mmc3Prg0 = 0;
+		_mmc3Prg1 = 1;
+		_mmc3Chr01 = 0; _mmc3Chr23 = 2; _mmc3Chr4 = 4; _mmc3Chr5 = 5; _mmc3Chr6 = 6; _mmc3Chr7 = 7;
+		_mmc3IrqEnable = false;
+		_mmc3IrqCounter = 0;
+		_mmc3IrqLatch = 0xFF;
+		_mmc3IrqPreset = 0;
+		_mmc3IrqPresetVbl = 0;
 	}
 
 	void DetectMachineType()
@@ -303,6 +466,29 @@ protected:
 	uint16_t RegisterStartAddress() override { return 0x4018; }
 	uint16_t RegisterEndAddress() override { return 0x5FFF; }
 	bool AllowRegisterRead() override { return true; }
+	bool EnableCpuClockHook() override { return true; }
+
+	void ProcessCpuClock() override
+	{
+		BaseProcessCpuClock();
+		_fdc.Clock();
+
+		//The reference emulator renders scanline N and then runs its per-scanline logic, so
+		//fire it during that line's hblank (after the sprite fetches, PPU cycle >= 321) -
+		//the same placement the BBK port uses.
+		int32_t scanline = _console->GetPpu()->GetCurrentScanline();
+		if(scanline != _lastPpuScanline && _console->GetPpu()->GetCurrentCycle() >= 321) {
+			_lastPpuScanline = scanline;
+			if(_mmc3Mode) {
+				Mmc3IrqSync(scanline);
+			}
+			if(scanline == 0) {
+				//Once a frame, cheap enough, and survives the control manager rebuilding
+				//its devices behind the mapper's back
+				UpdateMouseMode();
+			}
+		}
+	}
 
 	//The VCD drive shares the controller port with the pad and the mouse, so the mapper
 	//has to take over $4016/$4017 and merge the drive's contribution with whatever the
@@ -345,6 +531,11 @@ protected:
 		_mmc3Mode = false;
 		_vcdMode = (_type == YuxingType::V92);
 		_vcdKeyboardSelected = false;
+		_lpcReceiving = false;
+		_lpcNibbleCount = 0;
+		_lpcByte = 0;
+		_lastPpuScanline = -2;
+		Mmc3Reset();
 
 		if(!_swapListener) {
 			_swapListener.reset(new DiscSwapListener(this));
@@ -367,13 +558,20 @@ protected:
 	{
 		if(!_discChecked) {
 			CheckForDisc();
+			UpdateMouseMode();
 		}
 
 		switch(addr) {
 			case 0x4016:
 			case 0x4017: {
-				//While the serial keyboard is selected the pad's own bits are held low
-				uint8_t value = _vcdKeyboardSelected && addr == 0x4016 ? 0 : NesControls()->ReadRam(addr);
+				uint8_t value = NesControls()->ReadRam(addr);
+				if(_vcdKeyboardSelected && addr == 0x4016) {
+					//While the serial keyboard is selected the pad's shift register and the
+					//microphone are held low - but NOT the mouse, which shares this port and
+					//is clocked by the very $FF/$FE writes that select the keyboard. Masking
+					//the whole port here instead is what made the mouse look dead.
+					value &= (uint8_t)~0x07;
+				}
 				uint8_t vcdValue = 0;
 				if(IsVcdActive()) {
 					_vcd.Read(addr, vcdValue);
@@ -391,6 +589,15 @@ protected:
 				}
 				return ReadKeyMatrix();
 			}
+
+			//$4304 = main status register, $4305 = data port
+			case 0x4304:
+			case 0x4305:
+				_fdc.MarkActivity();
+				return _fdc.Read(addr & 0x07);
+
+			//Speech status: bit 7 set while the synthesizer is still busy
+			case 0x4701: return 0x00;
 
 			case 0x5002: return _reg5002;
 		}
@@ -439,6 +646,15 @@ protected:
 				_keyRowMask = (_keyRowMask & 0x00FF) | ((value & 0x3F) << 8);
 				break;
 
+			//Floppy controller: data-rate select, digital output register, data port
+			case 0x4200: _fdc.MarkActivity(); _fdc.Write(7, value); break;
+			case 0x4201: _fdc.MarkActivity(); _fdc.Write(2, value); break;
+			case 0x4205: _fdc.MarkActivity(); _fdc.Write(5, value); break;
+
+			case 0x4700:
+				WriteSpeech(value);
+				break;
+
 			case 0x4800:
 				_reg4800 = value;
 				UpdateSplitMode();
@@ -456,7 +672,9 @@ protected:
 				MapCram8k(_reg5501 & _cramMask);
 				//Bit 7 hands $8000-$FFFF over to the MMC3 clone
 				_mmc3Mode = (value & 0x80) != 0;
-				if(!_mmc3Mode) {
+				if(_mmc3Mode) {
+					Mmc3Sync();
+				} else {
 					UpdatePrgMapping();
 				}
 				break;
@@ -469,7 +687,7 @@ protected:
 	void WriteBankLatch(uint16_t addr, uint8_t value)
 	{
 		if(_mmc3Mode) {
-			//MMC3 clone banking - not yet implemented
+			Mmc3Write(addr, value);
 			return;
 		}
 
@@ -513,6 +731,33 @@ protected:
 		uint16_t halfSelect = (videoRamAddr & 0x0200) ? 0x1000 : 0;
 		uint16_t column = (uint16_t)((((cycle - 1) >> 3) & 1) << 3);
 		return halfSelect | ((uint16_t)tileIndex << 4) | column | (videoRamAddr >> 12);
+	}
+
+	//$4700 command port. $00 resets the decoder, $FF opens a data stream, and each $Cx
+	//afterwards carries one nibble of a stream byte - low nibble first, the assembled byte
+	//scrambled with $41.
+	//
+	//The bitstream is reassembled but not synthesized: this machine's LPC-10 uses the "PE"
+	//coefficient set, and BbkLpcAudio only implements the "D6" set the BBK and SB-2000
+	//need. Reporting the chip permanently idle keeps software that polls $4701 running.
+	void WriteSpeech(uint8_t value)
+	{
+		if(value == 0x00) {
+			_lpcReceiving = false;
+			_lpcNibbleCount = 0;
+			_lpcByte = 0;
+		} else if(value == 0xFF) {
+			_lpcReceiving = true;
+		} else if((value & 0xF0) == 0xC0 && _lpcReceiving) {
+			if(_lpcNibbleCount == 0) {
+				_lpcByte = value & 0x0F;
+				_lpcNibbleCount = 1;
+			} else {
+				_lpcByte |= (uint8_t)(value << 4);
+				_lpcNibbleCount = 0;
+				//Assembled stream byte would be (_lpcByte ^ 0x41) - see above
+			}
+		}
 	}
 
 	bool IsVcdActive() { return _vcdMode && _vcd.IsDiscInserted(); }
@@ -577,6 +822,16 @@ protected:
 		}
 
 		for(string& folder : folders) {
+			//A floppy for the 软驱一号 drive, if this machine has one. Discs are swapped
+			//through the media shortcuts; a floppy is only ever the paired image.
+			for(string ext : { ".img", ".IMG", ".ima", ".IMA" }) {
+				string diskPath = FolderUtilities::CombinePath(folder, baseName + ext);
+				if(_fdc.LoadDiskImage(diskPath)) {
+					MessageManager::Log("[YuXing] Mounted disk image: " + diskPath);
+					break;
+				}
+			}
+
 			for(string ext : { ".bin", ".BIN" }) {
 				string discPath = FolderUtilities::CombinePath(folder, baseName + ext);
 				if(_vcd.LoadDisc(discPath)) {
@@ -623,6 +878,7 @@ public:
 			//across that, so the mode stays off.
 			_vcdMode = false;
 			_reg5002 = 2;
+			UpdateMouseMode();
 			MapRom32k(0);
 			_emu->GetSystemActionManager()->Reset();
 			MessageManager::DisplayMessage("YuXing", "Switched to computer mode");
@@ -663,11 +919,18 @@ public:
 		BaseMapper::Serialize(s);
 		SV(_keyRowMask); SV(_reg5002); SV(_reg4800); SV(_reg5500); SV(_reg5501);
 		SV(_reg8000); SV(_mmc3Mode); SV(_vcdMode); SV(_vcdKeyboardSelected);
+		SV(_mmc3Cmd); SV(_mmc3Prg0); SV(_mmc3Prg1);
+		SV(_mmc3Chr01); SV(_mmc3Chr23); SV(_mmc3Chr4); SV(_mmc3Chr5); SV(_mmc3Chr6); SV(_mmc3Chr7);
+		SV(_mmc3IrqLatch); SV(_mmc3IrqCounter); SV(_mmc3IrqPreset); SV(_mmc3IrqPresetVbl);
+		SV(_mmc3IrqEnable); SV(_lastPpuScanline);
+		SV(_lpcReceiving); SV(_lpcNibbleCount); SV(_lpcByte);
+		SV(_fdc);
 		_vcd.Serialize(s);
 
 		if(!s.IsSaving()) {
-			//The PPU caches the split-screen flag, so put it back after a state load
+			//The PPU and the mouse both cache mapper state - put it back after a state load
 			UpdateSplitMode();
+			UpdateMouseMode();
 		}
 	}
 };
