@@ -193,6 +193,7 @@
     <ClInclude Include="NES\Mappers\Sb2k\Sb2kMapper.h" />
     <ClInclude Include="NES\Mappers\Sb2k\Sb2kPpu.h" />
     <ClInclude Include="NES\Mappers\Yuxing\YuxingMapper.h" />
+    <ClInclude Include="NES\Mappers\Yuxing\YuxingVcdDrive.h" />
     <ClInclude Include="NES\Mappers\Mmc3Variants\McAcc.h" />
     <ClInclude Include="NES\Mappers\Unlicensed\A65AS.h" />
     <ClInclude Include="NES\Mappers\Unlicensed\Ac08.h" />

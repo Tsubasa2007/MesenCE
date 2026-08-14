@@ -2088,6 +2088,9 @@
     <ClInclude Include="NES\Mappers\Yuxing\YuxingMapper.h">
       <Filter>NES\Mappers\Yuxing</Filter>
     </ClInclude>
+    <ClInclude Include="NES\Mappers\Yuxing\YuxingVcdDrive.h">
+      <Filter>NES\Mappers\Yuxing</Filter>
+    </ClInclude>
     <ClInclude Include="NES\Mappers\Bbk\BbkMapper.h">
       <Filter>NES\Mappers\Bbk</Filter>
     </ClInclude>

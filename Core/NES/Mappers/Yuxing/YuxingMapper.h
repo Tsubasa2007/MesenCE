@@ -5,8 +5,14 @@
 #include "NES/NesConsole.h"
 #include "NES/NesCpu.h"
 #include "NES/Input/YuxingKeyboard.h"
+#include "NES/Mappers/Yuxing/YuxingVcdDrive.h"
+#include "NES/NesControlManager.h"
 #include "Shared/BaseControlManager.h"
 #include "Shared/MessageManager.h"
+#include "Shared/NotificationManager.h"
+#include "Shared/SystemActionManager.h"
+#include "Shared/Interfaces/INotificationListener.h"
+#include "Utilities/FolderUtilities.h"
 #include "Utilities/Serializer.h"
 
 //YuXing (裕兴) learning machine / VCD player - iNES mapper 169.
@@ -33,6 +39,38 @@
 class YuxingMapper : public BaseMapper
 {
 private:
+	//Handles the FDS disk shortcut keys, reused here to swap VCD discs
+	class DiscSwapListener final : public INotificationListener
+	{
+	private:
+		YuxingMapper* _mapper;
+
+	public:
+		DiscSwapListener(YuxingMapper* mapper) : _mapper(mapper) {}
+
+		void ProcessNotification(ConsoleNotificationType type, void* parameter) override
+		{
+			if(type == ConsoleNotificationType::ExecuteShortcut) {
+				ExecuteShortcutParams* params = (ExecuteShortcutParams*)parameter;
+				switch(params->Shortcut) {
+					case EmulatorShortcut::FdsEjectDisk: _mapper->EjectDisc(); break;
+					case EmulatorShortcut::FdsInsertNextDisk: _mapper->InsertNextDisc(); break;
+					case EmulatorShortcut::FdsInsertDiskNumber: _mapper->InsertDisc(params->Param); break;
+					default: break;
+				}
+			}
+		}
+	};
+
+	YuxingVcdDrive _vcd;
+	shared_ptr<DiscSwapListener> _swapListener;
+	bool _discChecked = false;
+
+	//A power cycle recreates the mapper, so the inserted disc is remembered here and
+	//re-mounted. Scoped to the ROM path so a different machine doesn't inherit it.
+	inline static string _persistedDiscRom;
+	inline static string _persistedDiscPath;
+
 	//Machine revisions, in the reference emulator's numbering (Mapper169::YX_type)
 	enum class YuxingType : uint8_t
 	{
@@ -79,6 +117,15 @@ private:
 
 	//True while $5501 bit 7 has handed banking over to the MMC3 clone
 	bool _mmc3Mode = false;
+
+	//The V9.2 models power on as a VCD player. Ejecting the disc leaves that mode and
+	//soft-resets into the learning machine - the reference emulator does the same thing
+	//from a host key combination, since the machine's own "computer" key is not on the
+	//scanned matrix.
+	bool _vcdMode = false;
+	//Set while the BIOS has the serial link switched to the keyboard rather than the
+	//drive; the controller port has to stay quiet for the duration
+	bool _vcdKeyboardSelected = false;
 
 	//The reference emulator zero-fills PRAM/CRAM at power-on
 	uint8_t* Pram() { return _workRam; }
@@ -241,6 +288,18 @@ protected:
 	uint16_t RegisterEndAddress() override { return 0x5FFF; }
 	bool AllowRegisterRead() override { return true; }
 
+	//The VCD drive shares the controller port with the pad and the mouse, so the mapper
+	//has to take over $4016/$4017 and merge the drive's contribution with whatever the
+	//control manager returns - the reference emulator ORs the two the same way. Only the
+	//$4016 write is claimed; $4017 writes belong to the APU frame counter.
+	void GetMemoryRanges(MemoryRanges& ranges) override
+	{
+		BaseMapper::GetMemoryRanges(ranges);
+		ranges.AddHandler(MemoryOperation::Read, 0x4016, 0x4017);
+		ranges.AddHandler(MemoryOperation::Write, 0x4016);
+		ranges.SetAllowOverride();
+	}
+
 	void InitMapper(RomData& romData) override
 	{
 		//Dendy-timed famiclone hardware
@@ -257,12 +316,25 @@ protected:
 		//the mapper even when the window is mapped to readable DRAM
 		AddRegisterRange(0x8000, 0xFFFF, MemoryOperation::Write);
 
+		//GetMemoryRanges routes the controller ports here; these make the mapper actually
+		//decode them rather than fall through to the PRG mapping
+		AddRegisterRange(0x4016, 0x4017, MemoryOperation::Read);
+		AddRegisterRange(0x4016, 0x4016, MemoryOperation::Write);
+
 		_keyRowMask = 0;
 		_reg4800 = 0;
 		_reg5500 = 0;
 		_reg5501 = 0;
 		_reg8000 = 0;
 		_mmc3Mode = false;
+		_vcdMode = (_type == YuxingType::V92);
+		_vcdKeyboardSelected = false;
+
+		if(!_swapListener) {
+			_swapListener.reset(new DiscSwapListener(this));
+			_emu->GetNotificationManager()->RegisterNotificationListener(_swapListener);
+		}
+		_discChecked = false;
 
 		//The reference emulator zero-fills all three RAMs at power-on
 		memset(_workRam, 0, _workRamSize);
@@ -276,8 +348,32 @@ protected:
 
 	uint8_t ReadRegister(uint16_t addr) override
 	{
+		if(!_discChecked) {
+			CheckForDisc();
+		}
+
 		switch(addr) {
-			case 0x4207: return ReadKeyMatrix();
+			case 0x4016:
+			case 0x4017: {
+				//While the serial keyboard is selected the pad's own bits are held low
+				uint8_t value = _vcdKeyboardSelected && addr == 0x4016 ? 0 : NesControls()->ReadRam(addr);
+				uint8_t vcdValue = 0;
+				if(IsVcdActive()) {
+					_vcd.Read(addr, vcdValue);
+				}
+				return value | vcdValue;
+			}
+
+			case 0x4207: {
+				//A pending sector byte takes priority over the key matrix
+				if(IsVcdActive() && !_vcd.IsReadComplete()) {
+					uint8_t value = 0;
+					if(_vcd.Read(addr, value)) {
+						return value;
+					}
+				}
+				return ReadKeyMatrix();
+			}
 
 			case 0x5002: return _reg5002;
 		}
@@ -295,11 +391,24 @@ protected:
 		}
 
 		switch(addr) {
+			case 0x4016:
+				//$FF/$FE switches the serial link to the keyboard
+				if(IsVcdActive()) {
+					_vcdKeyboardSelected = (value == 0xFF || value == 0xFE);
+					LatchKeyForVcd();
+					_vcd.Write(addr, value);
+				}
+				NesControls()->WriteRam(addr, value);
+				break;
+
 			//Key matrix row select, low 8 rows. $4302/$5004 are the same register on the
 			//later models (the decode ignores those address bits).
 			case 0x4202:
 			case 0x4302:
 			case 0x5004:
+				if(IsVcdActive() && _vcd.Write(addr, value)) {
+					break;
+				}
 				_keyRowMask = (_keyRowMask & 0xFF00) | value;
 				break;
 
@@ -307,6 +416,9 @@ protected:
 			case 0x4203:
 			case 0x4303:
 			case 0x5005:
+				if(IsVcdActive() && _vcd.Write(addr, value)) {
+					break;
+				}
 				_keyRowMask = (_keyRowMask & 0x00FF) | ((value & 0x3F) << 8);
 				break;
 
@@ -373,6 +485,26 @@ protected:
 		_workRam[((uint32_t)bank % 0x80) * 0x2000 + (addr & 0x1FFF)] = value;
 	}
 
+	bool IsVcdActive() { return _vcdMode && _vcd.IsDiscInserted(); }
+
+	//$4016/$4017 are handled by the mapper here, so the controller port's own value has to
+	//be fetched from the control manager and merged in by hand
+	NesControlManager* NesControls() { return (NesControlManager*)_console->GetControlManager(); }
+
+	//The serial keyboard reports one key's matrix position, sampled at the moment the
+	//BIOS selects it
+	void LatchKeyForVcd()
+	{
+		shared_ptr<YuxingKeyboard> keyboard = _console->GetControlManager()->GetControlDevice<YuxingKeyboard>();
+		if(keyboard) {
+			_vcd.PendingKeyCell = keyboard->GetLastPressedCell();
+			_vcd.PendingModifiers = keyboard->GetModifiers();
+		} else {
+			_vcd.PendingKeyCell = -1;
+			_vcd.PendingModifiers = 0;
+		}
+	}
+
 	uint8_t ReadKeyMatrix()
 	{
 		shared_ptr<YuxingKeyboard> keyboard = _console->GetControlManager()->GetControlDevice<YuxingKeyboard>();
@@ -383,11 +515,124 @@ protected:
 		return keyboard->GetColumns(_keyRowMask, _type == YuxingType::V8xD);
 	}
 
+	string GetConfiguredDiscFolder()
+	{
+		const char* folder = _console->GetNesConfig().BbkDiskFolder;
+		return folder[0] ? string(folder) : string();
+	}
+
+	//Mounts the disc the user last chose for this ROM, or "<rom name>.bin" next to it.
+	//Deferred to the first bus access so the emulator's rom info is fully set up.
+	void CheckForDisc()
+	{
+		if(_discChecked) {
+			return;
+		}
+		_discChecked = true;
+
+		string romPath = _emu->GetRomInfo().RomFile.GetFilePath();
+
+		if(_persistedDiscRom == romPath && !_persistedDiscPath.empty()) {
+			if(_vcd.LoadDisc(_persistedDiscPath)) {
+				MessageManager::Log("[YuXing] Re-inserted disc: " + _persistedDiscPath);
+				return;
+			}
+		}
+
+		string baseName = FolderUtilities::GetFilename(romPath, false);
+		vector<string> folders = { FolderUtilities::GetFolderName(romPath) };
+		string configured = GetConfiguredDiscFolder();
+		if(!configured.empty() && configured != folders[0]) {
+			folders.push_back(configured);
+		}
+
+		for(string& folder : folders) {
+			for(string ext : { ".bin", ".BIN" }) {
+				string discPath = FolderUtilities::CombinePath(folder, baseName + ext);
+				if(_vcd.LoadDisc(discPath)) {
+					MessageManager::Log("[YuXing] Inserted disc: " + discPath);
+					return;
+				}
+			}
+		}
+	}
+
 public:
+	//Disc swapping - driven by the FDS disk shortcut keys via DiscSwapListener
+	vector<string> GetDiskFileList()
+	{
+		string folder = GetConfiguredDiscFolder();
+		if(folder.empty()) {
+			folder = FolderUtilities::GetFolderName(_emu->GetRomInfo().RomFile.GetFilePath());
+		}
+		vector<string> files = FolderUtilities::GetFilesInFolder(folder, { ".bin" }, false);
+		std::sort(files.begin(), files.end());
+		return files;
+	}
+
+	uint32_t GetDiskCount() { return (uint32_t)GetDiskFileList().size(); }
+
+	string GetCurrentDiskFilename() { return _vcd.GetDiscFilename(); }
+
+	//Ejecting also leaves VCD mode, which is how the machine gets to its learning-machine
+	//side: the BIOS's own "computer key" prompt is answered over a link the emulated
+	//keyboard cannot reach, so the reference emulator escapes with a host key combination.
+	void EjectDisc()
+	{
+		auto lock = _emu->AcquireLock();
+		if(_vcd.IsDiscInserted()) {
+			MessageManager::DisplayMessage("YuXing", "Disc ejected: " + FolderUtilities::GetFilename(_vcd.GetDiscFilename(), true));
+			_vcd.EjectDisc();
+		}
+		_persistedDiscRom.clear();
+		_persistedDiscPath.clear();
+
+		if(_vcdMode) {
+			//$5002 bit 1 tells the BIOS to come up as a learning machine instead. A soft
+			//reset re-runs its boot code with the new value; the mapper keeps its state
+			//across that, so the mode stays off.
+			_vcdMode = false;
+			_reg5002 = 2;
+			MapRom32k(0);
+			_emu->GetSystemActionManager()->Reset();
+			MessageManager::DisplayMessage("YuXing", "Switched to computer mode");
+		}
+	}
+
+	void InsertDisc(uint32_t index)
+	{
+		auto lock = _emu->AcquireLock();
+		vector<string> discs = GetDiskFileList();
+		if(index < discs.size() && _vcd.LoadDisc(discs[index])) {
+			_discChecked = true;
+			_persistedDiscRom = _emu->GetRomInfo().RomFile.GetFilePath();
+			_persistedDiscPath = discs[index];
+			MessageManager::DisplayMessage("YuXing", "Disc inserted: " + FolderUtilities::GetFilename(discs[index], true));
+		}
+	}
+
+	void InsertNextDisc()
+	{
+		vector<string> discs = GetDiskFileList();
+		if(discs.empty()) {
+			return;
+		}
+
+		int32_t current = -1;
+		for(size_t i = 0; i < discs.size(); i++) {
+			if(discs[i] == _vcd.GetDiscFilename()) {
+				current = (int32_t)i;
+				break;
+			}
+		}
+		InsertDisc((current + 1) % discs.size());
+	}
+
 	void Serialize(Serializer& s) override
 	{
 		BaseMapper::Serialize(s);
 		SV(_keyRowMask); SV(_reg5002); SV(_reg4800); SV(_reg5500); SV(_reg5501);
-		SV(_reg8000); SV(_mmc3Mode);
+		SV(_reg8000); SV(_mmc3Mode); SV(_vcdMode); SV(_vcdKeyboardSelected);
+		_vcd.Serialize(s);
 	}
 };

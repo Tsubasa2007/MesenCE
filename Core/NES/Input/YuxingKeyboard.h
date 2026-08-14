@@ -98,6 +98,34 @@ public:
 	uint8_t ReadRam(uint16_t addr) override { return 0; }
 	void WriteRam(uint16_t addr, uint8_t value) override {}
 
+	//The VCD models scan the same matrix over a serial link instead of through $4207, and
+	//report a single key as its matrix position. The reference emulator sweeps the whole
+	//matrix without stopping, so the last pressed cell in row-major order is the one sent.
+	//Returns -1 when nothing is held.
+	int32_t GetLastPressedCell()
+	{
+		int32_t result = -1;
+		for(uint8_t row = 0; row < RowCount; row++) {
+			for(uint8_t col = 0; col < 8; col++) {
+				Buttons key = _keyboardMatrix[row][col];
+				if(key != Buttons::None && IsPressed((uint8_t)key)) {
+					result = row * 8 + col;
+				}
+			}
+		}
+		return result;
+	}
+
+	//Ctrl/Shift/Alt as the serial protocol's modifier bits (6/5/7)
+	uint8_t GetModifiers()
+	{
+		uint8_t result = 0;
+		if(IsPressed((uint8_t)Buttons::Ctrl)) { result |= 1 << 6; }
+		if(IsPressed((uint8_t)Buttons::Shift)) { result |= 1 << 5; }
+		if(IsPressed((uint8_t)Buttons::Alt)) { result |= 1 << 7; }
+		return result;
+	}
+
 	//Returns the eight column lines for every row the mask selects, ORed together - the
 	//matrix has no diodes, so selecting several rows at once merges their key states.
 	//The V8.2-D / V8.3-D machines predate three of the keys and never scan those cells.
