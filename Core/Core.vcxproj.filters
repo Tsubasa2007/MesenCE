@@ -2082,6 +2082,9 @@
     <ClInclude Include="NES\Mappers\Bbk\BbkLpcAudio.h">
       <Filter>NES\Mappers\Bbk</Filter>
     </ClInclude>
+    <ClInclude Include="NES\Mappers\Bbk\PcFdc.h">
+      <Filter>NES\Mappers\Bbk</Filter>
+    </ClInclude>
     <ClInclude Include="NES\Mappers\Sb2k\Sb2kMapper.h">
       <Filter>NES\Mappers\Sb2k</Filter>
     </ClInclude>

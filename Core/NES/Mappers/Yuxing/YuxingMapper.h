@@ -6,7 +6,7 @@
 #include "NES/NesCpu.h"
 #include "NES/Input/YuxingKeyboard.h"
 #include "NES/Input/YuxingMouse.h"
-#include "NES/Mappers/Bbk/BbkFdc.h"
+#include "NES/Mappers/Bbk/PcFdc.h"
 #include "NES/Mappers/Yuxing/YuxingVcdDrive.h"
 #include "NES/NesControlManager.h"
 #include "Shared/BaseControlManager.h"
@@ -68,10 +68,11 @@ private:
 	shared_ptr<DiscSwapListener> _swapListener;
 	bool _discChecked = false;
 
-	//The 软驱一号 floppy add-on, the same uPD765 controller the BBK and SB-2000 drive
-	//units use, decoded at a third set of addresses. Untested: no YuXing floppy image is
-	//available here, so only the register mapping is ported from the reference emulator.
-	BbkFdc _fdc;
+	//The 软驱一号 floppy add-on. This machine drives the PC-style controller model rather
+	//than the simplified one the BBK uses - see PcFdc - so the register file is exposed
+	//directly: $4200 = data rate, $4201 = digital output, $4205 = data, $4304 = main
+	//status, $4305 = data.
+	PcFdc _fdc;
 
 	//Speech synthesizer command state ($4700). The chip is fed the LPC-10 bitstream one
 	//byte at a time, each byte split across two $Cx writes (low nibble first) and
@@ -619,7 +620,7 @@ protected:
 			case 0x4304:
 			case 0x4305:
 				_fdc.MarkActivity();
-				return _fdc.Read(addr & 0x07);
+				return _fdc.Read((uint8_t)(addr & 0x07));
 
 			//Speech status: bit 7 set while the synthesizer is still busy
 			case 0x4701: return 0x00;
@@ -675,6 +676,8 @@ protected:
 			case 0x4200: _fdc.MarkActivity(); _fdc.Write(7, value); break;
 			case 0x4201: _fdc.MarkActivity(); _fdc.Write(2, value); break;
 			case 0x4205: _fdc.MarkActivity(); _fdc.Write(5, value); break;
+			//$4201 read is the DRQ line and $4200 read is disk-change; the reference
+			//emulator's YuXing path never decodes them, so neither does this one.
 
 			case 0x4700:
 				WriteSpeech(value);
