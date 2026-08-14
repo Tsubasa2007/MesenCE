@@ -251,7 +251,9 @@ enum class ControllerType
 	BbkMouse,
 	BbkKeyboard,
 	Sb2kMouse,
-	Sb2kKeyboard
+	Sb2kKeyboard,
+	YuxingMouse,
+	YuxingKeyboard
 };
 
 struct KeyMapping

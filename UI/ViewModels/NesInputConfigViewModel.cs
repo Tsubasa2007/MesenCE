@@ -104,6 +104,7 @@ namespace Mesen.ViewModels
 			ControllerType.SuborKeyboard,
 			ControllerType.BbkKeyboard,
 			ControllerType.Sb2kKeyboard,
+			ControllerType.YuxingKeyboard,
 			ControllerType.BarcodeBattler,
 			ControllerType.HoriTrack,
 			ControllerType.BandaiHyperShot,

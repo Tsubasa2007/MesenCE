@@ -2044,6 +2044,7 @@ E
 			<Value ID="SuborKeyboard">Subor Keyboard</Value>
 			<Value ID="BbkKeyboard">BBK Keyboard</Value>
 			<Value ID="Sb2kKeyboard">SB-2000 Keyboard</Value>
+			<Value ID="YuxingKeyboard">YuXing Keyboard</Value>
 			<Value ID="BarcodeBattler">Barcode Battler</Value>
 			<Value ID="HoriTrack">Hori Track</Value>
 			<Value ID="BandaiHyperShot">Bandai Hyper Shot</Value>
@@ -2376,6 +2377,118 @@ E
 			<Value ID="Unknown1">Unknown 1</Value>
 			<Value ID="Unknown2">Unknown 2</Value>
 			<Value ID="Unknown3">Unknown 3</Value>
+		</Enum>
+		<Enum ID="NesYuxingKeyboardButtons">
+			<Value ID="A">Key - A</Value>
+			<Value ID="B">Key - B</Value>
+			<Value ID="C">Key - C</Value>
+			<Value ID="D">Key - D</Value>
+			<Value ID="E">Key - E</Value>
+			<Value ID="F">Key - F</Value>
+			<Value ID="G">Key - G</Value>
+			<Value ID="H">Key - H</Value>
+			<Value ID="I">Key - I</Value>
+			<Value ID="J">Key - J</Value>
+			<Value ID="K">Key - K</Value>
+			<Value ID="L">Key - L</Value>
+			<Value ID="M">Key - M</Value>
+			<Value ID="N">Key - N</Value>
+			<Value ID="O">Key - O</Value>
+			<Value ID="P">Key - P</Value>
+			<Value ID="Q">Key - Q</Value>
+			<Value ID="R">Key - R</Value>
+			<Value ID="S">Key - S</Value>
+			<Value ID="T">Key - T</Value>
+			<Value ID="U">Key - U</Value>
+			<Value ID="V">Key - V</Value>
+			<Value ID="W">Key - W</Value>
+			<Value ID="X">Key - X</Value>
+			<Value ID="Y">Key - Y</Value>
+			<Value ID="Z">Key - Z</Value>
+			<Value ID="Num0">Key - 0</Value>
+			<Value ID="Num1">Key - 1</Value>
+			<Value ID="Num2">Key - 2</Value>
+			<Value ID="Num3">Key - 3</Value>
+			<Value ID="Num4">Key - 4</Value>
+			<Value ID="Num5">Key - 5</Value>
+			<Value ID="Num6">Key - 6</Value>
+			<Value ID="Num7">Key - 7</Value>
+			<Value ID="Num8">Key - 8</Value>
+			<Value ID="Num9">Key - 9</Value>
+			<Value ID="F1">F1</Value>
+			<Value ID="F2">F2</Value>
+			<Value ID="F3">F3</Value>
+			<Value ID="F4">F4</Value>
+			<Value ID="F5">F5</Value>
+			<Value ID="F6">F6</Value>
+			<Value ID="F7">F7</Value>
+			<Value ID="F8">F8</Value>
+			<Value ID="F9">F9</Value>
+			<Value ID="F10">F10</Value>
+			<Value ID="F11">F11</Value>
+			<Value ID="F12">F12</Value>
+			<Value ID="Numpad0">Numpad - 0</Value>
+			<Value ID="Numpad1">Numpad - 1</Value>
+			<Value ID="Numpad2">Numpad - 2</Value>
+			<Value ID="Numpad3">Numpad - 3</Value>
+			<Value ID="Numpad4">Numpad - 4</Value>
+			<Value ID="Numpad5">Numpad - 5</Value>
+			<Value ID="Numpad6">Numpad - 6</Value>
+			<Value ID="Numpad7">Numpad - 7</Value>
+			<Value ID="Numpad8">Numpad - 8</Value>
+			<Value ID="Numpad9">Numpad - 9</Value>
+			<Value ID="NumpadEnter">Numpad - Enter</Value>
+			<Value ID="NumpadDot">Numpad - Dot</Value>
+			<Value ID="NumpadPlus">Numpad - Plus</Value>
+			<Value ID="NumpadMultiply">Numpad - Multiply</Value>
+			<Value ID="NumpadDivide">Numpad - Divide</Value>
+			<Value ID="NumpadMinus">Numpad - Minus</Value>
+			<Value ID="NumLock">Num Lock</Value>
+
+			<Value ID="Comma">Comma (,)</Value>
+			<Value ID="Dot">Dot (.)</Value>
+			<Value ID="SemiColon">Semicolon (;)</Value>
+			<Value ID="Apostrophe">Apostrophe (')</Value>
+			
+			<Value ID="Slash">Slash (/)</Value>
+			<Value ID="Backslash">Backslash (\)</Value>
+			<Value ID="Equal">Equal (=)</Value>
+			<Value ID="Minus">Minus (-)</Value>
+			<Value ID="Grave">Grave (`)</Value>
+
+			<Value ID="LeftBracket">Left Bracket ([)</Value>
+			<Value ID="RightBracket">Right Bracket (])</Value>
+
+			<Value ID="CapsLock">Caps Lock</Value>
+			<Value ID="Pause">Pause</Value>
+
+			<Value ID="Ctrl">Ctrl</Value>
+			<Value ID="Shift">Shift</Value>
+			<Value ID="Alt">Alt</Value>
+
+			<Value ID="Space">Space</Value>
+			<Value ID="Backspace">Backspace</Value>
+			<Value ID="Tab">Tab</Value>
+			<Value ID="Esc">Esc</Value>
+			<Value ID="Enter">Enter</Value>
+
+			<Value ID="End">End</Value>
+			<Value ID="Home">Home</Value>
+			<Value ID="Ins">Ins</Value>
+			<Value ID="Delete">Delete</Value>
+
+			<Value ID="PageUp">Page Up</Value>
+			<Value ID="PageDown">Page Down</Value>
+
+			<Value ID="Up">Arrow - Up</Value>
+			<Value ID="Down">Arrow - Down</Value>
+			<Value ID="Left">Arrow - Left</Value>
+			<Value ID="Right">Arrow - Right</Value>
+
+			<Value ID="LeftWin">Left Win</Value>
+			<Value ID="RightWin">Right Win</Value>
+			<Value ID="Menu">Menu</Value>
+			<Value ID="PrintScreen">Print Screen</Value>
 		</Enum>
 		<Enum ID="SmsLightPhaserButtons">
 			<Value ID="Fire">Fire</Value>

@@ -52,6 +52,7 @@
 #include "NES/Mappers/Kaiser/Kaiser7058.h"
 #include "NES/Mappers/Bbk/BbkMapper.h"
 #include "NES/Mappers/Sb2k/Sb2kMapper.h"
+#include "NES/Mappers/Yuxing/YuxingMapper.h"
 #include "NES/Mappers/Konami/VRC1.h"
 #include "NES/Mappers/Konami/VRC2_4.h"
 #include "NES/Mappers/Konami/VRC3.h"
@@ -443,6 +444,14 @@ BaseMapper* MapperFactory::GetMapperFromID(RomData& romData)
 		case 166: return new Subor166();
 		case 167: return new Subor166();
 		case 168: return new Racermate();
+		case 169:
+			//The VirtuaNES-BBK fork uses mapper 169 for the YuXing learning machines.
+			//The BIOS carries the machine revision in its PRG CRC32 - see YuxingMapper.
+			romData.Info.System = GameSystem::Dendy;
+			//Reuses the standard keyboard+mouse input id; NesConsole picks the YuXing
+			//devices apart from the Subor/BBK ones by the mapper type
+			romData.Info.InputType = GameInputType::SuborKeyboardMouse1;
+			return new YuxingMapper();
 		case 170: return new Mapper170();
 		case 171:
 			//The VirtuaNES-BBK fork reuses mapper 171 for the BBK learning machine.

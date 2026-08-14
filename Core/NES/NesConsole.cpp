@@ -25,6 +25,7 @@
 #include "NES/Mappers/NSF/NsfMapper.h"
 #include "NES/Mappers/FDS/Fds.h"
 #include "NES/Mappers/Bbk/BbkMapper.h"
+#include "NES/Mappers/Yuxing/YuxingMapper.h"
 #include "NES/Mappers/Sb2k/Sb2kMapper.h"
 #include "NES/Mappers/Sb2k/Sb2kPpu.h"
 #include "Shared/Emulator.h"
@@ -671,6 +672,11 @@ void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem syst
 			expDevice = ControllerType::Sb2kKeyboard;
 			log("[Input] SB-2000 mouse connected");
 			port2 = ControllerType::Sb2kMouse;
+		} else if(dynamic_cast<YuxingMapper*>(mapper)) {
+			//The YuXing machines scan a 14x8 key matrix through the mapper's own registers,
+			//and their mouse is the 3-byte serial device NintendulatorNRS documents
+			log("[Input] YuXing keyboard connected");
+			expDevice = ControllerType::YuxingKeyboard;
 		} else if(dynamic_cast<BbkMapper*>(mapper)) {
 			//The BBK FD-1 keyboard shares the Subor scan protocol but has a different key
 			//matrix, and its mouse is an EM84502 serial device, not the Subor mouse protocol
