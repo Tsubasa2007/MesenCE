@@ -81,10 +81,13 @@ private:
 	uint8_t _lpcNibbleCount = 0;
 	uint8_t _lpcByte = 0;
 
-	//A power cycle recreates the mapper, so the inserted disc is remembered here and
-	//re-mounted. Scoped to the ROM path so a different machine doesn't inherit it.
+	//A power cycle recreates the mapper, so the media in the machine is remembered here and
+	//re-mounted. Scoped to the ROM path so a different machine doesn't inherit it. Discs and
+	//floppies are tracked separately because the machine can hold one of each.
 	inline static string _persistedDiscRom;
 	inline static string _persistedDiscPath;
+	inline static string _persistedFloppyRom;
+	inline static string _persistedFloppyPath;
 
 	//Machine revisions, in the reference emulator's numbering (Mapper169::YX_type)
 	enum class YuxingType : uint8_t
@@ -882,12 +885,36 @@ protected:
 		}
 		_discChecked = true;
 
+		bool mounted = MountPairedMedia();
+
+		//The V9.2 models power on showing the VCD player's screen, which asks for a key the
+		//emulated keyboard cannot reach - it is normally left by ejecting the disc. With no
+		//disc to play there is nothing on that screen, so drop straight to the computer side:
+		//it is the useful state, and the only one a recording can start from. A disc that did
+		//mount keeps the player, otherwise it could never be read.
+		if(_vcdMode && !mounted && _console->GetNesConfig().YuxingSkipVcdScreen) {
+			_vcdMode = false;
+			_reg5002 = 2;
+			UpdateMouseMode();
+			MessageManager::Log("[YuXing] No disc - starting on the computer side");
+		}
+	}
+
+	//Mounts the disc or floppy paired with the ROM. Returns true when a VCD disc was found.
+	bool MountPairedMedia()
+	{
 		string romPath = _emu->GetRomInfo().RomFile.GetFilePath();
 
 		if(_persistedDiscRom == romPath && !_persistedDiscPath.empty()) {
 			if(_vcd.LoadDisc(_persistedDiscPath)) {
 				MessageManager::Log("[YuXing] Re-inserted disc: " + _persistedDiscPath);
-				return;
+				return true;
+			}
+		}
+
+		if(_persistedFloppyRom == romPath && !_persistedFloppyPath.empty()) {
+			if(_fdc.LoadDiskImage(_persistedFloppyPath)) {
+				MessageManager::Log("[YuXing] Re-inserted disk: " + _persistedFloppyPath);
 			}
 		}
 
@@ -899,9 +926,11 @@ protected:
 		}
 
 		for(string& folder : folders) {
-			//A floppy for the 软驱一号 drive, if this machine has one. Discs are swapped
-			//through the media shortcuts; a floppy is only ever the paired image.
+			//A floppy for the 软驱一号 drive, paired with the ROM by name
 			for(string ext : { ".img", ".IMG", ".ima", ".IMA" }) {
+				if(_fdc.IsDiskInserted()) {
+					break;
+				}
 				string diskPath = FolderUtilities::CombinePath(folder, baseName + ext);
 				if(_fdc.LoadDiskImage(diskPath)) {
 					MessageManager::Log("[YuXing] Mounted disk image: " + diskPath);
@@ -913,28 +942,44 @@ protected:
 				string discPath = FolderUtilities::CombinePath(folder, baseName + ext);
 				if(_vcd.LoadDisc(discPath)) {
 					MessageManager::Log("[YuXing] Inserted disc: " + discPath);
-					return;
+					return true;
 				}
 			}
 		}
+		return false;
 	}
 
 public:
-	//Disc swapping - driven by the FDS disk shortcut keys via DiscSwapListener
+	//Media swapping - driven by the FDS disk shortcut keys via DiscSwapListener.
+	//The machine takes two kinds of media and the list holds both: a .bin is a VCD disc for
+	//the player side, a .img/.ima is a floppy for the 软驱一号 drive. Which device an entry
+	//goes into is decided by its extension.
+	static bool IsFloppyImage(const string& path)
+	{
+		string ext = path.size() >= 4 ? path.substr(path.size() - 4) : string();
+		std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+		return ext == ".img" || ext == ".ima";
+	}
+
 	vector<string> GetDiskFileList()
 	{
 		string folder = GetConfiguredDiscFolder();
 		if(folder.empty()) {
 			folder = FolderUtilities::GetFolderName(_emu->GetRomInfo().RomFile.GetFilePath());
 		}
-		vector<string> files = FolderUtilities::GetFilesInFolder(folder, { ".bin" }, false);
+		vector<string> files = FolderUtilities::GetFilesInFolder(folder, { ".bin", ".img", ".ima" }, false);
 		std::sort(files.begin(), files.end());
 		return files;
 	}
 
 	uint32_t GetDiskCount() { return (uint32_t)GetDiskFileList().size(); }
 
-	string GetCurrentDiskFilename() { return _vcd.GetDiscFilename(); }
+	//Whichever medium is loaded; the floppy wins when both are, since it is the one that
+	//can be swapped while the machine runs
+	string GetCurrentDiskFilename()
+	{
+		return _fdc.IsDiskInserted() ? _fdc.GetDiskFilename() : _vcd.GetDiscFilename();
+	}
 
 	//Ejecting also leaves VCD mode, which is how the machine gets to its learning-machine
 	//side: the BIOS's own "computer key" prompt is answered over a link the emulated
@@ -942,12 +987,18 @@ public:
 	void EjectDisc()
 	{
 		auto lock = _emu->AcquireLock();
+		if(_fdc.IsDiskInserted()) {
+			MessageManager::DisplayMessage("YuXing", "Disk ejected: " + FolderUtilities::GetFilename(_fdc.GetDiskFilename(), true));
+			_fdc.EjectDisk(); //Saves pending changes first
+		}
 		if(_vcd.IsDiscInserted()) {
 			MessageManager::DisplayMessage("YuXing", "Disc ejected: " + FolderUtilities::GetFilename(_vcd.GetDiscFilename(), true));
 			_vcd.EjectDisc();
 		}
 		_persistedDiscRom.clear();
 		_persistedDiscPath.clear();
+		_persistedFloppyRom.clear();
+		_persistedFloppyPath.clear();
 
 		if(_vcdMode) {
 			//$5002 bit 1 tells the BIOS to come up as a learning machine instead. A soft
@@ -965,30 +1016,53 @@ public:
 	void InsertDisc(uint32_t index)
 	{
 		auto lock = _emu->AcquireLock();
-		vector<string> discs = GetDiskFileList();
-		if(index < discs.size() && _vcd.LoadDisc(discs[index])) {
+		vector<string> media = GetDiskFileList();
+		if(index >= media.size()) {
+			return;
+		}
+		string path = media[index];
+
+		if(IsFloppyImage(path)) {
+			//A floppy can be changed while the machine runs - the controller raises its
+			//disk-change line and the BIOS picks the new disk up on its next access
+			_fdc.SaveDiskImage();
+			if(_fdc.LoadDiskImage(path)) {
+				_discChecked = true;
+				_persistedFloppyRom = _emu->GetRomInfo().RomFile.GetFilePath();
+				_persistedFloppyPath = path;
+				MessageManager::DisplayMessage("YuXing", "Disk inserted: " + FolderUtilities::GetFilename(path, true));
+			}
+			return;
+		}
+
+		if(_vcd.LoadDisc(path)) {
 			_discChecked = true;
 			_persistedDiscRom = _emu->GetRomInfo().RomFile.GetFilePath();
-			_persistedDiscPath = discs[index];
-			MessageManager::DisplayMessage("YuXing", "Disc inserted: " + FolderUtilities::GetFilename(discs[index], true));
+			_persistedDiscPath = path;
+			MessageManager::DisplayMessage("YuXing", "Disc inserted: " + FolderUtilities::GetFilename(path, true));
+			//Unlike a floppy, a VCD disc is only read while the player side is running, and
+			//the BIOS decides which side that is at boot. The reference emulator resets the
+			//machine when a disc is dropped on it, so do the same.
+			_emu->GetSystemActionManager()->PowerCycle();
 		}
 	}
 
 	void InsertNextDisc()
 	{
-		vector<string> discs = GetDiskFileList();
-		if(discs.empty()) {
+		vector<string> media = GetDiskFileList();
+		if(media.empty()) {
 			return;
 		}
 
-		int32_t current = -1;
-		for(size_t i = 0; i < discs.size(); i++) {
-			if(discs[i] == _vcd.GetDiscFilename()) {
-				current = (int32_t)i;
+		string current = GetCurrentDiskFilename();
+		int32_t index = -1;
+		for(size_t i = 0; i < media.size(); i++) {
+			if(media[i] == current) {
+				index = (int32_t)i;
 				break;
 			}
 		}
-		InsertDisc((current + 1) % discs.size());
+		InsertDisc((index + 1) % media.size());
 	}
 
 	void Serialize(Serializer& s) override

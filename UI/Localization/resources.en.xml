@@ -300,6 +300,9 @@
 			<Control ID="chkBbkShowDiskLed">Show disk activity LED (top-right corner)</Control>
 			<Control ID="chkBbkAttributeLag">Color tiles with the previous column's attribute (classic models, experimental)</Control>
 
+			<Control ID="lblYuxingSettings">YuXing Learning Machine Settings</Control>
+			<Control ID="chkYuxingSkipVcdScreen">Start on the computer side, skipping the VCD player screen (when no disc is inserted)</Control>
+
 			<Control ID="lblVsDualSystem">VS. DualSystem Settings</Control>
 			<Control ID="lblVsDualPlayAudio">Play audio for:</Control>
 			<Control ID="lblVsDualShowVideo">Show video for:</Control>
