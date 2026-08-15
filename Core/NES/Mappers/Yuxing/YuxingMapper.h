@@ -7,6 +7,7 @@
 #include "NES/Input/YuxingKeyboard.h"
 #include "NES/Input/YuxingMouse.h"
 #include "NES/Mappers/Bbk/BbkLpcAudio.h"
+#include "NES/Mappers/Bbk/BbkPrinter.h"
 #include "NES/Mappers/Bbk/PcFdc.h"
 #include "NES/Mappers/Yuxing/YuxingVcdDrive.h"
 #include "NES/NesControlManager.h"
@@ -82,6 +83,17 @@ private:
 	uint8_t _lpcNibbleCount = 0;
 	uint8_t _lpcByte = 0;
 	unique_ptr<BbkLpcAudio> _lpcAudio;
+
+	//The printer hangs off the controller port's expansion lines rather than a parallel
+	//register file, bit-banged a byte at a time by the BIOS routine at $FA1B: $4016 bit 0
+	//carries the data, a rising edge on bit 1 clocks it in (MSB first), and bit 2 - held
+	//high for the whole byte - is pulsed low afterwards to latch it. Bit 1 read back is the
+	//printer's ready line, which the BIOS tests before every byte and gives up on after ten
+	//tries ("打印机未准备好").
+	BbkPrinter _printer;
+	bool _printerNamed = false;
+	uint8_t _lptLast = 0;
+	uint8_t _lptShift = 0;
 
 	//A power cycle recreates the mapper, so the media in the machine is remembered here and
 	//re-mounted. Scoped to the ROM path so a different machine doesn't inherit it. Discs and
@@ -496,6 +508,7 @@ protected:
 		BaseProcessCpuClock();
 		_fdc.Clock();
 		_lpcAudio->Clock();
+		_printer.Clock();
 
 		//The reference emulator renders scanline N and then runs its per-scanline logic, so
 		//fire it during that line's hblank (after the sprite fetches, PPU cycle >= 321) -
@@ -567,6 +580,10 @@ protected:
 		_lpcByte = 0;
 		_lpcAudio.reset(new BbkLpcAudio(_console, BbkLpcAudio::LpcVariant::Yuxing));
 		_lpcAudio->Reset();
+		_printerNamed = false;
+		_printer.Reset();
+		_lptLast = 0;
+		_lptShift = 0;
 		_lastPpuScanline = -2;
 		_lastBandScanline = -2;
 		Mmc3Reset();
@@ -610,6 +627,9 @@ protected:
 				if(IsVcdActive()) {
 					_vcd.Read(addr, vcdValue);
 				}
+				if(addr == 0x4016 && IsPrinterSelected()) {
+					value |= 0x02;
+				}
 				return value | vcdValue;
 			}
 
@@ -650,6 +670,7 @@ protected:
 
 		switch(addr) {
 			case 0x4016:
+				WriteLpt(value);
 				//$FF/$FE switches the serial link to the keyboard
 				if(IsVcdActive()) {
 					_vcdKeyboardSelected = (value == 0xFF || value == 0xFE);
@@ -846,6 +867,41 @@ protected:
 			}
 		}
 	}
+
+	//The page is named after the ROM, and the name is only available once the ROM is loaded
+	BbkPrinter& Printer()
+	{
+		if(!_printerNamed) {
+			_printerNamed = true;
+			_printer.SetRomName(FolderUtilities::GetFilename(_emu->GetRomInfo().RomFile.GetFilePath(), false));
+		}
+		return _printer;
+	}
+
+	//Shift one bit per rising clock edge, emit the byte when the select line is pulsed low
+	void WriteLpt(uint8_t value)
+	{
+		uint8_t changed = _lptLast ^ value;
+
+		if((changed & 0x02) && (value & 0x02)) {
+			_lptShift = (uint8_t)((_lptShift << 1) | (value & 0x01));
+		}
+
+		if((changed & 0x04) && !(value & 0x04)) {
+			Printer().WriteData(_lptShift);
+		}
+
+		_lptLast = value;
+	}
+
+	//$4016 bit 1 reads back as the printer's ready line, but only while the BIOS is talking
+	//to the printer: this port also carries the pad, the mouse and the serial keyboard, and
+	//the ready bit would collide with them.
+	//
+	//The gate is the exact idle word the BIOS writes before each ready test. A looser test
+	//on bit 2 alone is NOT safe - $FF and $FE, which select the serial keyboard, both have
+	//bit 2 set, and $FE also matches on bits 1 and 0.
+	bool IsPrinterSelected() { return _lptLast == 0x06; }
 
 	bool IsVcdActive() { return _vcdMode && _vcd.IsDiscInserted(); }
 
@@ -1083,6 +1139,7 @@ public:
 		SV(_mmc3IrqEnable); SV(_lastPpuScanline); SV(_lastBandScanline); SV(_lastSplitBand);
 		SV(_lpcReceiving); SV(_lpcNibbleCount); SV(_lpcByte);
 		SV(_lpcAudio);
+		SV(_printer); SV(_lptLast); SV(_lptShift);
 		SV(_fdc);
 		_vcd.Serialize(s);
 
