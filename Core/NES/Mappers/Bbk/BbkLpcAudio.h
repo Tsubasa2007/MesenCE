@@ -16,6 +16,18 @@
 //$F0 command byte restarts it for the next phrase.
 class BbkLpcAudio final : public ISerializable
 {
+public:
+	//How a stream is framed, which differs per machine independently of the coefficient set:
+	//the BBK and SB-2000 prefix each stream with a header byte the decoder syncs on, and the
+	//SB-2000 alone terminates one with a command that parks the decoder. The YuXing does
+	//neither - its streams begin at the first frame and simply stop.
+	enum class LpcVariant : uint8_t
+	{
+		Bbk = 0,
+		Sb2k = 1,
+		Yuxing = 2
+	};
+
 private:
 	NesConsole* _console = nullptr;
 
@@ -59,6 +71,26 @@ private:
 		int16_t Energy;
 		int16_t Pitch;
 		int16_t K[LpcOrder];
+	};
+
+	//The bitstream layout is not fixed: the machines split into two coefficient sets, "D6"
+	//and "PE", which differ in how many bits the pitch and the first four reflection
+	//coefficients occupy, and in every quantization table those indexes address. Everything
+	//else - frame order, the repeat bit, the 4-bit energy field, the excitation table - is
+	//shared, so one decoder covers both once the widths are read from here instead of being
+	//baked into GetFrame.
+	struct LpcCodec
+	{
+		uint8_t PitchBits;
+		uint8_t KBits[LpcOrder];
+		//Output gain in half-units (see SynthesizeFrame). The reference emulator uses 12 for
+		//D6 and 8 for PE; this port runs both two thirds as loud to sit correctly in Mesen's
+		//mixer, which makes D6 exactly 8 (16/2, unchanged from before this was a parameter)
+		//and PE 5.5 (11/2).
+		uint8_t Volume;
+		const int16_t* Energy;
+		const int16_t* Pitch;
+		const int16_t* K[LpcOrder];
 	};
 
 	static constexpr int16_t _gainTab[16] = {
@@ -175,9 +207,95 @@ private:
 		0x00C6, 0x00CA, 0x00C9, 0x00C7, 0x00C2, 0x00BA, 0x00AF, 0x00A2
 	};
 
-	//SB-2000 variant flag (see the class comment) and its end-of-speech status flag
-	bool _sb2k = false;
+	//"PE" coefficient set, used by the YuXing. Same fixed-point scale as the D6 tables above
+	//and the same excitation table, but coarser quantization: 6-bit pitch and 5/5/4/4-bit
+	//k1..k4 instead of 7 and 6/6/5/5.
+	static constexpr int16_t _peGainTab[16] = {
+		0, 256, 512, 768, 1024, 1536, 2048, 2816,
+		4096, 5888, 8448, 12032, 16128, 21760, 29184, 0
+	};
+
+	static constexpr int16_t _pePitchTab[64] = {
+		0, 240, 256, 272, 288, 304, 320, 336,
+		352, 368, 384, 400, 416, 432, 448, 464,
+		480, 496, 512, 528, 544, 560, 576, 592,
+		608, 624, 640, 656, 672, 704, 736, 768,
+		800, 832, 848, 896, 928, 960, 992, 1040,
+		1088, 1120, 1152, 1216, 1248, 1280, 1344, 1376,
+		1456, 1504, 1568, 1616, 1680, 1744, 1824, 1888,
+		1952, 2032, 2112, 2192, 2272, 2368, 2448, 2544
+	};
+
+	static constexpr int16_t _peK1Tab[32] = {
+		-32064, -31872, -31808, -31680, -31552, -31424, -31232, -30848,
+		-30592, -30336, -30016, -29696, -29376, -28928, -28480, -27968,
+		-26368, -24320, -21696, -18432, -14528, -10112, -5184, -64,
+		5120, 10048, 14464, 18368, 21568, 24256, 26304, 27904
+	};
+
+	static constexpr int16_t _peK2Tab[32] = {
+		-20992, -19392, -17536, -15616, -13504, -11200, -8832, -6336,
+		-3776, -1152, 1536, 4096, 6720, 9152, 11520, 13760,
+		15872, 17792, 19584, 21184, 22656, 23936, 25088, 26112,
+		27008, 27840, 28480, 29120, 29632, 30080, 30464, 32384
+	};
+
+	static constexpr int16_t _peK3Tab[16] = {
+		-28224, -24768, -21312, -17856, -14400, -10944, -7488, -4032,
+		-576, 2880, 6272, 9728, 13184, 16640, 20096, 23552
+	};
+
+	static constexpr int16_t _peK4Tab[16] = {
+		-20992, -17472, -13888, -10304, -6784, -3200, 320, 3904,
+		7424, 11008, 14592, 18112, 21696, 25216, 28800, 32384
+	};
+
+	static constexpr int16_t _peK5Tab[16] = {
+		-20992, -18048, -15040, -12096, -9088, -6144, -3200, -192,
+		2752, 5760, 8704, 11648, 14656, 17600, 20608, 23552
+	};
+
+	static constexpr int16_t _peK6Tab[16] = {
+		-16384, -13568, -10752, -7872, -5056, -2240, 640, 3456,
+		6272, 9152, 11968, 14848, 17664, 20480, 23360, 26176
+	};
+
+	static constexpr int16_t _peK7Tab[16] = {
+		-19712, -16640, -13568, -10496, -7488, -4416, -1344, 1728,
+		4800, 7808, 10880, 13952, 17024, 20096, 23104, 26176
+	};
+
+	static constexpr int16_t _peK8Tab[8] = {
+		-16384, -10304, -4224, 1856, 7936, 14016, 20096, 26176
+	};
+
+	static constexpr int16_t _peK9Tab[8] = {
+		-16384, -11264, -6144, -960, 4160, 9344, 14464, 19648
+	};
+
+	static constexpr int16_t _peK10Tab[8] = {
+		-13120, -8448, -3776, 896, 5568, 10240, 14976, 19648
+	};
+
+	static constexpr LpcCodec _codecD6 = {
+		7, { 6, 6, 5, 5, 4, 4, 4, 3, 3, 3 }, 16,
+		_gainTab, _pitchTab,
+		{ _k1Tab, _k2Tab, _k3Tab, _k4Tab, _k5Tab, _k6Tab, _k7Tab, _k8Tab, _k9Tab, _k10Tab }
+	};
+
+	static constexpr LpcCodec _codecPe = {
+		6, { 5, 5, 4, 4, 4, 4, 4, 3, 3, 3 }, 11,
+		_peGainTab, _pePitchTab,
+		{ _peK1Tab, _peK2Tab, _peK3Tab, _peK4Tab, _peK5Tab, _peK6Tab, _peK7Tab, _peK8Tab, _peK9Tab, _peK10Tab }
+	};
+
+	//Which machine's framing this instance decodes (see the class comment), the coefficient
+	//set that goes with it, and the SB-2000's end-of-speech status flag
+	LpcVariant _variant = LpcVariant::Bbk;
+	const LpcCodec* _codec = &_codecD6;
 	bool _speechEnd = false;
+
+	bool IsSb2k() { return _variant == LpcVariant::Sb2k; }
 
 	//Byte FIFO fed by $FF18 writes
 	uint8_t _fifo[FifoSize] = {};
@@ -257,6 +375,14 @@ private:
 		return (int16_t)data;
 	}
 
+	//Reads a quantization-table index. GetBits returns -1 with the decoder stopped, so mask
+	//to the field width - every table is exactly 1 << bits entries, so this is always in
+	//range (the fixed-width call sites this replaced masked the same way).
+	uint16_t ReadIndex(uint8_t bits)
+	{
+		return (uint16_t)(GetBits(bits) & ((1 << bits) - 1));
+	}
+
 	//Returns -1 on end of stream
 	int GetFrame(LpcFrame& dst, LpcFrame& ref)
 	{
@@ -275,10 +401,10 @@ private:
 		}
 
 		int16_t repeat = GetBits(1);
-		int16_t pitchIdx = GetBits(7);
+		int16_t pitchIdx = ReadIndex(_codec->PitchBits);
 
-		dst.Energy = _gainTab[energyIdx & 0x0F];
-		dst.Pitch = _pitchTab[pitchIdx & 0x7F];
+		dst.Energy = _codec->Energy[energyIdx & 0x0F];
+		dst.Pitch = _codec->Pitch[pitchIdx];
 
 		if(repeat) {
 			dst.K[0] = ref.K[0];
@@ -286,10 +412,9 @@ private:
 			dst.K[2] = ref.K[2];
 			dst.K[3] = ref.K[3];
 		} else {
-			dst.K[0] = _k1Tab[GetBits(6) & 0x3F];
-			dst.K[1] = _k2Tab[GetBits(6) & 0x3F];
-			dst.K[2] = _k3Tab[GetBits(5) & 0x1F];
-			dst.K[3] = _k4Tab[GetBits(5) & 0x1F];
+			for(int i = 0; i < 4; i++) {
+				dst.K[i] = _codec->K[i][ReadIndex(_codec->KBits[i])];
+			}
 		}
 
 		if(pitchIdx == 0) {
@@ -300,12 +425,9 @@ private:
 			if(repeat) {
 				memcpy(dst.K, ref.K, sizeof(ref.K));
 			} else {
-				dst.K[4] = _k5Tab[GetBits(4) & 0x0F];
-				dst.K[5] = _k6Tab[GetBits(4) & 0x0F];
-				dst.K[6] = _k7Tab[GetBits(4) & 0x0F];
-				dst.K[7] = _k8Tab[GetBits(3) & 0x07];
-				dst.K[8] = _k9Tab[GetBits(3) & 0x07];
-				dst.K[9] = _k10Tab[GetBits(3) & 0x07];
+				for(int i = 4; i < LpcOrder; i++) {
+					dst.K[i] = _codec->K[i][ReadIndex(_codec->KBits[i])];
+				}
 			}
 		}
 
@@ -453,7 +575,7 @@ private:
 				excit = (excit * _frameCurr.Energy) >> FracBits;
 			}
 
-			excit *= 8;
+			excit = (excit * _codec->Volume) >> 1;
 
 			_synthOut = (int16_t)excit;
 			RunFilter();
@@ -473,7 +595,7 @@ private:
 			//phrase while polling the $FF18 busy flag.
 			//SB-2000: park in the Finished state - the software polls the "end of
 			//speech" status nibble and then restarts the decoder with a $F0 command.
-			if(_sb2k) {
+			if(IsSb2k()) {
 				_bitsLeft = 0;
 				_dataCache = 0;
 				_state = LpcState::Finished;
@@ -515,8 +637,14 @@ private:
 		if(_state == LpcState::Startup) {
 			if(!_magicFound) {
 				//Byte-aligned scan for the stream header ($D6 on the BBK, $0A on the
-				//SB-2000), one byte per tick
-				uint8_t magic = _sb2k ? 0x50 : 0x6B; //bit-reversed
+				//SB-2000), one byte per tick. The YuXing has no header - its streams open
+				//straight into the first frame, so consuming a byte here would shift the
+				//whole bitstream and decode everything after it as noise.
+				if(_variant == LpcVariant::Yuxing) {
+					_magicFound = true;
+					return;
+				}
+				uint8_t magic = IsSb2k() ? 0x50 : 0x6B; //bit-reversed
 				if(count >= 1) {
 					if(GetBits(8) == magic) {
 						_magicFound = true;
@@ -606,10 +734,11 @@ protected:
 	}
 
 public:
-	BbkLpcAudio(NesConsole* console, bool sb2kVariant = false)
+	BbkLpcAudio(NesConsole* console, LpcVariant variant = LpcVariant::Bbk)
 	{
 		_console = console;
-		_sb2k = sb2kVariant;
+		_variant = variant;
+		_codec = variant == LpcVariant::Yuxing ? &_codecPe : &_codecD6;
 	}
 
 	void Reset()
@@ -659,4 +788,15 @@ public:
 	{
 		return GetFifoCount() >= BusyThreshold ? 0x00 : 0x8F;
 	}
+
+	//YuXing $4701: whether the decoder can take more data.
+	//
+	//The reference emulator reports ready below half of its 128-bit bit-FIFO, i.e. under 8
+	//buffered bytes, but it can afford to: its decoder consumes the stream bit by bit and
+	//stalls mid-frame when it runs out. This port decodes a whole frame at a time and the
+	//startup preload needs PreloadBytesNeeded (14) buffered before it can run, so an 8-byte
+	//ready threshold deadlocks - the software stops writing at 8, the preload never reaches
+	//14, and it polls this register forever. Use the same threshold as the BBK, which is
+	//sized to be >= every decode step's requirement.
+	bool IsReady() { return GetFifoCount() < BusyThreshold; }
 };

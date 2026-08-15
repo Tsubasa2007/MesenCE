@@ -6,6 +6,7 @@
 #include "NES/NesCpu.h"
 #include "NES/Input/YuxingKeyboard.h"
 #include "NES/Input/YuxingMouse.h"
+#include "NES/Mappers/Bbk/BbkLpcAudio.h"
 #include "NES/Mappers/Bbk/PcFdc.h"
 #include "NES/Mappers/Yuxing/YuxingVcdDrive.h"
 #include "NES/NesControlManager.h"
@@ -80,6 +81,7 @@ private:
 	bool _lpcReceiving = false;
 	uint8_t _lpcNibbleCount = 0;
 	uint8_t _lpcByte = 0;
+	unique_ptr<BbkLpcAudio> _lpcAudio;
 
 	//A power cycle recreates the mapper, so the media in the machine is remembered here and
 	//re-mounted. Scoped to the ROM path so a different machine doesn't inherit it. Discs and
@@ -493,6 +495,7 @@ protected:
 	{
 		BaseProcessCpuClock();
 		_fdc.Clock();
+		_lpcAudio->Clock();
 
 		//The reference emulator renders scanline N and then runs its per-scanline logic, so
 		//fire it during that line's hblank (after the sprite fetches, PPU cycle >= 321) -
@@ -562,6 +565,8 @@ protected:
 		_lpcReceiving = false;
 		_lpcNibbleCount = 0;
 		_lpcByte = 0;
+		_lpcAudio.reset(new BbkLpcAudio(_console, BbkLpcAudio::LpcVariant::Yuxing));
+		_lpcAudio->Reset();
 		_lastPpuScanline = -2;
 		_lastBandScanline = -2;
 		Mmc3Reset();
@@ -626,7 +631,7 @@ protected:
 				return _fdc.Read((uint8_t)(addr & 0x07));
 
 			//Speech status: bit 7 set while the synthesizer is still busy
-			case 0x4701: return 0x00;
+			case 0x4701: return _lpcAudio->IsReady() ? 0x00 : 0x80;
 
 			case 0x5002: return _reg5002;
 		}
@@ -817,15 +822,17 @@ protected:
 	//afterwards carries one nibble of a stream byte - low nibble first, the assembled byte
 	//scrambled with $41.
 	//
-	//The bitstream is reassembled but not synthesized: this machine's LPC-10 uses the "PE"
-	//coefficient set, and BbkLpcAudio only implements the "D6" set the BBK and SB-2000
-	//need. Reporting the chip permanently idle keeps software that polls $4701 running.
+	//The assembled bytes are handed to BbkLpcAudio in its "PE" mode - the same decoder the
+	//BBK and SB-2000 use, with this machine's coefficient set and no stream header.
 	void WriteSpeech(uint8_t value)
 	{
 		if(value == 0x00) {
 			_lpcReceiving = false;
 			_lpcNibbleCount = 0;
 			_lpcByte = 0;
+			//A reset between phrases, like the BBK's $FF10 rising edge
+			_lpcAudio->WriteControl(0);
+			_lpcAudio->WriteControl(1);
 		} else if(value == 0xFF) {
 			_lpcReceiving = true;
 		} else if((value & 0xF0) == 0xC0 && _lpcReceiving) {
@@ -835,7 +842,7 @@ protected:
 			} else {
 				_lpcByte |= (uint8_t)(value << 4);
 				_lpcNibbleCount = 0;
-				//Assembled stream byte would be (_lpcByte ^ 0x41) - see above
+				_lpcAudio->WriteData(_lpcByte ^ 0x41);
 			}
 		}
 	}
@@ -1075,6 +1082,7 @@ public:
 		SV(_mmc3IrqLatch); SV(_mmc3IrqCounter); SV(_mmc3IrqPreset); SV(_mmc3IrqPresetVbl);
 		SV(_mmc3IrqEnable); SV(_lastPpuScanline); SV(_lastBandScanline); SV(_lastSplitBand);
 		SV(_lpcReceiving); SV(_lpcNibbleCount); SV(_lpcByte);
+		SV(_lpcAudio);
 		SV(_fdc);
 		_vcd.Serialize(s);
 

@@ -992,7 +992,7 @@ protected:
 		_mouseInitialized = false;
 		_mousePollTimer = 0;
 
-		_lpcAudio.reset(new BbkLpcAudio(_console, true));
+		_lpcAudio.reset(new BbkLpcAudio(_console, BbkLpcAudio::LpcVariant::Sb2k));
 		_lpcAudio->Reset();
 		_dacLastOutput = 0;
 
