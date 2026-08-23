@@ -225,6 +225,11 @@ public:
 	__forceinline bool HasVramAddressHook() { return _hasVramAddressHook; }
 	virtual void NotifyVramAddressChange(uint16_t addr);
 
+	//Lets a video chip that does not fetch backgrounds the 2C02 way adjust the tile address
+	//and/or rebank video RAM mid-line. Only called while the mapper has switched the PPU
+	//into one of those modes (see YuxingMapper's split screens).
+	virtual void ApplySplitBgFetch(uint8_t tileIndex, uint16_t videoRamAddr, uint16_t cycle, uint16_t& tileAddr) {}
+
 	//2C02 quirk: during forced blanking, V in $3F00-$3FFF shows that palette color instead
 	//of the backdrop. Famiclone PPUs that lack the quirk can disable it here (see DrawPixel)
 	virtual bool EnablePpuPaletteBgHack() { return true; }

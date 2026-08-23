@@ -25,6 +25,7 @@
 #include "NES/Mappers/NSF/NsfMapper.h"
 #include "NES/Mappers/FDS/Fds.h"
 #include "NES/Mappers/Bbk/BbkMapper.h"
+#include "NES/Mappers/Yuxing/YuxingMapper.h"
 #include "NES/Mappers/Sb2k/Sb2kMapper.h"
 #include "NES/Mappers/Sb2k/Sb2kPpu.h"
 #include "Shared/Emulator.h"
@@ -457,6 +458,10 @@ vector<string> NesConsole::GetBbkDiskList(int32_t& currentIndex)
 	} else if(Sb2kMapper* sb2k = dynamic_cast<Sb2kMapper*>(_mapper.get())) {
 		current = FolderUtilities::GetFilename(sb2k->GetCurrentDiskFilename(), true);
 		paths = sb2k->GetDiskFileList();
+	} else if(YuxingMapper* yuxing = dynamic_cast<YuxingMapper*>(_mapper.get())) {
+		//The YuXing machines have no floppy drive - the same UI swaps their VCD discs
+		current = FolderUtilities::GetFilename(yuxing->GetCurrentDiskFilename(), true);
+		paths = yuxing->GetDiskFileList();
 	}
 	for(size_t i = 0; i < paths.size(); i++) {
 		string name = FolderUtilities::GetFilename(paths[i], true);
@@ -470,8 +475,8 @@ vector<string> NesConsole::GetBbkDiskList(int32_t& currentIndex)
 
 bool NesConsole::IsBbkGame()
 {
-	//Also true for the SB-2000, which reuses the same floppy-swap UI
-	return dynamic_cast<BbkMapper*>(_mapper.get()) != nullptr || dynamic_cast<Sb2kMapper*>(_mapper.get()) != nullptr;
+	//Also true for the SB-2000 and the YuXing machines, which reuse the same media-swap UI
+	return dynamic_cast<BbkMapper*>(_mapper.get()) != nullptr || dynamic_cast<Sb2kMapper*>(_mapper.get()) != nullptr || dynamic_cast<YuxingMapper*>(_mapper.get()) != nullptr;
 }
 
 ShortcutState NesConsole::IsShortcutAllowed(EmulatorShortcut shortcut, uint32_t shortcutParam)
@@ -501,6 +506,9 @@ ShortcutState NesConsole::IsShortcutAllowed(EmulatorShortcut shortcut, uint32_t 
 				}
 				if(Sb2kMapper* sb2k = dynamic_cast<Sb2kMapper*>(_mapper.get())) {
 					return (ShortcutState)(shortcutParam < sb2k->GetDiskCount());
+				}
+				if(YuxingMapper* yuxing = dynamic_cast<YuxingMapper*>(_mapper.get())) {
+					return (ShortcutState)(shortcutParam < yuxing->GetDiskCount());
 				}
 			}
 			return ShortcutState::Disabled;
@@ -671,6 +679,13 @@ void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem syst
 			expDevice = ControllerType::Sb2kKeyboard;
 			log("[Input] SB-2000 mouse connected");
 			port2 = ControllerType::Sb2kMouse;
+		} else if(dynamic_cast<YuxingMapper*>(mapper)) {
+			//The YuXing machines scan a 14x8 key matrix through the mapper's own registers,
+			//and their mouse is the 3-byte serial device NintendulatorNRS documents
+			log("[Input] YuXing keyboard connected");
+			expDevice = ControllerType::YuxingKeyboard;
+			log("[Input] YuXing mouse connected");
+			port2 = ControllerType::YuxingMouse;
 		} else if(dynamic_cast<BbkMapper*>(mapper)) {
 			//The BBK FD-1 keyboard shares the Subor scan protocol but has a different key
 			//matrix, and its mouse is an EM84502 serial device, not the Subor mouse protocol

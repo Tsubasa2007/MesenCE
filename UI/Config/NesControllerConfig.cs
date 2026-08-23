@@ -35,6 +35,7 @@ namespace Mesen.Config
 		public UInt16[]? SuborKeyboardButtons { get; set; } = null;
 		public UInt16[]? BbkKeyboardButtons { get; set; } = null;
 		public UInt16[]? Sb2kKeyboardButtons { get; set; } = null;
+		public UInt16[]? YuxingKeyboardButtons { get; set; } = null;
 		public UInt16[]? BandaiMicrophoneButtons { get; set; } = null;
 		public UInt16[]? VirtualBoyButtons { get; set; } = null;
 		public UInt16[]? KonamiHyperShotButtons { get; set; } = null;
@@ -61,6 +62,7 @@ namespace Mesen.Config
 				ControllerType.SuborKeyboard => SuborKeyboardButtons,
 				ControllerType.BbkKeyboard => BbkKeyboardButtons,
 				ControllerType.Sb2kKeyboard => Sb2kKeyboardButtons,
+				ControllerType.YuxingKeyboard => YuxingKeyboardButtons,
 				ControllerType.VbController => VirtualBoyButtons,
 				ControllerType.KonamiHyperShot => KonamiHyperShotButtons,
 				ControllerType.FamicomArkanoidController => ArkanoidButtons,
@@ -70,6 +72,7 @@ namespace Mesen.Config
 				ControllerType.SnesMouse => MouseButtons,
 				ControllerType.SuborMouse => MouseButtons,
 				ControllerType.Sb2kMouse => MouseButtons,
+				ControllerType.YuxingMouse => MouseButtons,
 				ControllerType.OekaKidsTablet => OekakidsButtons,
 				ControllerType.BandaiHyperShot => BandaiHypershotButtons,
 				ControllerType.BandaiMicrophone => BandaiMicrophoneButtons,
@@ -109,11 +112,12 @@ namespace Mesen.Config
 				ControllerType.ExcitingBoxing => Enum.GetValues<NesExcitingBoxingButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.JissenMahjong => Enum.GetValues<NesJissenMahjongButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.SuborKeyboard or ControllerType.BbkKeyboard or ControllerType.Sb2kKeyboard => Enum.GetValues<NesSuborKeyboardButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
+				ControllerType.YuxingKeyboard => Enum.GetValues<NesYuxingKeyboardButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.VbController => Enum.GetValues<NesVirtualBoyButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.KonamiHyperShot => Enum.GetValues<NesKonamiHyperShotButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.NesArkanoidController or ControllerType.FamicomArkanoidController => Enum.GetValues<NesArkanoidButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.NesZapper or ControllerType.FamicomZapper => Enum.GetValues<NesZapperButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
-				ControllerType.SnesMouse or ControllerType.SuborMouse or ControllerType.Sb2kMouse => Enum.GetValues<GenericMouseButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
+				ControllerType.SnesMouse or ControllerType.SuborMouse or ControllerType.Sb2kMouse or ControllerType.YuxingMouse => Enum.GetValues<GenericMouseButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.OekaKidsTablet => Enum.GetValues<NesOekakidsButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.BandaiHyperShot => Enum.GetValues<NesZapperButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.BandaiMicrophone => Enum.GetValues<NesBandaiMicrophoneButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
@@ -174,6 +178,10 @@ namespace Mesen.Config
 					Sb2kKeyboardButtons = new UInt16[99];
 					break;
 
+				case ControllerType.YuxingKeyboard:
+					YuxingKeyboardButtons = new UInt16[100];
+					break;
+
 				case ControllerType.VbController:
 					VirtualBoyButtons = new UInt16[14];
 					break;
@@ -185,6 +193,7 @@ namespace Mesen.Config
 				case ControllerType.SuborMouse:
 				case ControllerType.SnesMouse:
 				case ControllerType.Sb2kMouse:
+				case ControllerType.YuxingMouse:
 					MouseButtons = new UInt16[2];
 					break;
 
@@ -374,6 +383,57 @@ namespace Mesen.Config
 						0,0,0
 					};
 
+				case ControllerType.YuxingKeyboard:
+					//Same layout as the Subor keyboard for the first 96 keys; the YuXing
+					//matrix replaces its three unused cells with the Windows/Menu/Print
+					//Screen keys. Scroll Lock is the 101st key and is not remappable -
+					//see YuxingKeyboard.
+					return new UInt16[100] {
+						InputApi.GetKeyCode("A"), InputApi.GetKeyCode("B"), InputApi.GetKeyCode("C"), InputApi.GetKeyCode("D"),
+						InputApi.GetKeyCode("E"), InputApi.GetKeyCode("F"), InputApi.GetKeyCode("G"), InputApi.GetKeyCode("H"),
+						InputApi.GetKeyCode("I"), InputApi.GetKeyCode("J"), InputApi.GetKeyCode("K"), InputApi.GetKeyCode("L"),
+						InputApi.GetKeyCode("M"), InputApi.GetKeyCode("N"), InputApi.GetKeyCode("O"), InputApi.GetKeyCode("P"),
+						InputApi.GetKeyCode("Q"), InputApi.GetKeyCode("R"), InputApi.GetKeyCode("S"), InputApi.GetKeyCode("T"),
+						InputApi.GetKeyCode("U"), InputApi.GetKeyCode("V"), InputApi.GetKeyCode("W"), InputApi.GetKeyCode("X"),
+						InputApi.GetKeyCode("Y"), InputApi.GetKeyCode("Z"), InputApi.GetKeyCode("0"), InputApi.GetKeyCode("1"),
+						InputApi.GetKeyCode("2"), InputApi.GetKeyCode("3"), InputApi.GetKeyCode("4"), InputApi.GetKeyCode("5"),
+						InputApi.GetKeyCode("6"), InputApi.GetKeyCode("7"), InputApi.GetKeyCode("8"), InputApi.GetKeyCode("9"),
+						InputApi.GetKeyCode("F1"), InputApi.GetKeyCode("F2"), InputApi.GetKeyCode("F3"), InputApi.GetKeyCode("F4"),
+						InputApi.GetKeyCode("F5"), InputApi.GetKeyCode("F6"), InputApi.GetKeyCode("F7"), InputApi.GetKeyCode("F8"),
+						InputApi.GetKeyCode("F9"), InputApi.GetKeyCode("F10"), InputApi.GetKeyCode("F11"), InputApi.GetKeyCode("F12"),
+
+						InputApi.GetKeyCode("Numpad 0"), InputApi.GetKeyCode("Numpad 1"), InputApi.GetKeyCode("Numpad 2"), InputApi.GetKeyCode("Numpad 3"),
+						InputApi.GetKeyCode("Numpad 4"), InputApi.GetKeyCode("Numpad 5"), InputApi.GetKeyCode("Numpad 6"), InputApi.GetKeyCode("Numpad 7"),
+						InputApi.GetKeyCode("Numpad 8"), InputApi.GetKeyCode("Numpad 9"),
+
+						0, InputApi.GetKeyCode("Numpad ."),
+						InputApi.GetKeyCode("Numpad +"), InputApi.GetKeyCode("Numpad *"),
+						InputApi.GetKeyCode("Numpad /"), InputApi.GetKeyCode("Numpad -"),
+
+						InputApi.GetKeyCode("Num Lock"),
+
+						InputApi.GetKeyCode(","), InputApi.GetKeyCode("."), InputApi.GetKeyCode(";"), InputApi.GetKeyCode("'"),
+						InputApi.GetKeyCode("/"), InputApi.GetKeyCode("\\"),
+						InputApi.GetKeyCode("="), InputApi.GetKeyCode("-"), InputApi.GetKeyCode("`"),
+
+						InputApi.GetKeyCode("["), InputApi.GetKeyCode("]"),
+
+						InputApi.GetKeyCode("Caps Lock"), InputApi.GetKeyCode("Pause"),
+
+						InputApi.GetKeyCode("Left Ctrl"), InputApi.GetKeyCode("Left Shift"), InputApi.GetKeyCode("Left Alt"),
+
+						InputApi.GetKeyCode("Space"), InputApi.GetKeyCode("Backspace"), InputApi.GetKeyCode("Tab"), InputApi.GetKeyCode("Esc"), InputApi.GetKeyCode("Enter"),
+
+						InputApi.GetKeyCode("End"), InputApi.GetKeyCode("Home"),
+						InputApi.GetKeyCode("Insert"), InputApi.GetKeyCode("Delete"),
+
+						InputApi.GetKeyCode("Page Up"), InputApi.GetKeyCode("Page Down"),
+
+						InputApi.GetKeyCode("Up Arrow"), InputApi.GetKeyCode("Down Arrow"), InputApi.GetKeyCode("Left Arrow"), InputApi.GetKeyCode("Right Arrow"),
+
+						InputApi.GetKeyCode("Left Win"), InputApi.GetKeyCode("Right Win"), InputApi.GetKeyCode("Apps"), InputApi.GetKeyCode("Print Screen")
+					};
+
 				case ControllerType.VbController:
 					return new UInt16[14] {
 						InputApi.GetKeyCode("K"),
@@ -403,6 +463,7 @@ namespace Mesen.Config
 				case ControllerType.SuborMouse:
 				case ControllerType.SnesMouse:
 				case ControllerType.Sb2kMouse:
+				case ControllerType.YuxingMouse:
 					return new UInt16[2] {
 						InputApi.GetKeyCode("Mouse Left"),
 						InputApi.GetKeyCode("Mouse Right")
@@ -475,6 +536,7 @@ namespace Mesen.Config
 				case ControllerType.SuborKeyboard: SuborKeyboardButtons = GetDefaultCustomKeys(type, preset); break;
 				case ControllerType.BbkKeyboard: BbkKeyboardButtons = GetDefaultCustomKeys(type, preset); break;
 				case ControllerType.Sb2kKeyboard: Sb2kKeyboardButtons = GetDefaultCustomKeys(type, preset); break;
+				case ControllerType.YuxingKeyboard: YuxingKeyboardButtons = GetDefaultCustomKeys(type, preset); break;
 				case ControllerType.VbController: VirtualBoyButtons = GetDefaultCustomKeys(type, preset); break;
 				case ControllerType.KonamiHyperShot: KonamiHyperShotButtons = GetDefaultCustomKeys(type, preset); break;
 
@@ -494,7 +556,8 @@ namespace Mesen.Config
 
 				case ControllerType.SuborMouse: MouseButtons = GetDefaultCustomKeys(type, preset); break;
 				case ControllerType.SnesMouse: MouseButtons = GetDefaultCustomKeys(type, preset); break;
-				case ControllerType.Sb2kMouse: MouseButtons = GetDefaultCustomKeys(type, preset); break;
+				case ControllerType.Sb2kMouse:
+				case ControllerType.YuxingMouse: MouseButtons = GetDefaultCustomKeys(type, preset); break;
 
 				case ControllerType.OekaKidsTablet: OekakidsButtons = GetDefaultCustomKeys(type, preset); break;
 
@@ -568,5 +631,28 @@ namespace Mesen.Config
 		PageUp, PageDown,
 		Up, Down, Left, Right,
 		Unknown1, Unknown2, Unknown3,
+	};
+
+	//The YuXing 14x8 matrix. Identical to the Subor keyboard for the first 96 entries;
+	//the last four replace the Subor keyboard's unused cells.
+	public enum NesYuxingKeyboardButtons
+	{
+		A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
+		Num0, Num1, Num2, Num3, Num4, Num5, Num6, Num7, Num8, Num9,
+		F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
+		Numpad0, Numpad1, Numpad2, Numpad3, Numpad4, Numpad5, Numpad6, Numpad7, Numpad8, Numpad9,
+		NumpadEnter, NumpadDot, NumpadPlus, NumpadMultiply, NumpadDivide, NumpadMinus, NumLock,
+		Comma, Dot, SemiColon, Apostrophe,
+		Slash, Backslash,
+		Equal, Minus, Grave,
+		LeftBracket, RightBracket,
+		CapsLock, Pause,
+		Ctrl, Shift, Alt,
+		Space, Backspace, Tab, Esc, Enter,
+		End, Home,
+		Ins, Delete,
+		PageUp, PageDown,
+		Up, Down, Left, Right,
+		LeftWin, RightWin, Menu, PrintScreen,
 	};
 }

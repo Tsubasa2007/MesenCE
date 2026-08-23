@@ -913,6 +913,12 @@
     <ClInclude Include="NES\Input\BbkKeyboard.h">
       <Filter>NES\Input</Filter>
     </ClInclude>
+    <ClInclude Include="NES\Input\YuxingKeyboard.h">
+      <Filter>NES\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="NES\Input\YuxingMouse.h">
+      <Filter>NES\Input</Filter>
+    </ClInclude>
     <ClInclude Include="NES\Input\Sb2kMouse.h">
       <Filter>NES\Input</Filter>
     </ClInclude>
@@ -2076,11 +2082,20 @@
     <ClInclude Include="NES\Mappers\Bbk\BbkLpcAudio.h">
       <Filter>NES\Mappers\Bbk</Filter>
     </ClInclude>
+    <ClInclude Include="NES\Mappers\Bbk\PcFdc.h">
+      <Filter>NES\Mappers\Bbk</Filter>
+    </ClInclude>
     <ClInclude Include="NES\Mappers\Sb2k\Sb2kMapper.h">
       <Filter>NES\Mappers\Sb2k</Filter>
     </ClInclude>
     <ClInclude Include="NES\Mappers\Sb2k\Sb2kPpu.h">
       <Filter>NES\Mappers\Sb2k</Filter>
+    </ClInclude>
+    <ClInclude Include="NES\Mappers\Yuxing\YuxingMapper.h">
+      <Filter>NES\Mappers\Yuxing</Filter>
+    </ClInclude>
+    <ClInclude Include="NES\Mappers\Yuxing\YuxingVcdDrive.h">
+      <Filter>NES\Mappers\Yuxing</Filter>
     </ClInclude>
     <ClInclude Include="NES\Mappers\Bbk\BbkMapper.h">
       <Filter>NES\Mappers\Bbk</Filter>
@@ -3462,6 +3477,9 @@
     </Filter>
     <Filter Include="NES\Mappers\Sb2k">
       <UniqueIdentifier>{6a91e3d7-2f48-4c05-b8ae-93d4c17f5b02}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="NES\Mappers\Yuxing">
+      <UniqueIdentifier>{c05b8a13-7e62-4d94-a1f3-58c9e0d472b6}</UniqueIdentifier>
     </Filter>
     <Filter Include="NES\Mappers\Waixing">
       <UniqueIdentifier>{411607e1-ca14-4d8e-877c-eb9a48ae5413}</UniqueIdentifier>

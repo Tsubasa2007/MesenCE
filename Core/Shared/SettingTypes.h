@@ -251,7 +251,9 @@ enum class ControllerType
 	BbkMouse,
 	BbkKeyboard,
 	Sb2kMouse,
-	Sb2kKeyboard
+	Sb2kKeyboard,
+	YuxingMouse,
+	YuxingKeyboard
 };
 
 struct KeyMapping
@@ -673,6 +675,9 @@ struct NesConfig
 	bool FdsFastForwardOnLoad = false;
 	bool FdsAutoInsertDisk = false;
 	bool BbkShowDiskLed = false;
+	//The YuXing VCD models power on showing the player's own screen, which is left behind
+	//by ejecting the disc. Skipping it boots straight to the computer side instead.
+	bool YuxingSkipVcdScreen = true;
 	VsDualOutputOption VsDualVideoOutput = VsDualOutputOption::Both;
 	VsDualOutputOption VsDualAudioOutput = VsDualOutputOption::Both;
 

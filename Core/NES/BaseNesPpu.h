@@ -79,6 +79,7 @@ protected:
 	bool _attributeLagEnabled = false; //Test switch - color a tile with the previous tile column's attribute
 	bool _vramWriteGlitchEnabled = true; //A $2007 write during rendering smears the bus address' LSB into VRAM (2C02; unconfirmed, and some famiclone PPUs simply drop the write)
 	bool _sharedWriteToggleEnabled = true; //$2005 and $2006 share one first/second-write toggle (2C02); some famiclone PPUs latch them separately (see EnablePpuSharedWriteToggle)
+	uint8_t _splitBgFetchMode = 0; //YuXing video chip split screen: 0 = 2C02 fetch, 1 = 2-screen (1bpp), 2 = 4-band (see YuxingMapper)
 	bool _scrollWriteToggle = false; //$2005's own toggle, used only when _sharedWriteToggleEnabled is false
 	//160
 	NesSpriteInfo* _lastSprite = nullptr; //used by HD ppu
@@ -139,6 +140,20 @@ protected:
 public:
 	virtual void Reset(bool softReset) = 0;
 	virtual void Run(uint64_t runTo) = 0;
+
+	//The YuXing video chip's split-screen modes. In 2-screen mode the background tile
+	//address comes from the mapper instead of $2000 bit 4, both bit planes read the same
+	//byte, and sprites are colored two entries further into the palette. In 4-band mode
+	//the fetch is ordinary but the mapper rebanks video RAM per band.
+	void SetSplitBgFetch(uint8_t mode) { _splitBgFetchMode = mode; }
+
+	//Whether $2001 has the display turned on. Mappers whose per-scanline logic is gated on
+	//it (see YuxingMapper's MMC3 clone) need this without the cost of a full GetState().
+	bool IsDisplayOn() { return _mask.BackgroundEnabled || _mask.SpritesEnabled; }
+
+	//Current scroll address. Video chips that rebank per scanline take the row from it the
+	//way the reference emulator reads loopy_v at the start of a line (see YuxingMapper).
+	uint16_t GetVideoRamAddr() { return _videoRamAddr; }
 
 	uint32_t GetFrameCount() { return _frameCount; }
 	uint32_t GetCurrentCycle() { return _cycle; }

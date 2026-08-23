@@ -81,6 +81,10 @@
 						<c:CheckBoxWarning IsChecked="{Binding Config.BbkAttributeLag}" Text="{l:Translate chkBbkAttributeLag}" />
 					</c:OptionSection>
 
+					<c:OptionSection Header="{l:Translate lblYuxingSettings}">
+						<CheckBox IsChecked="{Binding Config.YuxingSkipVcdScreen}" Content="{l:Translate chkYuxingSkipVcdScreen}" />
+					</c:OptionSection>
+
 					<c:OptionSection Header="{l:Translate lblVsDualSystem}">
 						<Grid ColumnDefinitions="Auto,Auto" RowDefinitions="Auto,Auto">
 							<TextBlock Text="{l:Translate lblVsDualPlayAudio}" />
