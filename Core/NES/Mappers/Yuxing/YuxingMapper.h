@@ -627,7 +627,7 @@ protected:
 				if(IsVcdActive()) {
 					_vcd.Read(addr, vcdValue);
 				}
-				if(addr == 0x4016 && IsPrinterSelected()) {
+				if(addr == 0x4016 && !_vcdMode && IsPrinterSelected()) {
 					value |= 0x02;
 				}
 				return value | vcdValue;
@@ -670,7 +670,13 @@ protected:
 
 		switch(addr) {
 			case 0x4016:
-				WriteLpt(value);
+				//Only the computer side has a printer. In VCD mode this port is the drive's
+				//serial link, and its clock line idles at exactly $06 - the value the printer
+				//select test looks for - so letting the printer see it would force the ready
+				//bit into every status byte the BIOS shifts back from the drive.
+				if(!_vcdMode) {
+					WriteLpt(value);
+				}
 				//$FF/$FE switches the serial link to the keyboard
 				if(IsVcdActive()) {
 					_vcdKeyboardSelected = (value == 0xFF || value == 0xFE);
