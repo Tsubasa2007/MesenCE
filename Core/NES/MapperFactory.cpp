@@ -51,6 +51,7 @@
 #include "NES/Mappers/Kaiser/Kaiser7057.h"
 #include "NES/Mappers/Kaiser/Kaiser7058.h"
 #include "NES/Mappers/Bbk/BbkMapper.h"
+#include "NES/Mappers/Bbk/Yuyin2Mapper.h"
 #include "NES/Mappers/Sb2k/Sb2kMapper.h"
 #include "NES/Mappers/Yuxing/YuxingMapper.h"
 #include "NES/Mappers/Konami/VRC1.h"
@@ -463,6 +464,13 @@ BaseMapper* MapperFactory::GetMapperFromID(RomData& romData)
 					romData.Info.System = GameSystem::Dendy;
 					romData.Info.InputType = GameInputType::SuborKeyboardMouse1;
 					return new Sb2kMapper();
+				}
+				if((romData.Info.Header.Byte9 >> 1) == 2) {
+					//BBK 语音二号: an unrelated chipset that only shares the header slot, but
+					//the same keyboard and mouse as the FD-1 hang off $4016/$4017
+					romData.Info.System = GameSystem::Dendy;
+					romData.Info.InputType = GameInputType::SuborKeyboardMouse1;
+					return new Yuyin2Mapper();
 				}
 				//BBK: Dendy-timed famiclone; the FD-1 drive unit includes a keyboard+mouse and
 				//the BIOS refuses to boot from disk unless the keyboard responds. Set these

@@ -78,6 +78,7 @@
 
 					<c:OptionSection Header="{l:Translate lblBbkSettings}">
 						<CheckBox IsChecked="{Binding Config.BbkShowDiskLed}" Content="{l:Translate chkBbkShowDiskLed}" />
+						<CheckBox IsChecked="{Binding Config.Yuyin2Printer}" Content="{l:Translate chkYuyin2Printer}" />
 						<c:CheckBoxWarning IsChecked="{Binding Config.BbkAttributeLag}" Text="{l:Translate chkBbkAttributeLag}" />
 					</c:OptionSection>
 

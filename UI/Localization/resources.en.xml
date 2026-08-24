@@ -298,6 +298,7 @@
 
 			<Control ID="lblBbkSettings">BBK Learning Machine Settings</Control>
 			<Control ID="chkBbkShowDiskLed">Show disk activity LED (top-right corner)</Control>
+			<Control ID="chkYuyin2Printer">Attach the printer to the voice models (occupies the port 1 controller line)</Control>
 			<Control ID="chkBbkAttributeLag">Color tiles with the previous column's attribute (classic models, experimental)</Control>
 
 			<Control ID="lblYuxingSettings">YuXing Learning Machine Settings</Control>

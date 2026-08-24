@@ -1,5 +1,6 @@
 #pragma once
 #include "pch.h"
+#include <functional>
 #include "Shared/MessageManager.h"
 #include "Utilities/FolderUtilities.h"
 #include "Utilities/HexUtilities.h"
@@ -11,10 +12,15 @@
 //it directly with Epson ESC/P escape sequences.
 //Ported from the VirtuaNES-BBK fork (NES/LPT.cpp, author fanoble).
 //
-//The printer only ever receives bit images: the machine has no Latin-only text mode
-//worth using for Chinese, so the guest rasterizes everything itself and sends it as
-//graphics. Rendering is therefore just "plot the bits" - there is no font handling, and
-//printable characters sent outside a graphics block are discarded.
+//The BBK only ever sends bit images: it has no Latin-only text mode worth using for
+//Chinese, so the guest rasterizes everything itself and sends it as graphics. Rendering
+//is therefore just "plot the bits".
+//
+//Not every machine works that way. A machine that sends text instead - 语音二号 sends
+//GB2312 straight down the wire - is relying on the font that lived inside the printer,
+//which nothing here can know about. Such a machine supplies the glyphs through
+//SetGlyphSource(); until it does, printable characters outside a graphics block are
+//discarded exactly as before.
 //
 //The page is built at 200dpi A4 and written out as a PNG when the guest ends the job
 //with a form feed (or resets the printer, or stops sending data long enough for the
@@ -48,6 +54,17 @@ private:
 	//but never clocked it, so an unterminated job was silently lost - which is every job
 	//in practice: none of the software seen so far ends its job with a form feed.
 	static constexpr uint64_t TimeoutCycles = 6 * 1789773;
+
+	//Horizontal text metrics come from the guest: its line builder wraps at 80 columns and
+	//spends two of them on a full-width character. 80 columns across the printable width is
+	//10 characters per inch - the ESC/P default pitch - which puts a 16-dot glyph in 0.2
+	//inch and its dots at 80dpi. The vertical pitch is NOT recoverable: the machine sends no
+	//line spacing command, so on real hardware the printer's own default decided it. 18 dot
+	//rows is the nearest thing to a neutral choice - the glyph plus a little air.
+	static constexpr int TextDotUnits = UnitsPerInch / 80;
+	static constexpr int TextCellHeight = 16;
+	static constexpr int TextLineUnits = TextDotUnits * (TextCellHeight + 2);
+	static constexpr int MaxGlyphBytes = 64;
 
 	enum class DataState : uint8_t
 	{
@@ -103,6 +120,10 @@ private:
 
 	string _romName;
 
+	//Set only by machines that send text - see the header comment
+	std::function<bool(uint16_t code, uint8_t* bitmap, int& width, int& height)> _glyphSource;
+	uint8_t _leadByte = 0;
+
 	//Protocol state
 	DataState _state = DataState::Idle;
 	bool _printing = false;
@@ -157,7 +178,8 @@ private:
 		_pageDirty = false;
 		_unknownLogged = 0;
 		_bandPins = 24;
-		_lineSpaceUnits = UnitsPerInch / 6;
+		_lineSpaceUnits = TextMode() ? TextLineUnits : UnitsPerInch / 6;
+		_leadByte = 0;
 	}
 
 	//Writes the page out and feeds a fresh sheet, which is what a form feed does on a real
@@ -264,6 +286,70 @@ private:
 		}
 	}
 
+	bool TextMode() { return (bool)_glyphSource; }
+
+	//Paints one glyph dot. Same span-between-rounded-edges rule as PlotDot, so the strokes
+	//stay gapless at any scale.
+	void PlotGlyphDot(int col, int row)
+	{
+		int x0 = LeftMargin + ToPixels(_xUnits + col * TextDotUnits);
+		int x1 = LeftMargin + ToPixels(_xUnits + (col + 1) * TextDotUnits);
+		int y0 = TopMargin + ToPixels(_yUnits + row * TextDotUnits);
+		int y1 = TopMargin + ToPixels(_yUnits + (row + 1) * TextDotUnits);
+
+		x1 = std::max(x1, x0 + 1);
+		y1 = std::max(y1, y0 + 1);
+		x0 = std::max(x0, 0);
+		y0 = std::max(y0, 0);
+		x1 = std::min(x1, PageWidth);
+		y1 = std::min(y1, PageHeight);
+
+		for(int y = y0; y < y1; y++) {
+			uint8_t* rowPtr = _page.data() + (size_t)y * PageWidth;
+			for(int x = x0; x < x1; x++) {
+				rowPtr[x] = 0;
+			}
+			_pageDirty = true;
+		}
+	}
+
+	//One character. The bitmap is 1bpp, MSB first, (width+7)/8 bytes per row.
+	void PrintGlyph(uint16_t code)
+	{
+		uint8_t bitmap[MaxGlyphBytes] = {};
+		int width = 0;
+		int height = 0;
+		if(!_glyphSource(code, bitmap, width, height)) {
+			return;
+		}
+		if(width <= 0 || height <= 0 || ((width + 7) / 8) * height > MaxGlyphBytes) {
+			return;
+		}
+
+		if(_page.empty()) {
+			return;
+		}
+
+		//Wrap rather than pile characters up against the right edge. The guest normally
+		//sends its own CR/LF, so this only catches a line that would run off the sheet.
+		int cellUnits = width * TextDotUnits;
+		if(LeftMargin + ToPixels(_xUnits + cellUnits) > PageWidth) {
+			_xUnits = 0;
+			AdvanceY(_lineSpaceUnits);
+		}
+
+		int stride = (width + 7) / 8;
+		for(int row = 0; row < height; row++) {
+			for(int col = 0; col < width; col++) {
+				if(bitmap[row * stride + (col >> 3)] & (0x80 >> (col & 7))) {
+					PlotGlyphDot(col, row);
+				}
+			}
+		}
+
+		_xUnits += cellUnits;
+	}
+
 	//Advances down the page, breaking to a new sheet when there is no longer room for a
 	//full band. The original had no page break at all: anything past the bottom edge was
 	//written past the end of the page buffer.
@@ -271,7 +357,7 @@ private:
 	{
 		_yUnits += units;
 
-		int reserve = ToPixels(PitchY() * _bandPins);
+		int reserve = TextMode() ? ToPixels(TextLineUnits) : ToPixels(PitchY() * _bandPins);
 		if(TopMargin + ToPixels(_yUnits) + reserve > PageHeight) {
 			EjectPage();
 		}
@@ -397,9 +483,17 @@ public:
 		_selectPrinter = false;
 		_lineFeed = false;
 		_strobe = false;
+		_leadByte = 0;
 	}
 
 	bool IsPrinting() { return _printing; }
+
+	//Hand the printer a font. Machines that rasterize their own text never call this and
+	//keep the graphics-only behaviour.
+	void SetGlyphSource(std::function<bool(uint16_t, uint8_t*, int&, int&)> source)
+	{
+		_glyphSource = std::move(source);
+	}
 
 	//$FF48 - status port. The lines are tied to "ready, online, paper loaded": there is no
 	//host-side printer that could be busy, and the guest polls these before every byte.
@@ -466,6 +560,17 @@ public:
 						break;
 
 					default:
+						if(TextMode()) {
+							if(_leadByte) {
+								PrintGlyph((uint16_t)((_leadByte << 8) | value));
+								_leadByte = 0;
+							} else if(value >= 0xA1) {
+								//GB2312 lead byte - the pair is drawn once the trail arrives
+								_leadByte = value;
+							} else if(value >= 0x20 && value < 0x7F) {
+								PrintGlyph(value);
+							}
+						}
 						break;
 				}
 				break;
@@ -604,7 +709,7 @@ public:
 		//onto the page that is already on the platen.
 		SV(_state); SV(_printing); SV(_escCmd); SV(_paramCount); SV(_dataLength); SV(_paramPos);
 		SVArray(_params, 4);
-		SV(_idleCycles); SV(_unknownLogged);
+		SV(_idleCycles); SV(_unknownLogged); SV(_leadByte);
 		SV(_reset); SV(_selectPrinter); SV(_lineFeed); SV(_strobe);
 		SV(_xUnits); SV(_yUnits); SV(_column);
 		SV(_dpiX); SV(_dpiY); SV(_lineSpaceUnits); SV(_bandPins); SV(_mode24p); SV(_graphicsMode);
