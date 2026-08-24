@@ -100,6 +100,9 @@ private:
 	//floppies are tracked separately because the machine can hold one of each.
 	inline static string _persistedDiscRom;
 	inline static string _persistedDiscPath;
+	//Which program on the disc was picked. Selecting one power-cycles the machine, which
+	//rebuilds the mapper - so like the disc path, this has to outlive it.
+	inline static int32_t _persistedProgramIndex = -1;
 	inline static string _persistedFloppyRom;
 	inline static string _persistedFloppyPath;
 
@@ -969,6 +972,15 @@ protected:
 		}
 	}
 
+	//A freshly loaded disc starts on its first program; if one was picked before the power
+	//cycle that brought us back here, go to that one instead.
+	void RestoreSelectedProgram()
+	{
+		if(_persistedProgramIndex >= 0 && _vcd.GetProgramCount() > 0) {
+			_vcd.SelectProgram((uint32_t)_persistedProgramIndex);
+		}
+	}
+
 	//Mounts the disc or floppy paired with the ROM. Returns true when a VCD disc was found.
 	bool MountPairedMedia()
 	{
@@ -976,8 +988,9 @@ protected:
 
 		if(_persistedDiscRom == romPath && !_persistedDiscPath.empty()) {
 			if(_vcd.LoadDisc(_persistedDiscPath)) {
+				RestoreSelectedProgram();
 				MessageManager::Log("[YuXing] Re-inserted disc: " + _persistedDiscPath);
-				return true;
+				return _vcd.IsDiscInserted();
 			}
 		}
 
@@ -1007,11 +1020,17 @@ protected:
 				}
 			}
 
-			for(string ext : { ".bin", ".BIN" }) {
+			//A .cue is preferred over the .bin it names, so a whole-disc image wins over a
+			//single extracted program of the same name
+			for(string ext : { ".cue", ".CUE", ".bin", ".BIN", ".iso", ".ISO" }) {
 				string discPath = FolderUtilities::CombinePath(folder, baseName + ext);
 				if(_vcd.LoadDisc(discPath)) {
+					RestoreSelectedProgram();
 					MessageManager::Log("[YuXing] Inserted disc: " + discPath);
-					return true;
+					if(_vcd.GetProgramCount() > 0 && !_vcd.IsDiscInserted()) {
+						MessageManager::DisplayMessage("YuXing", std::to_string(_vcd.GetProgramCount()) + " programs on disc - pick one from the disk list");
+					}
+					return _vcd.IsDiscInserted();
 				}
 			}
 		}
@@ -1032,12 +1051,42 @@ public:
 
 	vector<string> GetDiskFileList()
 	{
+		//A whole-disc image carries its own list: the programs on the disc are what the swap
+		//shortcuts step through, since swapping the image itself is not what a user wants
+		//while one of its programs is running.
+		if(_vcd.GetProgramCount() > 0) {
+			vector<string> programs;
+			for(uint32_t i = 0; i < _vcd.GetProgramCount(); i++) {
+				programs.push_back(_vcd.GetProgramName(i));
+			}
+			return programs;
+		}
+
 		string folder = GetConfiguredDiscFolder();
 		if(folder.empty()) {
 			folder = FolderUtilities::GetFolderName(_emu->GetRomInfo().RomFile.GetFilePath());
 		}
-		vector<string> files = FolderUtilities::GetFilesInFolder(folder, { ".bin", ".img", ".ima" }, false);
+		vector<string> files = FolderUtilities::GetFilesInFolder(folder, { ".cue", ".bin", ".iso", ".img", ".ima" }, false);
 		std::sort(files.begin(), files.end());
+
+		//A .cue and the image it names are one disc; drop the image so the list has one entry
+		//per medium rather than two. Matched on the filename alone - the resolved path comes
+		//back with a separator the folder listing does not use, so comparing paths misses.
+		auto leaf = [](const string& path) {
+			string name = FolderUtilities::GetFilename(path, true);
+			std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+			return name;
+		};
+
+		vector<string> named;
+		for(string& file : files) {
+			if(leaf(file).size() >= 4 && leaf(file).compare(leaf(file).size() - 4, 4, ".cue") == 0) {
+				named.push_back(leaf(YuxingVcdDrive::ResolveCueSheet(file)));
+			}
+		}
+		files.erase(std::remove_if(files.begin(), files.end(), [&named, &leaf](const string& file) {
+			return std::find(named.begin(), named.end(), leaf(file)) != named.end();
+		}), files.end());
 		return files;
 	}
 
@@ -1047,6 +1096,9 @@ public:
 	//can be swapped while the machine runs
 	string GetCurrentDiskFilename()
 	{
+		if(!_fdc.IsDiskInserted() && _vcd.GetProgramIndex() >= 0) {
+			return _vcd.GetProgramName((uint32_t)_vcd.GetProgramIndex());
+		}
 		return _fdc.IsDiskInserted() ? _fdc.GetDiskFilename() : _vcd.GetDiscFilename();
 	}
 
@@ -1060,12 +1112,16 @@ public:
 			MessageManager::DisplayMessage("YuXing", "Disk ejected: " + FolderUtilities::GetFilename(_fdc.GetDiskFilename(), true));
 			_fdc.EjectDisk(); //Saves pending changes first
 		}
-		if(_vcd.IsDiscInserted()) {
+		//A disc whose programs are catalogued but none started is still a disc in the drive,
+		//and it is the state the machine boots into - so eject has to test for that, not for
+		//a running program
+		if(_vcd.HasDisc()) {
 			MessageManager::DisplayMessage("YuXing", "Disc ejected: " + FolderUtilities::GetFilename(_vcd.GetDiscFilename(), true));
 			_vcd.EjectDisc();
 		}
 		_persistedDiscRom.clear();
 		_persistedDiscPath.clear();
+		_persistedProgramIndex = -1;
 		_persistedFloppyRom.clear();
 		_persistedFloppyPath.clear();
 
@@ -1085,6 +1141,19 @@ public:
 	void InsertDisc(uint32_t index)
 	{
 		auto lock = _emu->AcquireLock();
+		//Picking one of the programs on the mounted disc, rather than a different medium
+		if(_vcd.GetProgramCount() > 0) {
+			if(_vcd.SelectProgram(index)) {
+				_discChecked = true;
+				_persistedProgramIndex = (int32_t)index;
+				_persistedDiscRom = _emu->GetRomInfo().RomFile.GetFilePath();
+				_persistedDiscPath = _vcd.GetDiscFilename();
+				MessageManager::DisplayMessage("YuXing", "Program: " + _vcd.GetProgramName(index));
+				_emu->GetSystemActionManager()->PowerCycle();
+			}
+			return;
+		}
+
 		vector<string> media = GetDiskFileList();
 		if(index >= media.size()) {
 			return;
@@ -1106,6 +1175,9 @@ public:
 
 		if(_vcd.LoadDisc(path)) {
 			_discChecked = true;
+			//A different disc has its own programs - carrying the last disc's choice over
+			//would land on an unrelated one
+			_persistedProgramIndex = -1;
 			_persistedDiscRom = _emu->GetRomInfo().RomFile.GetFilePath();
 			_persistedDiscPath = path;
 			MessageManager::DisplayMessage("YuXing", "Disc inserted: " + FolderUtilities::GetFilename(path, true));
