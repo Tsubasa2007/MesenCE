@@ -45,6 +45,7 @@ namespace Mesen.Config
 		[ObservableProperty] public partial bool FdsAutoInsertDisk { get; set; } = false;
 		[ObservableProperty] public partial bool BbkShowDiskLed { get; set; } = false;
 		[ObservableProperty] public partial bool YuxingSkipVcdScreen { get; set; } = true;
+		[ObservableProperty] public partial bool YuxingDTypeMouse { get; set; } = false;
 		[ObservableProperty] public partial string BbkDiskFolder { get; set; } = "";
 		[ObservableProperty] public partial VsDualOutputOption VsDualVideoOutput { get; set; } = VsDualOutputOption.Both;
 		[ObservableProperty] public partial VsDualOutputOption VsDualAudioOutput { get; set; } = VsDualOutputOption.Both;
@@ -176,6 +177,7 @@ namespace Mesen.Config
 				FdsAutoInsertDisk = FdsAutoInsertDisk,
 				BbkShowDiskLed = BbkShowDiskLed,
 				YuxingSkipVcdScreen = YuxingSkipVcdScreen,
+				YuxingDTypeMouse = YuxingDTypeMouse,
 				VsDualVideoOutput = VsDualVideoOutput,
 				VsDualAudioOutput = VsDualAudioOutput,
 
@@ -318,6 +320,7 @@ namespace Mesen.Config
 		[MarshalAs(UnmanagedType.I1)] public bool FdsAutoInsertDisk;
 		[MarshalAs(UnmanagedType.I1)] public bool BbkShowDiskLed;
 		[MarshalAs(UnmanagedType.I1)] public bool YuxingSkipVcdScreen;
+		[MarshalAs(UnmanagedType.I1)] public bool YuxingDTypeMouse;
 		public VsDualOutputOption VsDualVideoOutput;
 		public VsDualOutputOption VsDualAudioOutput;
 

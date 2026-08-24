@@ -10,6 +10,8 @@ IKeyManager* KeyManager::_keyManager = nullptr;
 MousePosition KeyManager::_mousePosition = { 0, 0 };
 double KeyManager::_xMouseMovement;
 double KeyManager::_yMouseMovement;
+MouseMovement KeyManager::_mouseMovement = {};
+bool KeyManager::_mouseMovementValid = false;
 EmuSettings* KeyManager::_settings = nullptr;
 SimpleLock KeyManager::_lock;
 
@@ -17,7 +19,16 @@ void KeyManager::RegisterKeyManager(IKeyManager* keyManager)
 {
 	_xMouseMovement = 0;
 	_yMouseMovement = 0;
+	_mouseMovementValid = false;
 	_keyManager = keyManager;
+}
+
+//Called once at the start of each input poll. Deliberately separate from RefreshKeyState(),
+//which the shortcut handler also calls from its own thread - see GetMouseMovement().
+void KeyManager::BeginInputPoll()
+{
+	auto lock = _lock.AcquireSafe();
+	_mouseMovementValid = false;
 }
 
 void KeyManager::RefreshKeyState()
@@ -96,6 +107,17 @@ void KeyManager::SetMouseMovement(int16_t x, int16_t y)
 
 MouseMovement KeyManager::GetMouseMovement(Emulator* emu, uint32_t mouseSensitivity)
 {
+	{
+		//More than one mouse can be connected at a time - the YuXing machines take two - while
+		//the host has a single pointer. Reading this drains the accumulator, so per device the
+		//first one polled would take the whole delta and every other one would sit still. Each
+		//poll therefore takes one reading and hands it to all of them.
+		auto lock = _lock.AcquireSafe();
+		if(_mouseMovementValid) {
+			return _mouseMovement;
+		}
+	}
+
 	constexpr double divider[10] = { 0.25, 0.33, 0.5, 0.66, 0.75, 1, 1.5, 2, 3, 4 };
 	FrameInfo rendererSize = emu->GetVideoRenderer()->GetRendererSize();
 	FrameInfo frameSize = emu->GetVideoDecoder()->GetFrameInfo();
@@ -109,6 +131,9 @@ MouseMovement KeyManager::GetMouseMovement(Emulator* emu, uint32_t mouseSensitiv
 	mov.dy = (int16_t)(_yMouseMovement / factor);
 	_xMouseMovement -= (mov.dx * factor);
 	_yMouseMovement -= (mov.dy * factor);
+
+	_mouseMovement = mov;
+	_mouseMovementValid = true;
 
 	return mov;
 }

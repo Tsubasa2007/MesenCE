@@ -73,6 +73,7 @@ namespace Mesen.Config
 				ControllerType.SuborMouse => MouseButtons,
 				ControllerType.Sb2kMouse => MouseButtons,
 				ControllerType.YuxingMouse => MouseButtons,
+				ControllerType.YuxingSerialMouse => MouseButtons,
 				ControllerType.OekaKidsTablet => OekakidsButtons,
 				ControllerType.BandaiHyperShot => BandaiHypershotButtons,
 				ControllerType.BandaiMicrophone => BandaiMicrophoneButtons,
@@ -117,7 +118,7 @@ namespace Mesen.Config
 				ControllerType.KonamiHyperShot => Enum.GetValues<NesKonamiHyperShotButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.NesArkanoidController or ControllerType.FamicomArkanoidController => Enum.GetValues<NesArkanoidButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.NesZapper or ControllerType.FamicomZapper => Enum.GetValues<NesZapperButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
-				ControllerType.SnesMouse or ControllerType.SuborMouse or ControllerType.Sb2kMouse or ControllerType.YuxingMouse => Enum.GetValues<GenericMouseButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
+				ControllerType.SnesMouse or ControllerType.SuborMouse or ControllerType.Sb2kMouse or ControllerType.YuxingMouse or ControllerType.YuxingSerialMouse => Enum.GetValues<GenericMouseButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.OekaKidsTablet => Enum.GetValues<NesOekakidsButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.BandaiHyperShot => Enum.GetValues<NesZapperButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.BandaiMicrophone => Enum.GetValues<NesBandaiMicrophoneButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
@@ -194,6 +195,7 @@ namespace Mesen.Config
 				case ControllerType.SnesMouse:
 				case ControllerType.Sb2kMouse:
 				case ControllerType.YuxingMouse:
+				case ControllerType.YuxingSerialMouse:
 					MouseButtons = new UInt16[2];
 					break;
 
@@ -464,6 +466,7 @@ namespace Mesen.Config
 				case ControllerType.SnesMouse:
 				case ControllerType.Sb2kMouse:
 				case ControllerType.YuxingMouse:
+				case ControllerType.YuxingSerialMouse:
 					return new UInt16[2] {
 						InputApi.GetKeyCode("Mouse Left"),
 						InputApi.GetKeyCode("Mouse Right")
@@ -557,6 +560,7 @@ namespace Mesen.Config
 				case ControllerType.SuborMouse: MouseButtons = GetDefaultCustomKeys(type, preset); break;
 				case ControllerType.SnesMouse: MouseButtons = GetDefaultCustomKeys(type, preset); break;
 				case ControllerType.Sb2kMouse:
+				case ControllerType.YuxingSerialMouse:
 				case ControllerType.YuxingMouse: MouseButtons = GetDefaultCustomKeys(type, preset); break;
 
 				case ControllerType.OekaKidsTablet: OekakidsButtons = GetDefaultCustomKeys(type, preset); break;

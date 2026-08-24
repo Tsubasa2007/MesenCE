@@ -513,6 +513,7 @@
     <ClInclude Include="NES\Input\BbkKeyboard.h" />
     <ClInclude Include="NES\Input\YuxingKeyboard.h" />
     <ClInclude Include="NES\Input\YuxingMouse.h" />
+    <ClInclude Include="NES\Input\YuxingSerialMouse.h" />
     <ClInclude Include="NES\Input\Sb2kMouse.h" />
     <ClInclude Include="NES\Input\Sb2kKeyboard.h" />
     <ClInclude Include="NES\Input\SuborMouse.h" />

@@ -13,6 +13,8 @@ private:
 	static MousePosition _mousePosition;
 	static double _xMouseMovement;
 	static double _yMouseMovement;
+	static MouseMovement _mouseMovement;
+	static bool _mouseMovementValid;
 	static EmuSettings* _settings;
 	static SimpleLock _lock;
 
@@ -21,6 +23,7 @@ public:
 	static void SetSettings(EmuSettings* settings);
 
 	static void RefreshKeyState();
+	static void BeginInputPoll();
 	static bool IsKeyPressed(uint16_t keyCode);
 	static optional<int16_t> GetAxisPosition(uint16_t keyCode);
 	static bool IsMouseButtonPressed(MouseButton button);

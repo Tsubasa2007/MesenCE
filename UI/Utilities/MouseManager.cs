@@ -203,6 +203,7 @@ namespace Mesen.Utilities
 					InputApi.HasControlDevice(ControllerType.BbkMouse) ||
 					InputApi.HasControlDevice(ControllerType.Sb2kMouse) ||
 					InputApi.HasControlDevice(ControllerType.YuxingMouse) ||
+					InputApi.HasControlDevice(ControllerType.YuxingSerialMouse) ||
 					InputApi.HasControlDevice(ControllerType.FamicomArkanoidController) ||
 					InputApi.HasControlDevice(ControllerType.NesArkanoidController) ||
 					InputApi.HasControlDevice(ControllerType.HoriTrack)

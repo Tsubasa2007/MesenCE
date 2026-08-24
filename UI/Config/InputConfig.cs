@@ -424,6 +424,7 @@ namespace Mesen.Config
 		Sb2kKeyboard,
 		YuxingMouse,
 		YuxingKeyboard,
+		YuxingSerialMouse,
 	}
 
 	public static class ControllerTypeExtensions
@@ -520,6 +521,7 @@ namespace Mesen.Config
 				case ControllerType.SuborMouse:
 				case ControllerType.Sb2kMouse:
 				case ControllerType.YuxingMouse:
+				case ControllerType.YuxingSerialMouse:
 				case ControllerType.SnesMouse:
 				case ControllerType.FamicomZapper:
 				case ControllerType.NesZapper:

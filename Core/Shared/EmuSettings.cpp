@@ -69,6 +69,7 @@ void EmuSettings::Serialize(Serializer& s)
 			SV(_nes.PpuExtraScanlinesBeforeNmi);
 			SV(_nes.Region);
 			SV(_nes.LightDetectionRadius);
+			SV(_nes.YuxingDTypeMouse);
 			SV(_nes.Port1.Type);
 			SV(_nes.Port1SubPorts[0].Type);
 			SV(_nes.Port1SubPorts[1].Type);

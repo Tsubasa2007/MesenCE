@@ -302,6 +302,7 @@
 
 			<Control ID="lblYuxingSettings">YuXing Learning Machine Settings</Control>
 			<Control ID="chkYuxingSkipVcdScreen">Start on the computer side, skipping the VCD player screen (when no disc is inserted)</Control>
+			<Control ID="chkYuxingDTypeMouse">Use the D-type add-on serial mouse instead of the built-in mouse</Control>
 
 			<Control ID="lblVsDualSystem">VS. DualSystem Settings</Control>
 			<Control ID="lblVsDualPlayAudio">Play audio for:</Control>
@@ -2049,6 +2050,7 @@ E
 			<Value ID="Sb2kKeyboard">SB-2000 Keyboard</Value>
 			<Value ID="YuxingKeyboard">YuXing Keyboard</Value>
 			<Value ID="YuxingMouse">YuXing Mouse</Value>
+			<Value ID="YuxingSerialMouse">YuXing Serial Mouse (D-type)</Value>
 			<Value ID="BarcodeBattler">Barcode Battler</Value>
 			<Value ID="HoriTrack">Hori Track</Value>
 			<Value ID="BandaiHyperShot">Bandai Hyper Shot</Value>

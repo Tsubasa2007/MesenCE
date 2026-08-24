@@ -155,6 +155,7 @@ void BaseControlManager::ClearDevices()
 void BaseControlManager::UpdateInputState()
 {
 	KeyManager::RefreshKeyState();
+	KeyManager::BeginInputPoll();
 
 	auto lock = _deviceLock.AcquireSafe();
 

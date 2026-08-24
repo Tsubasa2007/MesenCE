@@ -83,6 +83,7 @@
 
 					<c:OptionSection Header="{l:Translate lblYuxingSettings}">
 						<CheckBox IsChecked="{Binding Config.YuxingSkipVcdScreen}" Content="{l:Translate chkYuxingSkipVcdScreen}" />
+						<CheckBox IsChecked="{Binding Config.YuxingDTypeMouse}" Content="{l:Translate chkYuxingDTypeMouse}" />
 					</c:OptionSection>
 
 					<c:OptionSection Header="{l:Translate lblVsDualSystem}">

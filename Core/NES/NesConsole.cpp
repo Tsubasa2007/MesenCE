@@ -686,6 +686,17 @@ void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem syst
 			expDevice = ControllerType::YuxingKeyboard;
 			log("[Input] YuXing mouse connected");
 			port2 = ControllerType::YuxingMouse;
+			if(GetNesConfig().YuxingDTypeMouse) {
+				//Both mice at once: the later machines' BIOS only ever talks to the built-in
+				//one and the D-type disks only ever talk to this one, so a machine that has
+				//to run both wants both plugged in. YuxingMouse answers on either address
+				//regardless of which port it sits in, so it moves aside to the first port and
+				//leaves 017 to this device, which answers only its own port. It costs the
+				//joypad on the first port, which is what plugging a mouse in costs anyway.
+				log("[Input] YuXing D-type serial mouse connected");
+				port1 = ControllerType::YuxingMouse;
+				port2 = ControllerType::YuxingSerialMouse;
+			}
 		} else if(dynamic_cast<BbkMapper*>(mapper)) {
 			//The BBK FD-1 keyboard shares the Subor scan protocol but has a different key
 			//matrix, and its mouse is an EM84502 serial device, not the Subor mouse protocol
