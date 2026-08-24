@@ -25,6 +25,7 @@
 #include "NES/Mappers/NSF/NsfMapper.h"
 #include "NES/Mappers/FDS/Fds.h"
 #include "NES/Mappers/Bbk/BbkMapper.h"
+#include "NES/Mappers/Bbk/Bbk928Mapper.h"
 #include "NES/Mappers/Bbk/Yuyin2Mapper.h"
 #include "NES/Mappers/Yuxing/YuxingMapper.h"
 #include "NES/Mappers/Sb2k/Sb2kMapper.h"
@@ -698,20 +699,20 @@ void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem syst
 				port1 = ControllerType::YuxingMouse;
 				port2 = ControllerType::YuxingSerialMouse;
 			}
-		} else if(dynamic_cast<BbkMapper*>(mapper) || dynamic_cast<Yuyin2Mapper*>(mapper)) {
+		} else if(dynamic_cast<BbkMapper*>(mapper) || dynamic_cast<Yuyin2Mapper*>(mapper) || dynamic_cast<Bbk928Mapper*>(mapper)) {
 			//The BBK FD-1 keyboard shares the Subor scan protocol but has a different key
 			//matrix, and its mouse is an EM84502 serial device, not the Subor mouse protocol.
-			//语音二号 is a different machine but takes the same keyboard.
+			//语音二号 and the 928 are different machines but take the same keyboard.
 			log("[Input] BBK keyboard connected");
 			expDevice = ControllerType::BbkKeyboard;
 			if(dynamic_cast<BbkMapper*>(mapper)) {
 				//Only the BBK itself drives a mouse: its BIOS initialises one with
-				//SET_REMOTE_MODE and then polls READ_DATA continuously. The 语音二号 never
-				//sends either command, from its BIOS or from either sub-card, so port 2 is
-				//left as a controller there. Leaving a mouse on it would cost the machine a
-				//pad and risk the device latching onto unrelated $4016/$4017 traffic - the
-				//语音二号 trips its nine-read wake-up now and then, and an awake mouse drives
-				//$4017 bit 0 whether or not anything asked it to.
+				//SET_REMOTE_MODE and then polls READ_DATA continuously. Neither the 语音二号
+				//(BIOS or either sub-card) nor the 928 ever sends either command, so port 2 is
+				//left as a controller there. Leaving a mouse on it would cost them the pad and
+				//risk the device latching onto unrelated $4016/$4017 traffic - the 语音二号
+				//trips its nine-read wake-up now and then, and an awake mouse drives $4017
+				//bit 0 whether or not anything asked it to.
 				log("[Input] BBK mouse connected");
 				port2 = ControllerType::BbkMouse;
 			}

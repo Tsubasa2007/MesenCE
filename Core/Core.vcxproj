@@ -191,6 +191,7 @@
     <ClInclude Include="NES\Mappers\Bbk\BbkLpcAudio.h" />
     <ClInclude Include="NES\Mappers\Bbk\BbkMapper.h" />
     <ClInclude Include="NES\Mappers\Bbk\BbkPrinter.h" />
+    <ClInclude Include="NES\Mappers\Bbk\Bbk928Mapper.h" />
     <ClInclude Include="NES\Mappers\Bbk\Yuyin2Mapper.h" />
     <ClInclude Include="NES\Mappers\Sb2k\Sb2kMapper.h" />
     <ClInclude Include="NES\Mappers\Sb2k\Sb2kPpu.h" />

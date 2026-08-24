@@ -51,6 +51,7 @@
 #include "NES/Mappers/Kaiser/Kaiser7057.h"
 #include "NES/Mappers/Kaiser/Kaiser7058.h"
 #include "NES/Mappers/Bbk/BbkMapper.h"
+#include "NES/Mappers/Bbk/Bbk928Mapper.h"
 #include "NES/Mappers/Bbk/Yuyin2Mapper.h"
 #include "NES/Mappers/Sb2k/Sb2kMapper.h"
 #include "NES/Mappers/Yuxing/YuxingMapper.h"
@@ -464,6 +465,13 @@ BaseMapper* MapperFactory::GetMapperFromID(RomData& romData)
 					romData.Info.System = GameSystem::Dendy;
 					romData.Info.InputType = GameInputType::SuborKeyboardMouse1;
 					return new Sb2kMapper();
+				}
+				if((romData.Info.Header.Byte9 >> 1) == 3) {
+					//BBK-928: four 8K windows again, but the bank registers sit at the top of the
+					//address space. Keyboard only - nothing in it talks to a mouse.
+					romData.Info.System = GameSystem::Dendy;
+					romData.Info.InputType = GameInputType::SuborKeyboardMouse1;
+					return new Bbk928Mapper();
 				}
 				if((romData.Info.Header.Byte9 >> 1) == 2) {
 					//BBK 语音二号: an unrelated chipset that only shares the header slot, but
