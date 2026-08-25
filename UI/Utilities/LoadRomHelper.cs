@@ -193,6 +193,15 @@ namespace Mesen.Utilities
 		//header byte 9 selecting which machine it is). Search the executable's own folder rather
 		//than Program.OriginalFolder: that one is the working directory, which is only the same
 		//folder when Mesen happens to be launched from it.
+		//
+		//Only two of the four mapper 171 machines have a floppy drive: variant 0 (BBK) and variant 1
+		//(SB-2000). Variant 2 (the 语音二号) and variant 3 (the BBK-928/968) have no drive at all, so
+		//they can never boot a disk however similar their headers look.
+		//
+		//Both BBK BIOSes are variant 0, and the smaller of the two is the 1.0 (128KB, against the 98
+		//electronic disk's 2MB). Prefer it when a folder holds both: it is the machine most of these
+		//disks were built for, and the 98 differs enough - BIOS call numbering above all - that
+		//1.0-only software misbehaves on it.
 		private static string? FindLearningMachineBios(bool sb2k)
 		{
 			try {
@@ -200,33 +209,43 @@ namespace Mesen.Utilities
 				if(exeFolder == null) {
 					return null;
 				}
+
+				string? bios = null;
+				int biosPrgSize = int.MaxValue;
 				foreach(string nes in Directory.EnumerateFiles(exeFolder, "*.nes")) {
-					if(IsLearningMachineBios(nes, sb2k)) {
-						return nes;
+					int prgSize = GetLearningMachineBiosPrgSize(nes, sb2k);
+					if(prgSize > 0 && prgSize < biosPrgSize) {
+						bios = nes;
+						biosPrgSize = prgSize;
 					}
 				}
+				return bios;
 			} catch { }
 			return null;
 		}
 
-		private static bool IsLearningMachineBios(string path, bool sb2k)
+		//PRG size in 16KB units if this file is a BIOS for the machine the disk belongs to, 0 if not.
+		private static int GetLearningMachineBiosPrgSize(string path, bool sb2k)
 		{
 			try {
 				using FileStream fs = File.OpenRead(path);
 				byte[] h = new byte[16];
 				if(fs.Read(h, 0, 16) < 16) {
-					return false;
+					return 0;
 				}
 				if(h[0] != 'N' || h[1] != 'E' || h[2] != 'S' || h[3] != 0x1A) {
-					return false;
+					return 0;
 				}
 				int prg16k = h[4];               //PRG ROM in 16KB units
 				int chr8k = h[5];                //CHR ROM in 8KB units
 				int mapper = (h[6] >> 4) | (h[7] & 0xF0);
-				bool isSb2kBios = (h[9] >> 1) == 1; //machine variant
-				return mapper == 171 && prg16k >= 8 && chr8k == 0 && isSb2kBios == sb2k;
+				int variant = h[9] >> 1;         //machine variant
+				if(mapper != 171 || prg16k < 8 || chr8k != 0 || variant != (sb2k ? 1 : 0)) {
+					return 0;
+				}
+				return prg16k;
 			} catch {
-				return false;
+				return 0;
 			}
 		}
 
