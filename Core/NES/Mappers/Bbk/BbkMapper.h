@@ -1045,10 +1045,18 @@ protected:
 			case 0xFF04: //DRAMPagePort (16K granularity; ROM/DRAM select on D5, or D7 on the BBK-98)
 				if(_bbk98) {
 					//D7 selects DRAM/ROM, D6-D0 = 16K page of either; D7 shifts out of
-					//the 8-bit DRAM bank value so it is tracked separately
+					//the 8-bit DRAM bank value so it is tracked separately.
+					//
+					//On the ROM side D6 is not the top page bit - $FF11 bit 7 is, the same line
+					//that maps DRAM over $C000-$FFFF. The BIOS proves both halves in one boot:
+					//with the overlay off it reads the electronic disk's FAT12 image through
+					//pages $00-$0F (page 0 really is the "SMDOS2.0" boot sector), and with the
+					//overlay on it fetches hanzi through $00-$06, which are font pages $40-$46.
+					//Values that already carry D6 ($42-$4E for cached font, $7E for the BIOS
+					//code bank) are unaffected either way.
 					_dram8000 = (value & 0x80) != 0;
 					if(!_dram8000) {
-						_romBank16k = value & 0x7F;
+						_romBank16k = (value & 0x7F) | ((_regFF11 & 0x80) ? 0x40 : 0);
 					}
 					_regFF14 = (uint8_t)(value << 1);
 					_regFF1C = (uint8_t)(value << 1) | 0x01;
