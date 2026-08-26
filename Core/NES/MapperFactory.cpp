@@ -698,6 +698,13 @@ unique_ptr<BaseMapper> MapperFactory::InitializeFromFile(NesConsole* console, Vi
 	romData = {};
 	bool databaseEnabled = !console->GetNesConfig().DisableGameDatabase;
 	if(RomLoader::LoadFile(romFile, romData, databaseEnabled)) {
+		//These two run on Dendy timing, and their mapper 178 board leaves the iNES header no
+		//way to say so - the machine has to be recognised before the mapper is built, because
+		//that is the last point where the region can still be changed.
+		if(YuxingMapper::IsV10OrV11(romData.Info.Hash.PrgCrc32)) {
+			romData.Info.System = GameSystem::Dendy;
+		}
+
 		unique_ptr<BaseMapper> mapper(GetMapperFromID(romData));
 		if(mapper) {
 			result = LoadRomResult::Success;

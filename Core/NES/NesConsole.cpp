@@ -182,7 +182,10 @@ LoadRomResult NesConsole::LoadRom(VirtualFile& romFile)
 			}
 		}
 
-		if(GetNesConfig().AutoConfigureInput && romData.Info.InputType != GameInputType::Unspecified) {
+		//The V10/V11 are identified by their PRG CRC32 rather than by anything in the header,
+		//which leaves their input type unspecified - so they have to be asked for by name here.
+		bool needsInputByCrc = YuxingMapper::IsV10OrV11(romData.Info.Hash.PrgCrc32);
+		if(GetNesConfig().AutoConfigureInput && (romData.Info.InputType != GameInputType::Unspecified || needsInputByCrc)) {
 			//Auto-configure the inputs (if option is enabled)
 			InitializeInputDevices(romData.Info.InputType, romData.Info.System, mapper.get());
 		}
@@ -631,7 +634,24 @@ void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem syst
 
 	bool isFamicom = (system == GameSystem::Famicom || system == GameSystem::FDS || system == GameSystem::Dendy);
 
-	if(inputType == GameInputType::VsZapper) {
+	//The YuXing V10/V11 are 裕兴 machines on a plain mapper 178 board, so none of the mapper
+	//casts below reach them and the iNES header says nothing about their input. Their BIOS
+	//still scans a Subor keyboard - it writes $05/$04/$06 to $4016 and reads $4017 twice per
+	//row - and still reads the YuXing serial mouse off $4016, so pick them out by the BIOS's
+	//PRG CRC32, which is how the reference emulator identifies them too.
+	uint32_t prgCrc = mapper ? mapper->GetRomInfo().Hash.PrgCrc32 : 0;
+	bool isYuxing178 = YuxingMapper::IsV10OrV11(prgCrc);
+
+	if(isYuxing178) {
+		//The mouse takes the first port so it answers $4016 and leaves $4017 to the keyboard,
+		//which is the split the hardware makes - the reference serves both from one device and
+		//lets the keyboard replace the mouse's $4017 value outright.
+		log("[Input] YuXing mouse connected");
+		port1 = ControllerType::YuxingMouse;
+		port2 = ControllerType::None;
+		log("[Input] Subor keyboard connected");
+		expDevice = ControllerType::SuborKeyboard;
+	} else if(inputType == GameInputType::VsZapper) {
 		//VS Duck Hunt, etc. need the zapper in the first port
 		log("[Input] VS Zapper connected");
 		port1 = ControllerType::NesZapper;

@@ -42,6 +42,16 @@
 // - $8000-$FFFF: ROM 32K bank ($4800 bits 0-4), or a PRAM window when $5500 bit 2 is set
 class YuxingMapper : public BaseMapper
 {
+public:
+	//The V10 and V11 are 裕兴 machines too, but they sit on a plain mapper 178 board rather
+	//than this one, so nothing about them can be read off the iNES header - not the Dendy
+	//timing, and not the cut-down Subor keyboard and serial mouse they carry. The reference
+	//emulator picks them out by the BIOS's PRG CRC32 and so does this port.
+	static bool IsV10OrV11(uint32_t prgCrc)
+	{
+		return prgCrc == 0xCB7AA37A || prgCrc == 0x8E53518B;
+	}
+
 private:
 	//Handles the FDS disk shortcut keys, reused here to swap VCD discs
 	class DiscSwapListener final : public INotificationListener

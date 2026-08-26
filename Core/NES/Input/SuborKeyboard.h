@@ -9,6 +9,9 @@ private:
 	uint8_t _row = 0;
 	uint8_t _column = 0;
 	bool _enabled = false;
+	bool _reduced = false;
+	uint8_t _scan = 0;
+	bool _out = false;
 
 protected:
 	string GetKeyNames() override
@@ -90,6 +93,8 @@ protected:
 		SV(_row);
 		SV(_column);
 		SV(_enabled);
+		SV(_scan);
+		SV(_out);
 	}
 
 	void RefreshStateBuffer() override
@@ -99,13 +104,25 @@ protected:
 	}
 
 public:
-	SuborKeyboard(Emulator* emu, KeyMappingSet keyMappings) : BaseControlDevice(emu, ControllerType::SuborKeyboard, BaseControlDevice::ExpDevicePort, keyMappings)
+	SuborKeyboard(Emulator* emu, KeyMappingSet keyMappings, bool reduced = false) : BaseControlDevice(emu, ControllerType::SuborKeyboard, BaseControlDevice::ExpDevicePort, keyMappings)
 	{
+		_reduced = reduced;
 	}
 
 	uint8_t ReadRam(uint16_t addr) override
 	{
 		if(addr == 0x4017) {
+			//The reduced keyboard leaves every line it does not drive high; the full one
+			//reports only bits 1-4 and zeroes the rest.
+			if(_reduced) {
+				//Scan position 0 is the gap the counter passes through on its way round;
+				//nothing answers there, and it is what stops this machine ever seeing the
+				//extended-keyboard row.
+				if(_scan == 0) {
+					return 0xFF;
+				}
+				return (uint8_t)((((~GetActiveKeys(_scan - 1, _out ? 0 : 1)) << 1) & 0x1E) | 0xE1);
+			}
 			if(_enabled) {
 				uint8_t value = ((~GetActiveKeys(_row, _column)) << 1) & 0x1E;
 				return value;
@@ -119,6 +136,22 @@ public:
 	void WriteRam(uint16_t addr, uint8_t value) override
 	{
 		StrobeProcessWrite(value);
+
+		if(_reduced) {
+			//The reduced keyboard's counter, ported from the VirtuaNES-BBK fork: $05 restarts it,
+			//$04 steps it and flips halves, $06 flips halves only. It wraps at nine, one row
+			//short of the matrix, so the extended-keyboard row is never reached.
+			if(value == 0x05) {
+				_scan = 0;
+				_out = false;
+			} else if(value == 0x04) {
+				if(++_scan > 9) { _scan = 0; }
+				_out = !_out;
+			} else if(value == 0x06) {
+				_out = !_out;
+			}
+			return;
+		}
 
 		uint8_t prevColumn = _column;
 		_column = (value & 0x02) >> 1;

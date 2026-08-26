@@ -2,6 +2,7 @@
 #include "NES/NesControlManager.h"
 #include "NES/BaseMapper.h"
 #include "NES/NesConsole.h"
+#include "NES/Mappers/Yuxing/YuxingMapper.h"
 #include "NES/NesMemoryManager.h"
 #include "Shared/EmuSettings.h"
 #include "Shared/Interfaces/IKeyManager.h"
@@ -128,7 +129,7 @@ shared_ptr<BaseControlDevice> NesControlManager::CreateControllerDevice(Controll
 		case ControllerType::FcnsController: device.reset(new FcnsController(_emu, BaseControlDevice::ExpDevicePort, keys)); break;
 		case ControllerType::ExcitingBoxing: device.reset(new ExcitingBoxingController(_emu, keys)); break;
 		case ControllerType::JissenMahjong: device.reset(new JissenMahjongController(_emu, keys)); break;
-		case ControllerType::SuborKeyboard: device.reset(new SuborKeyboard(_emu, keys)); break;
+		case ControllerType::SuborKeyboard: device.reset(new SuborKeyboard(_emu, keys, YuxingMapper::IsV10OrV11(_console->GetMapper()->GetRomInfo().Hash.PrgCrc32))); break;
 		case ControllerType::BbkKeyboard: device.reset(new BbkKeyboard(_emu, keys)); break;
 		case ControllerType::Sb2kKeyboard: device.reset(new Sb2kKeyboard(_emu, keys)); break;
 		case ControllerType::YuxingKeyboard: device.reset(new YuxingKeyboard(_emu, keys)); break;
