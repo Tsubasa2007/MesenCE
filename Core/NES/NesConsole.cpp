@@ -26,6 +26,7 @@
 #include "NES/Mappers/FDS/Fds.h"
 #include "NES/Mappers/Bbk/BbkMapper.h"
 #include "NES/Mappers/Bbk/Bbk928Mapper.h"
+#include "NES/Mappers/Subor/SuborWindows2002.h"
 #include "NES/Mappers/Bbk/Yuyin2Mapper.h"
 #include "NES/Mappers/Yuxing/YuxingMapper.h"
 #include "NES/Mappers/Sb2k/Sb2kMapper.h"
@@ -719,6 +720,15 @@ void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem syst
 				port1 = ControllerType::YuxingMouse;
 				port2 = ControllerType::YuxingSerialMouse;
 			}
+		} else if(dynamic_cast<SuborWindows2002*>(mapper)) {
+			//The mouse takes the first port so it answers $4016 and leaves $4017 to the keyboard,
+			//which is the split this machine's BIOS scans - one 24-bit packet per latch on $4016,
+			//and the $05/$04/$06 key counter read back on $4017.
+			log("[Input] Subor mouse (24-bit) connected");
+			port1 = ControllerType::SuborMouse24;
+			port2 = ControllerType::None;
+			log("[Input] Subor keyboard connected");
+			expDevice = ControllerType::SuborKeyboard;
 		} else if(dynamic_cast<BbkMapper*>(mapper) || dynamic_cast<Yuyin2Mapper*>(mapper) || dynamic_cast<Bbk928Mapper*>(mapper)) {
 			//The BBK FD-1 keyboard shares the Subor scan protocol but has a different key
 			//matrix, and its mouse is an EM84502 serial device, not the Subor mouse protocol.

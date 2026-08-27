@@ -47,6 +47,7 @@ namespace Mesen.ViewModels
 			ControllerType.SnesMouse,
 			ControllerType.SnesNttDataKeypad,
 			ControllerType.SuborMouse,
+			ControllerType.SuborMouse24,
 			ControllerType.VbController
 		};
 
@@ -63,6 +64,7 @@ namespace Mesen.ViewModels
 			ControllerType.SnesMouse,
 			ControllerType.SnesNttDataKeypad,
 			ControllerType.SuborMouse,
+			ControllerType.SuborMouse24,
 			ControllerType.BbkMouse,
 			ControllerType.Sb2kMouse,
 			ControllerType.YuxingMouse,
@@ -84,6 +86,7 @@ namespace Mesen.ViewModels
 			ControllerType.SnesMouse,
 			ControllerType.SnesNttDataKeypad,
 			ControllerType.SuborMouse,
+			ControllerType.SuborMouse24,
 			ControllerType.VbController,
 		};
 

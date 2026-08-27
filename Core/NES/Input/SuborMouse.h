@@ -6,6 +6,8 @@
 #include "Shared/Emulator.h"
 #include "Utilities/Serializer.h"
 
+//The 1/3-byte Subor mouse. The Subor Windows 2002 carries a different device that sends a
+//single 24-bit packet instead - see SuborMouse24.
 class SuborMouse : public BaseControlDevice
 {
 private:

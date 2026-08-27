@@ -9,6 +9,7 @@
 #include "SNES/Input/SnesNttDataKeypad.h"
 #include "NES/Input/NesController.h"
 #include "NES/Input/SuborMouse.h"
+#include "NES/Input/SuborMouse24.h"
 #include "NES/Input/PachinkoController.h"
 #include "NES/Input/FcnsController.h"
 #include "NES/Input/VirtualBoyController.h"
@@ -88,6 +89,10 @@ public:
 
 				case ControllerType::SuborMouse:
 					_ports[i].reset(new SuborMouse(emu, 0, controllers[i].Keys));
+					break;
+
+				case ControllerType::SuborMouse24:
+					_ports[i].reset(new SuborMouse24(emu, 0, controllers[i].Keys));
 					break;
 
 				case ControllerType::VirtualBoyController:

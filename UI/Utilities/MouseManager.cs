@@ -200,6 +200,7 @@ namespace Mesen.Utilities
 				bool hasMouseDevice = (
 					InputApi.HasControlDevice(ControllerType.SnesMouse) ||
 					InputApi.HasControlDevice(ControllerType.SuborMouse) ||
+					InputApi.HasControlDevice(ControllerType.SuborMouse24) ||
 					InputApi.HasControlDevice(ControllerType.BbkMouse) ||
 					InputApi.HasControlDevice(ControllerType.Sb2kMouse) ||
 					InputApi.HasControlDevice(ControllerType.YuxingMouse) ||

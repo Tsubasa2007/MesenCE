@@ -55,6 +55,7 @@
 #include "NES/Mappers/Bbk/Yuyin2Mapper.h"
 #include "NES/Mappers/Sb2k/Sb2kMapper.h"
 #include "NES/Mappers/Yuxing/YuxingMapper.h"
+#include "NES/Mappers/Subor/SuborWindows2002.h"
 #include "NES/Mappers/Konami/VRC1.h"
 #include "NES/Mappers/Konami/VRC2_4.h"
 #include "NES/Mappers/Konami/VRC3.h"
@@ -493,7 +494,14 @@ BaseMapper* MapperFactory::GetMapperFromID(RomData& romData)
 		case 174: return new Mapper174();
 		case 175: return new Kaiser7022();
 		case 176: return new Fk23C();
-		case 177: return new Henggedianzi177();
+		case 177:
+			if(SuborWindows2002::IsSuborWindows2002(romData.Info.Hash.PrgCrc32)) {
+				//A Subor learning machine on an otherwise stock 177 board - see the class comment.
+				//Asking for the input type here is what gets the auto-configure step to run at all.
+				romData.Info.InputType = GameInputType::SuborKeyboardMouse1;
+				return new SuborWindows2002();
+			}
+			return new Henggedianzi177();
 		case 178: return new Waixing178();
 		case 179: return new Henggedianzi179();
 		case 180: return new UnRom_180();

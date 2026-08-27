@@ -2028,6 +2028,7 @@ E
 			<Value ID="PowerPadSideB">Power Pad (Side B)</Value>
 			<Value ID="SnesMouse">SNES Mouse</Value>
 			<Value ID="SuborMouse">Subor Mouse</Value>
+			<Value ID="SuborMouse24">Subor Mouse (24-bit)</Value>
 			<Value ID="Sb2kMouse">SB-2000 Mouse</Value>
 			<Value ID="VbController">Virtual Boy Controller</Value>
 

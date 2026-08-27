@@ -425,6 +425,7 @@ namespace Mesen.Config
 		YuxingMouse,
 		YuxingKeyboard,
 		YuxingSerialMouse,
+		SuborMouse24,
 	}
 
 	public static class ControllerTypeExtensions
@@ -519,6 +520,7 @@ namespace Mesen.Config
 				case ControllerType.KonamiHyperShot:
 				case ControllerType.BandaiHyperShot:
 				case ControllerType.SuborMouse:
+				case ControllerType.SuborMouse24:
 				case ControllerType.Sb2kMouse:
 				case ControllerType.YuxingMouse:
 				case ControllerType.YuxingSerialMouse:
