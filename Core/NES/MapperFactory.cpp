@@ -56,6 +56,7 @@
 #include "NES/Mappers/Sb2k/Sb2kMapper.h"
 #include "NES/Mappers/Yuxing/YuxingMapper.h"
 #include "NES/Mappers/Subor/SuborWindows2002.h"
+#include "NES/Mappers/Bung/DrPcJrMapper.h"
 #include "NES/Mappers/Konami/VRC1.h"
 #include "NES/Mappers/Konami/VRC2_4.h"
 #include "NES/Mappers/Konami/VRC3.h"
@@ -490,7 +491,17 @@ BaseMapper* MapperFactory::GetMapperFromID(RomData& romData)
 			}
 			return new Kaiser7058();
 		case 172: return new Txc22211B();
-		case 173: return new Txc22211C();
+		case 173:
+			//The VirtuaNES-BBK fork reuses 173 for the Bung Doctor PC Jr. family. A real
+			//Idea-Tek 173 cart is small and has CHR ROM; these machines are a 128KB BIOS
+			//with CHR-RAM only, which is what tells them apart.
+			if(romData.PrgRom.size() >= 0x20000 && romData.ChrRom.size() == 0) {
+				//Asking for an input type is what gets the auto-configure step to run at all
+				//Asking for an input type is what gets the auto-configure step to run at all
+				romData.Info.InputType = GameInputType::SuborKeyboardMouse1;
+				return new DrPcJrMapper();
+			}
+			return new Txc22211C();
 		case 174: return new Mapper174();
 		case 175: return new Kaiser7022();
 		case 176: return new Fk23C();

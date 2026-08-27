@@ -99,9 +99,31 @@ public:
 		return true;
 	}
 
+	//The Dr. PC Jr. BIOS takes the same movement but packs it differently (its own button
+	//bit positions, and a report every frame rather than only when something changed), so
+	//it drains the raw delta and builds its own packet. Buttons come back in the order the
+	//reference emulator's shared mouse state uses: bit 0 left, bit 1 right, bit 2 middle.
+	void TakeDelta(int8_t& dx, int8_t& dy, uint8_t& buttons)
+	{
+		buttons =
+			(IsPressed(Buttons::Left) ? 0x01 : 0) |
+			(IsPressed(Buttons::Right) ? 0x02 : 0) |
+			(IsPressed(Buttons::Middle) ? 0x04 : 0);
+
+		//Anything past one report's range stays accumulated for the next one
+		int32_t mx = std::clamp(_accumX, -128, 127);
+		int32_t my = std::clamp(_accumY, -128, 127);
+		_accumX -= mx;
+		_accumY -= my;
+		dx = (int8_t)mx;
+		dy = (int8_t)my;
+	}
+
 	vector<DeviceButtonName> GetKeyNameAssociations() override
 	{
 		return {
+			{ "xOffset", BaseControlDevice::DeviceXCoordButtonId, true },
+			{ "yOffset", BaseControlDevice::DeviceYCoordButtonId, true },
 			{ "left", Buttons::Left },
 			{ "right", Buttons::Right },
 			{ "middle", Buttons::Middle },

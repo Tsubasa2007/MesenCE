@@ -27,6 +27,7 @@
 #include "NES/Mappers/Bbk/BbkMapper.h"
 #include "NES/Mappers/Bbk/Bbk928Mapper.h"
 #include "NES/Mappers/Subor/SuborWindows2002.h"
+#include "NES/Mappers/Bung/DrPcJrMapper.h"
 #include "NES/Mappers/Bbk/Yuyin2Mapper.h"
 #include "NES/Mappers/Yuxing/YuxingMapper.h"
 #include "NES/Mappers/Sb2k/Sb2kMapper.h"
@@ -468,6 +469,9 @@ vector<string> NesConsole::GetBbkDiskList(int32_t& currentIndex)
 		//The YuXing machines have no floppy drive - the same UI swaps their VCD discs
 		current = FolderUtilities::GetFilename(yuxing->GetCurrentDiskFilename(), true);
 		paths = yuxing->GetDiskFileList();
+	} else if(DrPcJrMapper* pcjr = dynamic_cast<DrPcJrMapper*>(_mapper.get())) {
+		current = FolderUtilities::GetFilename(pcjr->GetCurrentDiskFilename(), true);
+		paths = pcjr->GetDiskFileList();
 	}
 	for(size_t i = 0; i < paths.size(); i++) {
 		string name = FolderUtilities::GetFilename(paths[i], true);
@@ -481,8 +485,10 @@ vector<string> NesConsole::GetBbkDiskList(int32_t& currentIndex)
 
 bool NesConsole::IsBbkGame()
 {
-	//Also true for the SB-2000 and the YuXing machines, which reuse the same media-swap UI
-	return dynamic_cast<BbkMapper*>(_mapper.get()) != nullptr || dynamic_cast<Sb2kMapper*>(_mapper.get()) != nullptr || dynamic_cast<YuxingMapper*>(_mapper.get()) != nullptr;
+	//Also true for the SB-2000, the YuXing machines and the Doctor PC jr., which reuse the
+	//same media-swap UI
+	return dynamic_cast<BbkMapper*>(_mapper.get()) != nullptr || dynamic_cast<Sb2kMapper*>(_mapper.get()) != nullptr ||
+		dynamic_cast<YuxingMapper*>(_mapper.get()) != nullptr || dynamic_cast<DrPcJrMapper*>(_mapper.get()) != nullptr;
 }
 
 ShortcutState NesConsole::IsShortcutAllowed(EmulatorShortcut shortcut, uint32_t shortcutParam)
@@ -515,6 +521,9 @@ ShortcutState NesConsole::IsShortcutAllowed(EmulatorShortcut shortcut, uint32_t 
 				}
 				if(YuxingMapper* yuxing = dynamic_cast<YuxingMapper*>(_mapper.get())) {
 					return (ShortcutState)(shortcutParam < yuxing->GetDiskCount());
+				}
+				if(DrPcJrMapper* pcjr = dynamic_cast<DrPcJrMapper*>(_mapper.get())) {
+					return (ShortcutState)(shortcutParam < pcjr->GetDiskCount());
 				}
 			}
 			return ShortcutState::Disabled;
@@ -735,6 +744,18 @@ void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem syst
 					port2 = ControllerType::YuxingSerialMouse;
 				}
 			}
+		} else if(dynamic_cast<DrPcJrMapper*>(mapper)) {
+			//The AT keyboard hangs off the mapper's own $418E/$418F, not $4016/$4017, so the
+			//device only tracks which keys are down - DrPcJrMapper runs the serial protocol.
+			//Sb2kKeyboard already reports one transition at a time in scan-code set 1.
+			log("[Input] AT keyboard connected");
+			expDevice = ControllerType::Sb2kKeyboard;
+			//Not on the controller bus either - DrPcJrMapper drains its movement once a
+			//frame and leaves a report in PRG-RAM. Sharing the SB-2000's device because
+			//both machines want exactly this: movement that accumulates until a mapper
+			//takes it, and nothing on $4016/$4017.
+			log("[Input] mouse connected");
+			port2 = ControllerType::Sb2kMouse;
 		} else if(dynamic_cast<SuborWindows2002*>(mapper)) {
 			//The mouse takes the first port so it answers $4016 and leaves $4017 to the keyboard,
 			//which is the split this machine's BIOS scans - one 24-bit packet per latch on $4016,

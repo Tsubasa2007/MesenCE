@@ -104,6 +104,7 @@ private:
 	uint8_t _config = 0;
 	uint8_t _latch = 0;
 
+	bool _clearGeometryOnReset = false;
 	uint8_t _cylinder = 0, _head = 0, _sectorNumber = 0;
 	int32_t _sectorSize = 0;
 	int32_t _bytesLeft = 0;
@@ -508,10 +509,19 @@ public:
 		}
 	}
 
+	//The BBK and Bung machines' BIOSes reset the controller expecting the seek geometry to
+	//come back zeroed; the YuXing one does not care either way. Off by default so the
+	//existing caller is untouched.
+	void SetClearGeometryOnReset(bool clear) { _clearGeometryOnReset = clear; }
+
 	void Reset()
 	{
 		_phase = Phase::Command;
 		_msr = MsrReady;
+		if(_clearGeometryOnReset) {
+			_cylinder = _head = _sectorNumber = 0;
+			_sectorSize = 0;
+		}
 		_sra = _st0 = _st1 = _st2 = 0;
 		_dataPos = -1;
 		_bytesLeft = 0;
@@ -535,6 +545,10 @@ public:
 	bool IsActive() { return _activityCycles > 0; }
 	bool IsIrqAsserted() { return (_sra & SraIrq) != 0; }
 	bool IsDiskInserted() { return !_diskData.empty(); }
+
+	//For mappers that behave differently depending on which operating system the floppy
+	//carries - the Dr. PC Jr. BIOSes sniff the boot area for a signature.
+	const vector<uint8_t>& GetDiskData() { return _diskData; }
 	bool IsDirty() { return _dirty; }
 	string GetDiskFilename() { return _diskFilename; }
 
@@ -585,6 +599,13 @@ public:
 				break;
 
 			case 5:
+				if(!(_dor & DorNotReset) || _resetPin) {
+					//Held in reset the controller latches nothing, so the ready flag has to
+					//stay up: the phase handlers that would raise it again are not running
+					//either, and software that sends a command without releasing reset would
+					//otherwise wait for a ready that can never come back.
+					break;
+				}
 				if((_msr & MsrReady) && !(_msr & MsrDirection)) {
 					_msr &= ~MsrReady;
 					_sra &= ~SraIrq;

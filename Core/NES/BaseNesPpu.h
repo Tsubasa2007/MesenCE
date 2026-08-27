@@ -155,6 +155,12 @@ public:
 	//way the reference emulator reads loopy_v at the start of a line (see YuxingMapper).
 	uint16_t GetVideoRamAddr() { return _videoRamAddr; }
 
+	//$2000 bit 3, the sprite pattern table. The Bung Doctor PC Jr. picks between its two
+	//per-tile CHR bank sources by comparing this against the table a background fetch came
+	//from, so its mapper needs the bit on its own (see DrPcJrMapper).
+	uint16_t GetSpritePatternAddr() { return _control.SpritePatternAddr; }
+	uint16_t GetBgPatternAddr() { return _control.BackgroundPatternAddr; }
+
 	uint32_t GetFrameCount() { return _frameCount; }
 	uint32_t GetCurrentCycle() { return _cycle; }
 	int32_t GetCurrentScanline() { return _scanline; }
