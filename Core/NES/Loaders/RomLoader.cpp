@@ -13,6 +13,7 @@
 #include "NES/Loaders/NsfeLoader.h"
 #include "NES/Loaders/UnifLoader.h"
 #include "NES/Loaders/StudyBoxLoader.h"
+#include "NES/Loaders/CdvLoader.h"
 #include "NES/NesHeader.h"
 #include "NES/GameDatabase.h"
 
@@ -57,6 +58,9 @@ bool RomLoader::LoadFile(VirtualFile& romFile, RomData& romData, bool databaseEn
 	} else if(memcmp(fileData.data(), "UNIF", 4) == 0) {
 		UnifLoader loader;
 		loader.LoadRom(romData, fileData, databaseEnabled);
+	} else if(memcmp(fileData.data(), "FC GAMES", 8) == 0) {
+		CdvLoader loader;
+		loader.LoadRom(romData, fileData);
 	} else if(memcmp(fileData.data(), "STBX", 4) == 0) {
 		StudyBoxLoader loader;
 		loader.LoadRom(romData, fileData, romFile.GetFilePath());

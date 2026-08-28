@@ -527,6 +527,7 @@
     <ClInclude Include="NES\Input\VsZapper.h" />
     <ClInclude Include="NES\Input\Zapper.h" />
     <ClInclude Include="NES\Loaders\BaseLoader.h" />
+    <ClInclude Include="NES\Loaders\CdvLoader.h" />
     <ClInclude Include="NES\Loaders\FdsLoader.h" />
     <ClInclude Include="NES\Loaders\iNesLoader.h" />
     <ClInclude Include="NES\Loaders\NsfeLoader.h" />

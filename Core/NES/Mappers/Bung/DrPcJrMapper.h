@@ -213,6 +213,16 @@ private:
 	uint8_t ChrMask4K() { return (uint8_t)(((_regs[0x03] & 0x0F) << 3) | 7); }
 	uint8_t ChrMask2K() { return (uint8_t)(((_regs[0x03] & 0x0F) << 4) | 15); }
 
+	//A .CDV is a game rather than a machine: it brings its own register settings, and its
+	//PRG and CHR are what the BIOS would otherwise have loaded from a floppy. Kept from the
+	//rom so a power cycle can lay them down again.
+	vector<uint8_t> _cdvHeader;
+	vector<uint8_t> _cdvTrainer;
+	vector<uint8_t> _cdvPrg;
+	vector<uint8_t> _cdvChr;
+	bool IsCdv() { return !_cdvHeader.empty(); }
+	bool _cdvApuReady = false;
+
 	//Which BIOS this is. Several of the latch's branches are chosen by it, because the
 	//three machines format their per-cell tables differently.
 	//  0 = Dr. PC Jr. BIOS 1.0a/1.5a, 1 = KW2000 (KW-SC2000), 2 = KW3000
@@ -485,7 +495,7 @@ private:
 
 	uint8_t _kbdCtrl = 0x03;
 	bool _kbdClock = false;
-	bool _kbdData = false;
+	bool _kbdData = true;
 	int32_t _kbdClockCount = 0;
 	int32_t _kbdLatch = 0;
 	int32_t _kbdParity = 0;
@@ -600,6 +610,10 @@ private:
 		}
 
 		if(_kbdState == KbdStateIdle) {
+			//Both wires are pulled up, so an idle line reads high. Leaving data wherever the
+			//last byte left it reads as a start bit that never ends, and software that waits
+			//for the line to go quiet before talking to the keyboard waits forever.
+			_kbdData = true;
 			if(!_kbdClock && !(_kbdClockCount++ & 0x3F)) {
 				_kbdClock = true;
 			}
@@ -1042,6 +1056,16 @@ protected:
 	{
 		BaseProcessCpuClock();
 
+		//A game off the disc is normally started by the machine, which has already quietened
+		//the frame counter by the time it hands over. Started on its own it never does that
+		//itself and never acknowledges the interrupt either, so the first CLI would drop it
+		//into its own handler for good. Stand in for the hand-over on the first cycle, once
+		//the sound hardware exists to be written to.
+		if(IsCdv() && !_cdvApuReady) {
+			_cdvApuReady = true;
+			_console->GetMemoryManager()->Write(0x4017, 0x40, MemoryOperationType::Write);
+		}
+
 		//Look for a key transition about 50 times a second - the queue paces the rest
 		if(++_kbdPollTimer >= 35464) {
 			_kbdPollTimer = 0;
@@ -1097,6 +1121,54 @@ protected:
 	{
 		romData.Info.System = GameSystem::Dendy;
 		_romType = IsKw2000(romData.Info.Hash.PrgCrc32) ? 1 : (IsKw3000(romData.Info.Hash.PrgCrc32) ? 2 : 0);
+
+		_cdvHeader = romData.CdvHeader;
+		_cdvTrainer = romData.CdvTrainer;
+		if(IsCdv()) {
+			//The rom's own PRG and CHR are the game; the machine runs them out of its RAM,
+			//so keep a copy to lay down at every reset rather than mapping them in place.
+			_cdvPrg = romData.PrgRom;
+			_cdvChr = romData.CdvChr;
+
+			//This runs after InitMapper(), so the machine's own setup is already in place
+			//and the game's state goes on top of it
+			InitCdv();
+			UpdatePrgMapping();
+			UpdateChrMapping();
+		}
+	}
+
+	//A game brings the state the BIOS would have set up for it: the registers, the code and
+	//graphics in RAM, and no load mode to leave.
+	void InitCdv()
+	{
+		for(int i = 0; i < 0x40; i++) {
+			_regs[i] = _cdvHeader[0x10 + i];
+		}
+		_loadMode = false;
+
+		memcpy(_workRam, _cdvPrg.data(), std::min((size_t)_workRamSize, _cdvPrg.size()));
+		if(!_cdvChr.empty()) {
+			memcpy(_chrRam, _cdvChr.data(), std::min((size_t)_chrRamSize, _cdvChr.size()));
+		}
+
+		//A startup block goes where the header says, in the window the machine keeps at $6000
+		if(_cdvHeader[0x0A] && _cdvHeader[0x0D] && !_cdvTrainer.empty()) {
+			uint32_t offset = (uint32_t)((_cdvHeader[0x0A] << 8) & 0x1FFF);
+			size_t len = std::min(_cdvTrainer.size(), (size_t)(0x2000 - offset));
+			memcpy(_workRam + SramBase + offset, _cdvTrainer.data(), len);
+		}
+
+		//$4194 bit 6 says the game is one of the machine's own rather than a plain cartridge
+		//conversion. Those keep the machine's tile latch and its screen arrangement, and are
+		//treated as though its own operating system were in the drive - which is what decides
+		//the two latch branches, since a game carries no BIOS to be recognised by.
+		if(_regs[0x01] & 0x40) {
+			_diskType = 1;
+			SetMirroringType(MirroringType::Vertical);
+		} else {
+			SetMirroringType(MirroringType::ScreenAOnly);
+		}
 	}
 
 	void InitMapper() override
@@ -1113,7 +1185,7 @@ protected:
 
 		_kbdCtrl = 0x03;
 		_kbdClock = false;
-		_kbdData = false;
+		_kbdData = true;
 		_kbdClockCount = 0;
 		_kbdLatch = 0;
 		_kbdParity = 0;
@@ -1156,6 +1228,7 @@ protected:
 		SetMirroringType(MirroringType::Vertical);
 		UpdatePrgMapping();
 		UpdateChrMapping();
+
 	}
 
 	uint8_t ReadRegister(uint16_t addr) override
@@ -1336,7 +1409,7 @@ protected:
 		SVArray(_exRamNt, 0x800); SV(_extNtAddr); SV(_extFetchCounter); SV(_diskType);
 		SV(_ntData); SV(_logoMode); SV(_autoBank); SV(_mirroring);
 		SV(_lptData); SV(_lptCtrl); SV(_printer);
-		SV(_mouseEnabled); SV(_mouseFrame);
+		SV(_mouseEnabled); SV(_mouseFrame); SV(_cdvApuReady);
 
 		if(!s.IsSaving()) {
 			UpdatePrgMapping();

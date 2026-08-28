@@ -120,6 +120,15 @@ struct RomData
 	vector<uint8_t> PrgRom;
 	vector<uint8_t> ChrRom;
 	vector<uint8_t> TrainerData;
+
+	//A .CDV carries the register settings the machine would get from a cartridge, plus an
+	//optional block of code to place in RAM before it starts - see CdvLoader
+	vector<uint8_t> CdvHeader;
+	vector<uint8_t> CdvTrainer;
+
+	//The machine has no CHR ROM - it copies the graphics into its CHR RAM and runs from
+	//there - so a .CDV's graphics are kept out of ChrRom to leave that model alone
+	vector<uint8_t> CdvChr;
 	vector<vector<uint8_t>> FdsDiskData;
 	vector<vector<uint8_t>> FdsDiskHeaders;
 	StudyBoxData StudyBox = {};
