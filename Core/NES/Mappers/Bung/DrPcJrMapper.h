@@ -11,6 +11,7 @@
 #include "NES/NesControlManager.h"
 #include "NES/Mappers/Bbk/PcFdc.h"
 #include "NES/Mappers/Bbk/BbkPrinter.h"
+#include "NES/Mappers/Bbk/BbkLpcAudio.h"
 #include "Shared/MessageManager.h"
 #include "Utilities/FolderUtilities.h"
 #include "Shared/NotificationManager.h"
@@ -59,7 +60,7 @@
 //                 3 draws 1bpp glyphs from a 2KB bank and colours them per cell
 // - $41A1/$41A2   IRQ counter, low and high
 // - $41A3         IRQ enable
-// - $41AC         speech chip (not implemented - reports ready so the BIOS does not wait)
+// - $41AC         speech chip: $5x feeds it a nibble, anything else resets it
 // - $41AF bits 0-1 pick the 32KB BIOS group the $E000/$F000 pages come from
 // - $41A5         leaves load mode, entering the cartridge personality (not implemented)
 // - $42FC-$42FF   enters game mode and sets mirroring (not implemented)
@@ -272,6 +273,37 @@ private:
 
 	//The shadow is two 1KB pages, picked by the low bit of the nametable index
 	static uint16_t ExRamIndex(uint16_t addr) { return (uint16_t)((((addr >> 10) & 1) << 10) | (addr & 0x3FF)); }
+
+	//--- speech ------------------------------------------------------------------------
+	//The same LPC-10 synthesizer the other learning machines here carry, in its plainest
+	//form: no stream header, the "PE" coefficient set, and nothing marking the end of a
+	//phrase. It is fed a nibble at a time through $41AC - a write of $5x carries the low
+	//four bits, least significant first, so two writes make a byte with the first nibble in
+	//the low half. Any other value resets the decoder, which is how one phrase is separated
+	//from the next.
+	unique_ptr<BbkLpcAudio> _speech;
+	uint8_t _speechByte = 0;
+	uint8_t _speechNibbleCount = 0;
+
+	void WriteSpeech(uint8_t value)
+	{
+		if((value & 0xF0) != 0x50) {
+			_speechNibbleCount = 0;
+			_speechByte = 0;
+			_speech->WriteControl(0);
+			_speech->WriteControl(1);
+			return;
+		}
+
+		if(_speechNibbleCount == 0) {
+			_speechByte = (uint8_t)(value & 0x0F);
+			_speechNibbleCount = 1;
+		} else {
+			_speechByte |= (uint8_t)(value << 4);
+			_speechNibbleCount = 0;
+			_speech->WriteData(_speechByte);
+		}
+	}
 
 	//--- printer -----------------------------------------------------------------------
 	//A parallel port in the plainest form: $4184 holds the byte and $4186 bit 0 is the
@@ -1223,6 +1255,7 @@ protected:
 
 		KbdClock();
 		MousePoll();
+		_speech->Clock();
 		_printer.Clock();
 		_fdc.Clock();
 
@@ -1359,6 +1392,10 @@ protected:
 		_lptCtrl = 0;
 		_printer.Reset();
 
+		_speech.reset(new BbkLpcAudio(_console, BbkLpcAudio::LpcVariant::DrPcJr));
+		_speechByte = 0;
+		_speechNibbleCount = 0;
+
 		_fdc.SetClearGeometryOnReset(true);
 		_fdc.Reset();
 		_floppyChecked = false;
@@ -1417,8 +1454,9 @@ protected:
 			case 0x41AB: return _fdc.IsDiskInserted() ? (_regs[0x2B] | 0x10) : _regs[0x2B];
 			case 0x41AF: return _fdc.IsDiskInserted() ? (_regs[0x2F] | 0x01) : _regs[0x2F];
 
-			//Speech reports ready, so a BIOS waiting on it is not left spinning
-			case 0x41AC: return 0x40;
+			//Bit 6 is the decoder's own "room for more" line. A BIOS that is feeding a
+			//phrase waits on it between nibbles.
+			case 0x41AC: return _speech->IsReady() ? 0x40 : 0x00;
 			case 0x41AE: return _regs[0x2E];
 		}
 
@@ -1501,6 +1539,8 @@ protected:
 				_kbdCtrl = value;
 				break;
 
+			case 0x41AC: WriteSpeech(value); break;
+
 			case 0x4198: case 0x4199: case 0x419A: case 0x419B:
 			case 0x419C: case 0x419D: case 0x419E: case 0x419F:
 				UpdateChrMapping();
@@ -1569,6 +1609,7 @@ protected:
 		SVArray(_exRamNt, 0x800); SV(_extNtAddr); SV(_extFetchCounter); SV(_diskType);
 		SV(_ntData); SV(_logoMode); SV(_autoBank); SV(_mirroring);
 		SV(_lptData); SV(_lptCtrl); SV(_printer);
+		SV(_speechByte); SV(_speechNibbleCount); SV(_speech);
 		SV(_mouseEnabled); SV(_mouseFrame); SV(_cdvApuReady);
 
 		if(!s.IsSaving()) {

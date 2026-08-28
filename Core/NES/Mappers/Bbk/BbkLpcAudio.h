@@ -19,13 +19,15 @@ class BbkLpcAudio final : public ISerializable
 public:
 	//How a stream is framed, which differs per machine independently of the coefficient set:
 	//the BBK and SB-2000 prefix each stream with a header byte the decoder syncs on, and the
-	//SB-2000 alone terminates one with a command that parks the decoder. The YuXing does
-	//neither - its streams begin at the first frame and simply stop.
+	//SB-2000 alone terminates one with a command that parks the decoder. The YuXing and the
+	//Dr. PC Jr. do neither - their streams begin at the first frame and simply stop, which
+	//is the plainest form the chip is used in, and both take the "PE" coefficient set.
 	enum class LpcVariant : uint8_t
 	{
 		Bbk = 0,
 		Sb2k = 1,
-		Yuxing = 2
+		Yuxing = 2,
+		DrPcJr = 3
 	};
 
 private:
@@ -296,6 +298,9 @@ private:
 	bool _speechEnd = false;
 
 	bool IsSb2k() { return _variant == LpcVariant::Sb2k; }
+
+	//No stream header and the PE coefficient set - see the note on LpcVariant
+	bool IsPlainStream() { return _variant == LpcVariant::Yuxing || _variant == LpcVariant::DrPcJr; }
 
 	//Byte FIFO fed by $FF18 writes
 	uint8_t _fifo[FifoSize] = {};
@@ -637,10 +642,10 @@ private:
 		if(_state == LpcState::Startup) {
 			if(!_magicFound) {
 				//Byte-aligned scan for the stream header ($D6 on the BBK, $0A on the
-				//SB-2000), one byte per tick. The YuXing has no header - its streams open
-				//straight into the first frame, so consuming a byte here would shift the
-				//whole bitstream and decode everything after it as noise.
-				if(_variant == LpcVariant::Yuxing) {
+				//SB-2000), one byte per tick. The other two machines have no header - their
+				//streams open straight into the first frame, so consuming a byte here would
+				//shift the whole bitstream and decode everything after it as noise.
+				if(IsPlainStream()) {
 					_magicFound = true;
 					return;
 				}
@@ -738,7 +743,7 @@ public:
 	{
 		_console = console;
 		_variant = variant;
-		_codec = variant == LpcVariant::Yuxing ? &_codecPe : &_codecD6;
+		_codec = IsPlainStream() ? &_codecPe : &_codecD6;
 	}
 
 	void Reset()
