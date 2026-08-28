@@ -127,6 +127,11 @@ private:
 	//Protocol state
 	DataState _state = DataState::Idle;
 	bool _printing = false;
+
+	//Some drivers never send a line feed and rely on the printer being strapped to advance
+	//the paper on a carriage return - the Dr. PC Jr. word processor sets the line spacing to
+	//one graphics row and then sends nothing but CR between rows.
+	bool _autoLineFeed = false;
 	uint8_t _escCmd = 0;
 	int _paramCount = 0;
 	int _dataLength = 0;
@@ -401,6 +406,16 @@ private:
 
 	void ExecuteCommand()
 	{
+		//A job normally opens with ESC @, but not every driver sends one - the Dr. PC Jr.
+		//word processor starts straight in with a bit image. Take the first thing that puts
+		//ink on the page as the start of the job, so its output is not thrown away. Software
+		//that does send ESC @ has already opened the job by this point and is unaffected.
+		if(!_printing && (_escCmd == 0x2A || _escCmd == 0x4B || _escCmd == 0x4C ||
+			_escCmd == 0x59 || _escCmd == 0x5A)) {
+			_printing = true;
+			StartJob();
+		}
+
 		switch(_escCmd) {
 			case 0x2A: {
 				//ESC * m nL nH - select bit image
@@ -488,6 +503,9 @@ public:
 
 	bool IsPrinting() { return _printing; }
 
+	//For machines whose driver expects a carriage return to advance the paper as well
+	void SetAutoLineFeed(bool enabled) { _autoLineFeed = enabled; }
+
 	//Hand the printer a font. Machines that rasterize their own text never call this and
 	//keep the graphics-only behaviour.
 	void SetGlyphSource(std::function<bool(uint16_t, uint8_t*, int&, int&)> source)
@@ -553,6 +571,9 @@ public:
 
 					case 0x0D: //CR
 						_xUnits = 0;
+						if(_autoLineFeed) {
+							AdvanceY(_lineSpaceUnits);
+						}
 						break;
 
 					case 0x1B: //ESC
@@ -707,7 +728,7 @@ public:
 		//The page bitmap is deliberately left out of save states - a print job is host-side
 		//output, not machine state, and it is cheaper to let a loaded state keep printing
 		//onto the page that is already on the platen.
-		SV(_state); SV(_printing); SV(_escCmd); SV(_paramCount); SV(_dataLength); SV(_paramPos);
+		SV(_state); SV(_printing); SV(_autoLineFeed); SV(_escCmd); SV(_paramCount); SV(_dataLength); SV(_paramPos);
 		SVArray(_params, 4);
 		SV(_idleCycles); SV(_unknownLogged); SV(_leadByte);
 		SV(_reset); SV(_selectPrinter); SV(_lineFeed); SV(_strobe);

@@ -10,6 +10,7 @@
 #include "NES/Input/Sb2kMouse.h"
 #include "NES/NesControlManager.h"
 #include "NES/Mappers/Bbk/PcFdc.h"
+#include "NES/Mappers/Bbk/BbkPrinter.h"
 #include "Shared/MessageManager.h"
 #include "Utilities/FolderUtilities.h"
 #include "Shared/NotificationManager.h"
@@ -42,6 +43,7 @@
 //
 // - $4180 bit 7   swap save RAM into $6000-$7FFF; bits 0-2 pick the $E000 BIOS page
 // - $4182         mirroring, applied through MirrorSync
+// - $4184/$4186  parallel printer: $4184 is the data byte, $4186 bit 0 the strobe
 // - $4188/89/8B   floppy controller: $4188 is the main status register on read and the
 //                 data rate select on write, $4189 the data register, $418B the digital
 //                 output register - see PcFdc
@@ -260,6 +262,39 @@ private:
 
 	//The shadow is two 1KB pages, picked by the low bit of the nametable index
 	static uint16_t ExRamIndex(uint16_t addr) { return (uint16_t)((((addr >> 10) & 1) << 10) | (addr & 0x3FF)); }
+
+	//--- printer -----------------------------------------------------------------------
+	//A parallel port in the plainest form: $4184 holds the byte and $4186 bit 0 is the
+	//strobe, pulsed once per byte. The word processor drives it with Epson ESC/P bit
+	//images - it rasterises its own Chinese glyphs rather than relying on a font in the
+	//printer - which is exactly what BbkPrinter already renders for the other machines.
+	BbkPrinter _printer;
+	bool _printerNamed = false;
+	uint8_t _lptData = 0;
+	uint8_t _lptCtrl = 0;
+
+	//The page is named after the ROM, and that name only exists once the ROM is loaded
+	BbkPrinter& Printer()
+	{
+		if(!_printerNamed) {
+			_printerNamed = true;
+			_printer.SetRomName(FolderUtilities::GetFilename(_emu->GetRomInfo().RomFile.GetFilePath(), false));
+
+			//This machine's driver sends no line feeds: it sets the line spacing to one
+			//graphics row and relies on the carriage return to advance the paper.
+			_printer.SetAutoLineFeed(true);
+		}
+		return _printer;
+	}
+
+	void WriteLptCtrl(uint8_t value)
+	{
+		//Latch on the leading edge of the strobe
+		if((value & 0x01) && !(_lptCtrl & 0x01)) {
+			Printer().WriteData(_lptData);
+		}
+		_lptCtrl = value;
+	}
 
 	//--- floppy ------------------------------------------------------------------------
 	//The same PC-compatible controller the YuXing machines drive - see PcFdc, which says
@@ -1015,6 +1050,7 @@ protected:
 
 		KbdClock();
 		MousePoll();
+		_printer.Clock();
 		_fdc.Clock();
 
 		if(_kbdRaiseIrq) {
@@ -1096,6 +1132,10 @@ protected:
 		memset(_exRamNt, 0, sizeof(_exRamNt));
 		_extNtAddr = 0;
 		_extFetchCounter = 0;
+
+		_lptData = 0;
+		_lptCtrl = 0;
+		_printer.Reset();
 
 		_fdc.SetClearGeometryOnReset(true);
 		_fdc.Reset();
@@ -1227,6 +1267,9 @@ protected:
 				MirrorSync();
 				break;
 
+			case 0x4184: _lptData = value; break;
+			case 0x4186: WriteLptCtrl(value); break;
+
 			case 0x4188: _fdc.MarkActivity(); _fdc.Write(7, value); break;
 			case 0x4189: _fdc.MarkActivity(); _fdc.Write(5, value); break;
 			case 0x418B: _fdc.MarkActivity(); _fdc.Write(2, value); break;
@@ -1292,6 +1335,7 @@ protected:
 		SV(_fdc);
 		SVArray(_exRamNt, 0x800); SV(_extNtAddr); SV(_extFetchCounter); SV(_diskType);
 		SV(_ntData); SV(_logoMode); SV(_autoBank); SV(_mirroring);
+		SV(_lptData); SV(_lptCtrl); SV(_printer);
 		SV(_mouseEnabled); SV(_mouseFrame);
 
 		if(!s.IsSaving()) {
