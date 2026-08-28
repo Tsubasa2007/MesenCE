@@ -14,6 +14,13 @@ namespace Mesen.Config
 	{
 		[ObservableProperty][MinMax(0, 4)] public partial UInt32 ControllerDeadzoneSize { get; set; } = 2;
 		[ObservableProperty][MinMax(0, 9)] public partial UInt32 MouseSensitivity { get; set; } = 5;
+		//How much to scale a captured mouse's movement by while running in a remote session,
+		//where the pointer is moved by the client and arrives short of what it would be on
+		//the desk. Deliberately absent from the settings window: it corrects for the machine
+		//and the connection rather than expressing a preference, and the same value would be
+		//wrong locally. Set it in settings.json; 1 disables the correction.
+		[ObservableProperty][MinMax(1, 20)] public partial UInt32 RemoteSessionMouseScale { get; set; } = 3;
+
 		[ObservableProperty] public partial bool HidePointerForLightGuns { get; set; } = false;
 		[ObservableProperty][MinMax(0, 10)] public partial UInt32 ForceFeedbackIntensity { get; set; } = 5;
 

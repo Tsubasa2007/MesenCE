@@ -12,6 +12,7 @@ using Mesen.Windows;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -34,6 +35,26 @@ namespace Mesen.Utilities
 		private int _prevPositionX;
 		private int _prevPositionY;
 		private bool _mouseCaptured = false;
+
+		//A captured mouse is normally pinned - a clipping rectangle holds the pointer inside
+		//the window, it is re-centered on every poll, and the drift from center is the
+		//movement. Neither half survives Remote Desktop, where the pointer belongs to the
+		//client and is moved there in absolute coordinates: the re-center is applied after
+		//the position has been read back, so the difference reads as movement never made,
+		//and the clip is enforced on this machine only, so the pointer stops dead at the
+		//window edge while the client's carries on. Both are therefore skipped remotely.
+		//
+		//Movement is scaled down by how far the window is stretched over the emulated screen,
+		//so that the pointer covers the same ground on screen as it does on the desk. Over
+		//Remote Desktop the pointer is moved by the client, which has already applied its own
+		//acceleration and works in a session whose scaling need not match the desk at all, and
+		//the result is an emulated pointer that crawls while the real one crosses the whole
+		//window. Give a remote session the movement it is short of, rather than making the
+		//user raise a sensitivity setting that would then be wrong everywhere else. How much
+		//is Input.RemoteSessionMouseScale, which lives in settings.json only.
+		[DllImport("user32.dll")] private static extern int GetSystemMetrics(int index);
+		private const int SM_REMOTESESSION = 0x1000;
+		private static readonly bool _isRemoteSession = OperatingSystem.IsWindows() && GetSystemMetrics(SM_REMOTESESSION) != 0;
 		private bool _closeMenuPending = false;
 		private DateTime _lastMouseMove = DateTime.Now;
 
@@ -86,7 +107,14 @@ namespace Mesen.Utilities
 			if(_prevPositionX != mouseState.XPosition || _prevPositionY != mouseState.YPosition) {
 				//Send mouse movement x/y values to core
 				if(_mouseCaptured) {
-					InputApi.SetMouseMovement((Int16)(mouseState.XPosition - _prevPositionX), (Int16)(mouseState.YPosition - _prevPositionY));
+					int deltaX = mouseState.XPosition - _prevPositionX;
+					int deltaY = mouseState.YPosition - _prevPositionY;
+					if(_isRemoteSession) {
+						int scale = (int)ConfigManager.Config.Input.RemoteSessionMouseScale;
+						deltaX *= scale;
+						deltaY *= scale;
+					}
+					InputApi.SetMouseMovement((Int16)deltaX, (Int16)deltaY);
 				}
 				_prevPositionX = mouseState.XPosition;
 				_prevPositionY = mouseState.YPosition;
@@ -125,10 +153,12 @@ namespace Mesen.Utilities
 				if(_mouseCaptured) {
 					if(AllowMouseCapture) {
 						SetMouseCursor(CursorImage.Hidden);
-						InputApi.SetSystemMousePosition(rendererTopLeft.X + rendererScreenRect.Width / 2, rendererTopLeft.Y + rendererScreenRect.Height / 2);
-						SystemMouseState newState = InputApi.GetSystemMouseState(GetRendererHandle());
-						_prevPositionX = newState.XPosition;
-						_prevPositionY = newState.YPosition;
+						if(!_isRemoteSession) {
+							InputApi.SetSystemMousePosition(rendererTopLeft.X + rendererScreenRect.Width / 2, rendererTopLeft.Y + rendererScreenRect.Height / 2);
+							SystemMouseState newState = InputApi.GetSystemMouseState(GetRendererHandle());
+							_prevPositionX = newState.XPosition;
+							_prevPositionY = newState.YPosition;
+						}
 					} else {
 						ReleaseMouse();
 					}
@@ -138,6 +168,12 @@ namespace Mesen.Utilities
 					SetMouseCursor(MouseIcon);
 				}
 			} else {
+				if(_mouseCaptured && _isRemoteSession) {
+					//Nothing pins the pointer inside the window here, so show it again once it
+					//leaves - it still drives the emulated one, and hiding it would leave no
+					//way to tell where it went.
+					SetMouseCursor(CursorImage.Arrow);
+				}
 				SetMouseOffScreen();
 			}
 		}
@@ -259,6 +295,10 @@ namespace Mesen.Utilities
 				PixelRect rendererScreenRect = new PixelRect(topLeft, PixelSize.FromSize(_wnd.Renderer.Bounds.Size, LayoutHelper.GetLayoutScale(_wnd)));
 
 				if(InputApi.CaptureMouse(topLeft.X, topLeft.Y, rendererScreenRect.Width, rendererScreenRect.Height, GetRendererHandle())) {
+					if(_isRemoteSession) {
+						//Keep the capture, drop the clipping rectangle - see the note above
+						InputApi.ReleaseMouse();
+					}
 					DisplayMessageHelper.DisplayMessage("Input", ResourceHelper.GetMessage("MouseModeEnabled"));
 					_mouseCaptured = true;
 				}
