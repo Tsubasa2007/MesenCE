@@ -233,6 +233,13 @@ public:
 	//The scan code a key reports, in the same form GetNextKeyEvent returns it.
 	static uint8_t GetScanCode(uint8_t index) { return index < KeyCount ? ScanCodes[index] : 0; }
 
+	//Whether a key is down as of the transitions reported so far. A caller that repeats a
+	//held key needs the standing state, not just the edges.
+	bool IsKeyHeld(uint8_t index) { return index < KeyCount && _prevKeyState[index] != 0; }
+
+	//Either shift, as of the transitions reported so far
+	bool IsShiftHeld() { return _prevKeyState[Buttons::Shift] != 0 || _prevKeyState[Buttons::RightShift] != 0; }
+
 	//Returns one pending key transition: the scan code in bits 0-7 (bit 7 set = extended,
 	//to be sent as $E0 + code) and bit 8 set for a release; -1 when nothing changed.
 	//One event per call - the keyboard sends one make/break sequence per report interval,

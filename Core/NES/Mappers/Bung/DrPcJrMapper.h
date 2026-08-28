@@ -503,7 +503,16 @@ private:
 	bool _kbdRaiseIrq = false;
 	uint8_t _kbdQueue[32] = {};
 	uint8_t _kbdQueueLen = 0;
-	uint32_t _kbdPollTimer = 0;
+	uint32_t _kbdPollFrame = 0;
+
+	//Typematic repeat. A real AT keyboard resends the make code while a key stays down,
+	//after a delay - about half a second, then some ten a second. The reference times this
+	//off the wall clock, which would make the rate depend on how fast the host happens to
+	//be running and stop a recording replaying the same way twice, so it is counted in
+	//frames here instead. Repeated makes only: the break code belongs to a real release.
+	static constexpr uint16_t KbdRepeatDelay = 25;	//500ms at 50Hz
+	static constexpr uint16_t KbdRepeatPeriod = 5;	//100ms
+	uint16_t _kbdHold[Sb2kKeyboard::KeyCount] = {};
 
 	void KbdPush(uint8_t value)
 	{
@@ -582,17 +591,146 @@ private:
 			return;
 		}
 
-		uint8_t code = KbdSet1ToSet2((uint8_t)(keyEvent & 0xFF));
+		uint8_t raw = (uint8_t)(keyEvent & 0xFF);
+		uint8_t code = KbdSet1ToSet2(raw);
 		if(!code) {
 			return;
 		}
 
-		if(keyEvent & 0x100) {
+		bool release = (keyEvent & 0x100) != 0;
+		if(release && _diskType == 1) {
+			//Running its own software, the machine's keyboard reports presses and nothing
+			//else. Sending the release pair as well puts three bytes and three interrupts
+			//behind every keystroke, and the program then acts on the release rather than
+			//the press - which is what put it a keystroke behind the typist.
+			return;
+		}
+
+		//The fake shift is lifted straight after the code rather than held until the key
+		//comes back up. The machine reads the pair in one go either way, and while it is
+		//running its own software the keyboard reports no releases at all - holding the
+		//shift there would leave one down that nothing could ever lift.
+		bool fakeShift = !release && KbdFakeShiftWanted(raw);
+		if(fakeShift) {
+			KbdPushKey(KbdLeftShift, false);
+		}
+		KbdPushKey(code, release);
+		if(fakeShift) {
+			KbdPushKey(KbdLeftShift, true);
+		}
+		_kbdRaiseIrq = true;
+	}
+
+	//One make or break
+	void KbdPushKey(uint8_t code, bool release)
+	{
+		if(release) {
 			//Release: $F0 then the code
 			KbdPush(0xF0);
 		}
 		KbdPush(code);
-		_kbdRaiseIrq = true;
+	}
+
+	//The navigation cluster sits on the keypad's codes, and with the Num Lock lamp lit the
+	//machine reads those codes as digits. A keyboard gets the arrow keys through by
+	//bracketing them in a shift the typist never pressed, which the machine's own decoder
+	//takes as "this one is a cursor key after all". Without it the arrows type numbers into
+	//the software's menus instead of moving the selection through them, and the only way to
+	//steer anything is to turn Num Lock off by hand. A shift the typist really is holding
+	//already reaches the same decision, so it wants no help.
+	//Num Lock, as the machine itself has it. There is nowhere else to read it: the lamp
+	//command that would tell a real keyboard never reaches this one, because the machine
+	//asks to send in one step - data low, clock left alone - and this link only answers
+	//the two-step request. The machine keeps the answer in the same PRG-RAM the mouse
+	//report goes into, in the shift-flag byte's bit 5.
+	bool KbdNumLockLit()
+	{
+		if(_loadMode) {
+			return false;
+		}
+
+		uint32_t offset = SystemBankOffset(0xFFED);
+		return offset < _workRamSize && (_workRam[offset] & 0x20) != 0;
+	}
+
+	//Which decoder is reading is visible in the frame handler the machine has installed, at
+	//the NMI jump the vector points at. The machine's own decoder sends it to $E21E while a
+	//program of its own is running and the first desktop sends it to $FF1C; both want the
+	//bracket. The console personality leaves it at $FE18, and its decoder reads the bracket
+	//as a shift the typist is holding - so there the arrows come out as digits instead.
+	//Unlike the personality register this follows the handler in and out, which is what the
+	//earlier attempt at telling the two apart got wrong.
+	bool KbdConsoleDecoder()
+	{
+		uint32_t lo = SystemBankOffset(0xFF81);
+		uint32_t hi = SystemBankOffset(0xFF82);
+		if(lo >= _workRamSize || hi >= _workRamSize) {
+			return false;
+		}
+		return _workRam[lo] == 0x18 && _workRam[hi] == 0xFE;
+	}
+
+	bool KbdFakeShiftWanted(uint8_t raw)
+	{
+		if(KbdConsoleDecoder() || !KbdNumLockLit() || !(raw & 0x80)) {
+			return false;
+		}
+
+		uint8_t base = (uint8_t)(raw & 0x7F);
+		if(base < 0x47 || base > 0x53) {
+			return false;
+		}
+
+		NesControlManager* controls = (NesControlManager*)_console->GetControlManager();
+		shared_ptr<Sb2kKeyboard> kbd = controls->GetControlDevice<Sb2kKeyboard>();
+		return kbd && !kbd->IsShiftHeld();
+	}
+
+	//Left shift, in the set the keyboard sends
+	static constexpr uint8_t KbdLeftShift = 0x12;
+
+	//Modifiers do not repeat - holding shift must not fill the queue with shift.
+	static bool KbdRepeats(uint8_t code)
+	{
+		return code != 0x12 && code != 0x59 && code != 0x14 && code != 0x11;
+	}
+
+	void KbdRepeatKeys()
+	{
+		//Running its own software the machine reports presses only, and does not repeat
+		//them either - see KbdPollKeys.
+		if(_diskType == 1) {
+			return;
+		}
+
+		NesControlManager* controls = (NesControlManager*)_console->GetControlManager();
+		shared_ptr<Sb2kKeyboard> kbd = controls->GetControlDevice<Sb2kKeyboard>();
+		if(!kbd) {
+			return;
+		}
+
+		for(uint8_t i = 0; i < Sb2kKeyboard::KeyCount; i++) {
+			uint8_t raw = Sb2kKeyboard::GetScanCode(i);
+			uint8_t code = KbdSet1ToSet2(raw);
+			if(!kbd->IsKeyHeld(i) || !code || !KbdRepeats(code)) {
+				_kbdHold[i] = 0;
+				continue;
+			}
+
+			_kbdHold[i]++;
+			if(_kbdHold[i] >= KbdRepeatDelay && (_kbdHold[i] - KbdRepeatDelay) % KbdRepeatPeriod == 0) {
+				//A repeat is a fresh make, fake shift and all
+				bool fakeShift = KbdFakeShiftWanted(raw);
+				if(fakeShift) {
+					KbdPushKey(KbdLeftShift, false);
+				}
+				KbdPushKey(code, false);
+				if(fakeShift) {
+					KbdPushKey(KbdLeftShift, true);
+				}
+				_kbdRaiseIrq = true;
+			}
+		}
 	}
 
 	//The Bung machine's PPU is a famiclone part: it clears the vblank flag on a $2002 read
@@ -693,6 +831,12 @@ private:
 				} else if(_kbdState == KbdStateSendStopBit) {
 					_kbdData = true;
 					_kbdState = _kbdQueueLen ? KbdStateSendStartBit : KbdStateIdle;
+
+					//A key sends more than one byte - a release is $F0 and then the code - and
+					//the host is told once per byte, not once per key. Announcing only the
+					//first leaves the rest sitting in the queue until the next keypress
+					//raises another interrupt, which puts every key one keystroke behind.
+					_kbdRaiseIrq = _kbdQueueLen > 0;
 				}
 			}
 		}
@@ -1066,10 +1210,15 @@ protected:
 			_console->GetMemoryManager()->Write(0x4017, 0x40, MemoryOperationType::Write);
 		}
 
-		//Look for a key transition about 50 times a second - the queue paces the rest
-		if(++_kbdPollTimer >= 35464) {
-			_kbdPollTimer = 0;
+		//Look for a key transition once a frame, as the picture ends. Counting cycles
+		//instead drifts against the picture, so the interrupt behind a keystroke lands at a
+		//different point of the frame every time - sometimes in the middle of a redraw,
+		//which is what left half-drawn text on the screen.
+		uint32_t frame = _console->GetPpu()->GetFrameCount();
+		if(frame != _kbdPollFrame) {
+			_kbdPollFrame = frame;
 			KbdPollKeys();
+			KbdRepeatKeys();
 		}
 
 		KbdClock();
@@ -1192,7 +1341,8 @@ protected:
 		_kbdState = KbdStateIdle;
 		_kbdRaiseIrq = false;
 		_kbdQueueLen = 0;
-		_kbdPollTimer = 0;
+		_kbdPollFrame = 0;
+		memset(_kbdHold, 0, sizeof(_kbdHold));
 
 		_mouseEnabled = false;
 		_mouseFrame = 0;
@@ -1377,6 +1527,15 @@ protected:
 				break;
 
 			case 0x4181:
+				//Bit 6 says the machine is running one of its own games, which puts it on
+				//the same footing as having its operating system in the drive - and the
+				//keyboard is quieter in that mode, see KbdPollKeys.
+				if(value & 0x40) {
+					_diskType = 1;
+				}
+				UpdatePrgMapping();
+				break;
+
 			case 0x4183:
 			case 0x4192:
 			case 0x4193:
@@ -1404,7 +1563,8 @@ protected:
 		SV(_irqStatus);
 		SV(_kbdCtrl); SV(_kbdClock); SV(_kbdData); SV(_kbdClockCount);
 		SV(_kbdLatch); SV(_kbdParity); SV(_kbdState); SV(_kbdRaiseIrq);
-		SVArray(_kbdQueue, 32); SV(_kbdQueueLen); SV(_kbdPollTimer);
+		SVArray(_kbdQueue, 32); SV(_kbdQueueLen); SV(_kbdPollFrame);
+		SVArray(_kbdHold, Sb2kKeyboard::KeyCount);
 		SV(_fdc);
 		SVArray(_exRamNt, 0x800); SV(_extNtAddr); SV(_extFetchCounter); SV(_diskType);
 		SV(_ntData); SV(_logoMode); SV(_autoBank); SV(_mirroring);
