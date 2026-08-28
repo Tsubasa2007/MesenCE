@@ -156,6 +156,13 @@ private:
 	int32_t _lastPpuScanline = -2;
 	bool _irqPending = false;
 	bool _irqApplied = true;
+	//The line interrupt stands until the software answers it, which it does by clearing the
+	//count-enable bit. Raising it only for the one line the counter sits at its trigger loses
+	//it outright whenever the processor has interrupts masked just then, and software that
+	//runs a raster program off this counter masks them around its own critical sections - one
+	//that happens to straddle the trigger kills the rest of the frame's raster program, and
+	//the picture below it draws with whatever banks were last selected.
+	bool _lineIrqLatch = false;
 	bool _diskChecked = false;
 
 	//MMC3-clone banking mode ($FF01 bit 5). Cartridge-style games bank $8000-$BFFF through
@@ -345,8 +352,18 @@ private:
 
 	bool CheckIrq()
 	{
-		if(EvaluateIrq() || (_bbk98 && _lineIrqPending)) {
+		if(_bbk98 && _lineIrqPending) {
 			_console->GetCpu()->SetIrqSource(IRQSource::External);
+			return true;
+		}
+		if(EvaluateIrq() || _irqPending) {
+			//Leave the line alone. Raising is the counter's job, done at the scanline boundary:
+			//a register write landing on the one line the counter sits at its trigger would
+			//otherwise raise it mid-row, and the handler - whose latency is a fixed 267 cycles -
+			//would make its CHR bank writes mid-row instead of in hblank. Dropping it here is
+			//just as wrong: the counter has already moved past the trigger by the time the
+			//software answers, so a write would cancel an interrupt the processor has not taken
+			//yet and push the whole band a scanline late. Only the acknowledge clears it.
 			return true;
 		}
 		_console->GetCpu()->ClearIrqSource(IRQSource::External);
@@ -544,7 +561,10 @@ private:
 		//The counter itself free-runs while the display is off (below), but the line IRQ must
 		//not be raised then: software blanks the screen for its CHR/nametable uploads and an
 		//IRQ taken in the middle of one pre-empts it at a scanline it never expects.
-		_irqPending = EvaluateIrq() && _renderEnabled;
+		if(EvaluateIrq() && _renderEnabled) {
+			_lineIrqLatch = true;
+		}
+		_irqPending = _lineIrqLatch;
 		_irqApplied = false;
 
 		if(_lineCount == 255) {
@@ -765,6 +785,7 @@ protected:
 		_splitMode = false;
 		_enableIrq = false;
 		_lineCount = 0;
+		_lineIrqLatch = false;
 		_nrOfSR = _nrOfVR = 0;
 		_queueIndex = 0;
 		_stageCount = _stageCountVR = 0;
@@ -996,6 +1017,13 @@ protected:
 
 				_splitMode = (value & 0x40) != 0;
 				_enableIrq = (value & 0x04) != 0;
+				if(!_enableIrq) {
+					//Clearing the enable bit is how the handler answers the line interrupt - it does
+					//so before reloading the counter and turning the bit back on. A raster program's
+					//own writes to this port leave the bit set, so they answer nothing.
+					_lineIrqLatch = false;
+					_irqPending = false;
+				}
 				CheckIrq();
 
 				//Leaving split mode hands $0000-$1FFF back to the bank registers
@@ -1241,7 +1269,7 @@ protected:
 		SVArray(_stageVR, 64);
 		SVArray(_chrReg, 8);
 		SV(_stageCount); SV(_stageCountVR); SV(_splitLine); SV(_renderEnabled);
-		SV(_lastPpuScanline); SV(_irqPending); SV(_irqApplied);
+		SV(_lastPpuScanline); SV(_irqPending); SV(_irqApplied); SV(_lineIrqLatch);
 
 		SV(_mmc3Mode); SV(_mmc3Cmd); SV(_mmc3Prg0); SV(_mmc3Prg1);
 		SV(_mmc3Chr01); SV(_mmc3Chr23); SV(_mmc3Chr4); SV(_mmc3Chr5); SV(_mmc3Chr6); SV(_mmc3Chr7);
