@@ -319,7 +319,7 @@ public:
 		uint32_t matched = 0;
 		string line;
 		while(std::getline(names, line)) {
-			while(!line.empty() && (line.back() == '' || line.back() == ' ')) {
+			while(!line.empty() && (line.back() == '\r' || line.back() == ' ')) {
 				line.pop_back();
 			}
 			if(line.empty() || line[0] == '#') {
