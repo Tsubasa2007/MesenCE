@@ -1366,7 +1366,13 @@ public:
 		uint32_t cycle = _console->GetPpu()->GetCurrentCycle();
 		if(scanline != _lastPpuScanline && cycle >= 321) {
 			_lastPpuScanline = scanline;
-			if(scanline >= 0) {
+			//The pre-render line is the reference's dummy line 0, and the classic counter's tick
+			//there is what puts the first band boundary on the row the artwork expects: skipping
+			//it leaves the interrupt - and so the handler's CHR bank writes - a scanline late for
+			//the whole frame. The split queue restarts on line 0 below, so its phase is
+			//unaffected. The 98's raster engine counts its own band lines and is already in
+			//phase, so it stays on the visible lines only.
+			if(scanline >= 0 || (!_bbk98 && !_mmc3Mode)) {
 				HSync(scanline);
 			}
 
