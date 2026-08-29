@@ -17,8 +17,9 @@
 //from an existing emulator, so only what the BIOS demonstrably needs is implemented here.
 //
 //Memory controller: four 8KB windows, one 8-bit bank register each, giving a 2MB address
-//space. The board itself carries 1MB (banks $00-$7F); banks $80-$FF are the add-on card
-//slot, and read as an open bus when nothing is plugged in.
+//space. The board itself carries 1MB (banks $00-$7F); banks $80-$BF are the add-on card
+//slot, and read as an open bus when nothing is plugged in. The card is 512KB and decodes
+//only six bank bits, so $C0-$FF mirrors $80-$BF - see the fold in WriteRegister.
 //
 // - $5000 -> $8000-$9FFF
 // - $5001 -> $A000-$BFFF
@@ -255,6 +256,12 @@ protected:
 			case 0x0001:
 			case 0x0002:
 			case 0x0003:
+				//The card decodes six bank bits, so $C0-$FF is a second view of $80-$BF.
+				//The bank-sweep dumps captured that mirror as if it were ROM; the files here
+				//carry the card once, at $80-$BF, so fold the alias back onto it.
+				if(value >= 0x80) {
+					value = 0x80 | (value & 0x3F);
+				}
 				_banks[addr & 0x03] = value;
 				SelectPrgPage(addr & 0x03, value);
 				break;
