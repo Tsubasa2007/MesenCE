@@ -58,6 +58,7 @@
 // - $4198-$419F   CHR-RAM banks, at the width $4181 selects
 // - $418D bits 0-1 the per-cell tile latch: 2 draws 2bpp tiles from a per-cell 4KB bank,
 //                 3 draws 1bpp glyphs from a 2KB bank and colours them per cell
+// - $41A0         raster IRQ: the scanline count $4182 mode 1 counts up from
 // - $41A1/$41A2   IRQ counter, low and high
 // - $41A3         IRQ enable
 // - $41AC         speech chip: $5x feeds it a nibble, anything else resets it
@@ -124,6 +125,9 @@ private:
 	bool _loadMode = true;
 	uint16_t _irqCounter = 0;
 	bool _irqEnabled = false;
+	uint8_t _lineCounter = 0;
+	int32_t _lastIrqScanline = -2;
+	bool _lineIrqPending = false;
 	uint8_t _irqStatus = 0;
 
 	//--- per-tile CHR banking ("external latch") -----------------------------------------
@@ -650,7 +654,7 @@ private:
 		if(fakeShift) {
 			KbdPushKey(KbdLeftShift, true);
 		}
-		_kbdRaiseIrq = true;
+		KbdAssertIrq(true);
 	}
 
 	//One make or break
@@ -760,7 +764,7 @@ private:
 				if(fakeShift) {
 					KbdPushKey(KbdLeftShift, true);
 				}
-				_kbdRaiseIrq = true;
+				KbdAssertIrq(true);
 			}
 		}
 	}
@@ -773,6 +777,19 @@ private:
 
 	//One step of the two-wire state machine, run once per CPU cycle. The lines change state
 	//every 64 cycles, which is the ~35us the real device takes.
+	//The keyboard's bit in $418F has to latch rather than mirror the interrupt line. The
+	//processor samples the interrupt at an instruction boundary and fetches the vector
+	//several cycles later, and the keyboard drops its line as soon as its queue drains, so
+	//a handler reading a live view can find nothing asserted and no way to tell what woke
+	//it. Reading the register answers the interrupt and clears the bit.
+	void KbdAssertIrq(bool raise)
+	{
+		_kbdRaiseIrq = raise;
+		if(raise) {
+			_irqStatus |= 0x10;
+		}
+	}
+
 	void KbdClock()
 	{
 		if((_kbdCtrl & 0x01) && !(_kbdCtrl & 0x02)) {
@@ -868,7 +885,7 @@ private:
 					//the host is told once per byte, not once per key. Announcing only the
 					//first leaves the rest sitting in the queue until the next keypress
 					//raises another interrupt, which puts every key one keystroke behind.
-					_kbdRaiseIrq = _kbdQueueLen > 0;
+					KbdAssertIrq(_kbdQueueLen > 0);
 				}
 			}
 		}
@@ -1259,7 +1276,7 @@ protected:
 		_printer.Clock();
 		_fdc.Clock();
 
-		if(_kbdRaiseIrq) {
+		if(_kbdRaiseIrq || _lineIrqPending) {
 			_console->GetCpu()->SetIrqSource(IRQSource::External);
 		} else {
 			_console->GetCpu()->ClearIrqSource(IRQSource::External);
@@ -1269,7 +1286,23 @@ protected:
 			//$4182 bits 0-1 pick how the counter runs: 2 counts up to $FFFF, 3 counts down
 			//to zero, and either way the IRQ fires once and disables itself.
 			uint8_t irqType = _regs[0x02] & 0x03;
-			if(irqType == 2) {
+			if(irqType == 1) {
+				//Mode 1 does not use the cycle counter at all: it counts whole scanlines from
+				//the value $41A0 was last loaded with, and trips when that eight-bit count
+				//wraps. The system software splits the screen with it - the top band is the
+				//console page and the bottom one the status line - by arming a one-line delay
+				//in vblank and re-arming for the band boundary from inside the handler.
+				int32_t scanline = _console->GetPpu()->GetCurrentScanline();
+				if(scanline >= 0 && scanline < 240 && scanline != _lastIrqScanline) {
+					_lastIrqScanline = scanline;
+					if(++_lineCounter == 0) {
+						//Held until the handler answers it by clearing $41A3. A single-cycle
+						//pulse would be lost: the keyboard arm above rewrites the same line
+						//every CPU clock and would drop it before the core sampled it.
+						_lineIrqPending = true;
+					}
+				}
+			} else if(irqType == 2) {
 				if(++_irqCounter >= 0xFFFF) {
 					_irqEnabled = false;
 					_console->GetCpu()->SetIrqSource(IRQSource::External);
@@ -1363,6 +1396,9 @@ protected:
 		_loadMode = true;
 		_irqCounter = 0;
 		_irqEnabled = false;
+		_lineCounter = 0;
+		_lastIrqScanline = -2;
+		_lineIrqPending = false;
 		_irqStatus = 0;
 
 		_kbdCtrl = 0x03;
@@ -1436,14 +1472,28 @@ protected:
 			case 0x418B: _fdc.MarkActivity(); return _fdc.Read(2);
 
 			case 0x418E:
-				//Bits 6-7 always read set; the keyboard's own clock and data come back in
-				//bits 1 and 0, and the rest is whatever the host last wrote.
+				//Bit 7 always reads set; the keyboard's own clock and data come back in bits 1
+				//and 0, and the rest is whatever the host last wrote. Bit 6 is the floppy
+				//drive's change line, inverted - set means nothing has changed. The disk driver
+				//caches "the drive is where I left it" and only re-homes the head when this bit
+				//goes low, so reporting it permanently high strands the head after the driver
+				//has parked the controller: every later read asks for a cylinder the head is not
+				//on. The same bit answers the BIOS call that asks whether the disk was swapped.
 				_kbdRaiseIrq = false;
-				return (uint8_t)((_kbdCtrl & 0x3C) | 0xC0 | (_kbdClock ? 0x02 : 0) | (_kbdData ? 0x01 : 0));
+				return (uint8_t)((_kbdCtrl & 0x3C) | 0x80 | (_fdc.DiskChanged() ? 0 : 0x40) |
+					(_kbdClock ? 0x02 : 0) | (_kbdData ? 0x01 : 0));
 
-			case 0x418F:
+			case 0x418F: {
+				//Which source is asking: bit 4 the keyboard, bit 5 the raster counter. The
+				//shared handler dispatches on these, so with both reading zero every interrupt
+				//looks alike and a line interrupt is mistaken for the keyboard, taken down a
+				//path that never clears $41A3 and re-entered on the spot.
+				uint8_t status = (uint8_t)(_irqStatus | (_kbdRaiseIrq ? 0x10 : 0) |
+					(_lineIrqPending ? 0x20 : 0));
+				_irqStatus &= (uint8_t)~0x10;
 				_kbdRaiseIrq = false;
-				return _irqStatus;
+				return status;
+			}
 
 			case 0x41A1: return (uint8_t)(_irqCounter & 0xFF);
 			case 0x41A2: return (uint8_t)(_irqCounter >> 8);
@@ -1546,6 +1596,10 @@ protected:
 				UpdateChrMapping();
 				break;
 
+			case 0x41A0:
+				_lineCounter = value;
+				break;
+
 			case 0x41A1:
 				_irqCounter = (uint16_t)((_irqCounter & 0xFF00) | value);
 				break;
@@ -1554,6 +1608,12 @@ protected:
 				break;
 			case 0x41A3:
 				_irqEnabled = (value & 0x01) != 0;
+				if(!_irqEnabled) {
+					_lineIrqPending = false;
+				} else {
+					//Arming starts the count on the next line, not part-way through this one
+					_lastIrqScanline = _console->GetPpu()->GetCurrentScanline();
+				}
 				_console->GetCpu()->ClearIrqSource(IRQSource::External);
 				break;
 
@@ -1600,6 +1660,7 @@ protected:
 		SV(_loadMode);
 		SV(_irqCounter);
 		SV(_irqEnabled);
+		SV(_lineCounter); SV(_lastIrqScanline); SV(_lineIrqPending);
 		SV(_irqStatus);
 		SV(_kbdCtrl); SV(_kbdClock); SV(_kbdData); SV(_kbdClockCount);
 		SV(_kbdLatch); SV(_kbdParity); SV(_kbdState); SV(_kbdRaiseIrq);

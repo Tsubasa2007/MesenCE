@@ -86,6 +86,11 @@ private:
 		bool Running = false;
 		bool WriteProtected = false;
 		bool Changed = false;
+
+		//Distinct from Changed, which is the drive's own line and is reported through the
+		//digital input register. This one says the controller no longer knows where the head
+		//is, which a reset causes and only a seek can undo.
+		bool PositionUnknown = false;
 		int32_t Cylinder = 0;
 		int32_t Cylinders = 0;
 		int32_t Sides = 0;
@@ -256,6 +261,7 @@ private:
 		if(d.Cylinder != _command[CmdNcn]) {
 			d.Changed = false;
 		}
+		d.PositionUnknown = false;
 		d.Cylinder = _command[CmdNcn];
 		_st0 |= St0SeekComplete;
 		if(!d.Exists) {
@@ -270,6 +276,7 @@ private:
 		if(d.Cylinder != 0) {
 			d.Changed = false;
 		}
+		d.PositionUnknown = false;
 		d.Cylinder = 0;
 		_st0 |= St0SeekComplete;
 		if(!d.Exists) {
@@ -532,6 +539,12 @@ public:
 		_pollDrive = 0;
 		for(int i = 0; i < 4; i++) {
 			_previouslyReady[i] = false;
+
+			//A reset zeroes the cylinder register without moving a head, so what the
+			//controller reports afterwards is not where the head is. Software that parks the
+			//controller and brings it back would otherwise read at the cylinder it last used
+			//and get nothing but missing-address-mark errors.
+			_drives[i].PositionUnknown = true;
 		}
 	}
 
@@ -545,6 +558,11 @@ public:
 	bool IsActive() { return _activityCycles > 0; }
 	bool IsIrqAsserted() { return (_sra & SraIrq) != 0; }
 	bool IsDiskInserted() { return !_diskData.empty(); }
+
+	//Everything that means "do not trust where I said the head is": the drive's own change
+	//line, plus a controller reset. Read-only, unlike the digital input register, which
+	//clears the change line as a side effect of being read.
+	bool DiskChanged() { return _drives[_driveSel].Changed || _drives[_driveSel].PositionUnknown; }
 
 	//For mappers that behave differently depending on which operating system the floppy
 	//carries - the Dr. PC Jr. BIOSes sniff the boot area for a signature.
@@ -696,7 +714,7 @@ public:
 		SVArray(_results, 8);
 		for(int i = 0; i < 4; i++) {
 			SVI(_previouslyReady[i]);
-			SVI(_drives[i].Inserted); SVI(_drives[i].Running); SVI(_drives[i].Changed);
+			SVI(_drives[i].Inserted); SVI(_drives[i].Running); SVI(_drives[i].Changed); SVI(_drives[i].PositionUnknown);
 			SVI(_drives[i].Cylinder); SVI(_drives[i].Cylinders);
 			SVI(_drives[i].Sides); SVI(_drives[i].Sectors); SVI(_drives[i].CorrectDataRate);
 		}
