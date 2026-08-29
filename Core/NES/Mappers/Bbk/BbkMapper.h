@@ -402,6 +402,11 @@ private:
 	void HSync98(int32_t scanline)
 	{
 		if(_splitMode) {
+			//The split queue's band lines are counted from the first visible row, so the
+			//pre-render line takes no part - ticking it there moves every split band up a row.
+			if(scanline < 0) {
+				return;
+			}
 			if(scanline >= 240) {
 				//Vblank restarts the sequence for the next frame
 				_queueIndex = 0;
@@ -1063,6 +1068,17 @@ protected:
 
 			case 0xFF02: //IntCountPortL
 				_lineCount = value;
+				if(_bbk98 && !_splitMode) {
+					//The 98's raster engine counts its own band line, and in split mode the queue
+					//reloads it at every band. With split mode off there is no queue to do that,
+					//so the software's counter reload has to reach it here - otherwise the band
+					//counter just free-runs and wraps once every 256 lines, giving one interrupt
+					//a frame where the raster program is expecting one per band.
+					//The band counter trips on its wrap, one line later against the reload than
+					//the classic counter's trip at 254, so it is loaded a line short to give the
+					//same band pitch from the same value the software writes.
+					_splitLine = value + 1;
+				}
 				break;
 
 			case 0xFF06: //IntCountPortH
@@ -1372,7 +1388,7 @@ public:
 			//the whole frame. The split queue restarts on line 0 below, so its phase is
 			//unaffected. The 98's raster engine counts its own band lines and is already in
 			//phase, so it stays on the visible lines only.
-			if(scanline >= 0 || (!_bbk98 && !_mmc3Mode)) {
+			if(scanline >= 0 || !_mmc3Mode) {
 				HSync(scanline);
 			}
 
