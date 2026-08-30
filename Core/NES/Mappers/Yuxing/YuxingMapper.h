@@ -4,6 +4,7 @@
 #include "NES/BaseNesPpu.h"
 #include "NES/NesConsole.h"
 #include "NES/NesCpu.h"
+#include "NES/Input/Sb2kKeyboard.h"
 #include "NES/Input/YuxingKeyboard.h"
 #include "NES/Input/YuxingMouse.h"
 #include "NES/Mappers/Bbk/BbkLpcAudio.h"
@@ -51,6 +52,24 @@ public:
 	{
 		return prgCrc == 0xCB7AA37A || prgCrc == 0x8E53518B;
 	}
+
+	//The two earliest revisions predate the key matrix and take an ordinary keyboard on
+	//$4016/$4017 instead - so the input setup has to ask the mapper which machine this is
+	//before it can plug the right one in.
+	//
+	//These read the CRC rather than _type: NesConsole sets the input up while it is loading
+	//the ROM, and does not call InitSpecificMapper() - and so DetectMachineType() - until
+	//afterwards, so _type is still Unknown at that point. _romInfo is already filled in.
+	bool UsesXtKeyboard() { return IsV50(_romInfo.Hash.PrgCrc32); }
+	bool UsesFamilyBasicKeyboard() { return IsV40(_romInfo.Hash.PrgCrc32); }
+
+	static bool IsV40(uint32_t prgCrc) { return prgCrc == V40PrgCrc; }
+	static bool IsV50(uint32_t prgCrc) { return prgCrc == V50PrgCrc || prgCrc == V50WuBiPrgCrc; }
+
+	//Named here rather than only in DetectMachineType()'s switch so the two cannot drift
+	static constexpr uint32_t V40PrgCrc = 0xCEAC04C7;
+	static constexpr uint32_t V50PrgCrc = 0x3B02AF09;
+	static constexpr uint32_t V50WuBiPrgCrc = 0x871254E8;
 
 private:
 	//Handles the FDS disk shortcut keys, reused here to swap VCD discs
@@ -149,6 +168,17 @@ private:
 
 	//Key matrix row select - 14 bits, written as two halves through $4202/$4203
 	uint16_t _keyRowMask = 0;
+
+	//XT keyboard state (V5.0 only) - see the XT* helpers. Named after the reference
+	//emulator's EXPAD_XT_Keyboard members so the two can be compared line by line.
+	bool _xtOut = false;
+	bool _xtEnabled = false;
+	bool _xtLsb = false;
+	bool _xtMsb = false;
+	bool _xtB1 = false;
+	bool _xtB2 = false;
+	uint8_t _xtScan = 0;
+	uint8_t _xtScanPrev = 0;
 
 	//$5002: bit 1 clear = the VCD player's own screen is showing, set = normal machine
 	//screen. The V9.2 models power on in VCD mode; every other revision reads it as 2.
@@ -409,14 +439,14 @@ private:
 		_reg5002 = 2;
 
 		switch(crc) {
-			case 0xCEAC04C7: //V4.0
+			case V40PrgCrc: //V4.0
 				_type = YuxingType::V40;
 				_pramMask = 0x01; //32KB
 				_cramMask = 0x03; //32KB
 				break;
 
-			case 0x3B02AF09: //V5.0
-			case 0x871254E8: //V5.0 + WuBi
+			case V50PrgCrc: //V5.0
+			case V50WuBiPrgCrc: //V5.0 + WuBi
 				_type = YuxingType::V50;
 				_pramMask = 0x01;
 				_cramMask = 0x03;
@@ -543,6 +573,9 @@ protected:
 				//Once a frame, cheap enough, and survives the control manager rebuilding
 				//its devices behind the mapper's back
 				UpdateMouseMode();
+				if(UsesXtKeyboard()) {
+					XtSync();
+				}
 			}
 		}
 	}
@@ -581,6 +614,14 @@ protected:
 		AddRegisterRange(0x4016, 0x4016, MemoryOperation::Write);
 
 		_keyRowMask = 0;
+		_xtOut = false;
+		_xtEnabled = false;
+		_xtLsb = false;
+		_xtMsb = false;
+		_xtB1 = false;
+		_xtB2 = false;
+		_xtScan = 0;
+		_xtScanPrev = 0;
 		_reg4800 = 0;
 		_reg5500 = 0;
 		_reg5501 = 0;
@@ -643,6 +684,9 @@ protected:
 				if(addr == 0x4016 && !_vcdMode && IsPrinterSelected()) {
 					value |= 0x02;
 				}
+				if(UsesXtKeyboard()) {
+					value |= (addr == 0x4016) ? XtRead4016() : XtRead4017();
+				}
 				return value | vcdValue;
 			}
 
@@ -687,8 +731,15 @@ protected:
 				//serial link, and its clock line idles at exactly $06 - the value the printer
 				//select test looks for - so letting the printer see it would force the ready
 				//bit into every status byte the BIOS shifts back from the drive.
-				if(!_vcdMode) {
+				//The XT keyboard's command words collide with the printer's clock and select
+				//lines ($06 is both "clock high, selected" and an XT command), so the two
+				//cannot share the port - and only the later, computer-shaped models have a
+				//printer anyway.
+				if(!_vcdMode && !UsesXtKeyboard()) {
 					WriteLpt(value);
+				}
+				if(UsesXtKeyboard()) {
+					XtWrite4016(value);
 				}
 				//$FF/$FE switches the serial link to the keyboard
 				if(IsVcdActive()) {
@@ -920,7 +971,7 @@ protected:
 	//The gate is the exact idle word the BIOS writes before each ready test. A looser test
 	//on bit 2 alone is NOT safe - $FF and $FE, which select the serial keyboard, both have
 	//bit 2 set, and $FE also matches on bits 1 and 0.
-	bool IsPrinterSelected() { return _lptLast == 0x06; }
+	bool IsPrinterSelected() { return !UsesXtKeyboard() && _lptLast == 0x06; }
 
 	bool IsVcdActive() { return _vcdMode && _vcd.IsDiscInserted(); }
 
@@ -939,6 +990,124 @@ protected:
 		} else {
 			_vcd.PendingKeyCell = -1;
 			_vcd.PendingModifiers = 0;
+		}
+	}
+
+	//===== XT keyboard (V5.0) =====
+	//
+	//The V5.0 predates the key matrix: its BIOS talks to a plain PC/XT keyboard over
+	//$4016/$4017 instead, which is why the matrix registers ($4202/$4203/$4207) are never
+	//touched by this machine. Ported from the reference emulator's EXPAD_XT_Keyboard,
+	//whose author notes the protocol was reconstructed from the BIOS rather than from the
+	//hardware - so it is transcribed here rather than tidied.
+	//
+	//The BIOS writes a command to $4016 to say which half of the scan code it wants
+	//($05 = high nibble, $07 = low nibble, $06 = idle/clear), reads $4016 bit 1 back as
+	//the handshake ("both halves have been asked for"), and takes the nibble itself off
+	//$4017 in an inverted, shifted form.
+	//
+	//The device lives in the mapper rather than in a control device of its own because the
+	//mapper already owns these two addresses for every YuXing machine; the key states come
+	//from Sb2kKeyboard, which reports the same scan-code set 1 that an XT keyboard sends.
+
+	//Sample the keyboard once a frame, exactly as the reference emulator's Sync() does.
+	void XtSync()
+	{
+		shared_ptr<Sb2kKeyboard> keyboard = _console->GetControlManager()->GetControlDevice<Sb2kKeyboard>();
+
+		_xtEnabled = false;
+		_xtScanPrev = _xtScan;
+
+		if(keyboard) {
+			//The reference sweeps DirectInput's key array in order and stops at the first key
+			//it finds held. DirectInput's indices are the scan codes themselves, so walking
+			//the codes in ascending order visits the keys in the same order it does - which
+			//matters because only one key is ever reported, and this decides which one wins.
+			int32_t bestCode = -1;
+			for(uint8_t i = 0; i < Sb2kKeyboard::KeyCount; i++) {
+				if(keyboard->IsPressed(i)) {
+					uint8_t code = Sb2kKeyboard::GetScanCode(i);
+					if(bestCode < 0 || code < bestCode) {
+						bestCode = code;
+					}
+				}
+			}
+
+			if(bestCode >= 0) {
+				//Bit 7 is the break flag on this bus, so an extended key reports as the
+				//unextended one it shares a code with - the arrow keys arrive as the numpad
+				//keys, which is what an XT keyboard has instead of them.
+				_xtScan = (uint8_t)(bestCode & 0x7F);
+				_xtEnabled = true;
+			}
+		}
+
+		if(!_xtEnabled) {
+			//Nothing held: send the break code for whatever was last down
+			_xtScan = (uint8_t)(_xtScanPrev | 0x80);
+			_xtEnabled = true;
+		}
+
+		if(_xtScanPrev & 0x80) {
+			//The break code was already sent last frame - send nothing until something
+			//changes, so a release is reported once rather than held forever
+			_xtEnabled = false;
+		}
+	}
+
+	//$4016 bit 1: set once the BIOS has asked for both halves of the scan code
+	uint8_t XtRead4016()
+	{
+		return (_xtB1 && _xtB2) ? 0x02 : 0x00;
+	}
+
+	//$4017: the requested nibble, inverted and shifted, with bit 4 carrying the nibble's
+	//top bit
+	uint8_t XtRead4017()
+	{
+		if(!_xtEnabled) {
+			return 0;
+		}
+
+		if(_xtMsb) {
+			uint8_t high = _xtScan & 0xF0;
+			return (uint8_t)(((high ^ 0xFF) >> 3) & (high > 0x70 ? 0x0F : 0x1F));
+		}
+
+		if(_xtLsb) {
+			uint8_t low = _xtScan & 0x0F;
+			return (uint8_t)((((low ^ 0xFF) << 1) & 0x0F) | (low > 7 ? 0x00 : 0x10));
+		}
+
+		return 0;
+	}
+
+	//$4016 commands. Only $05/$06/$07 mean anything; the BIOS writes the others while
+	//strobing the joypad and the reference ignores them there too.
+	void XtWrite4016(uint8_t value)
+	{
+		switch(value) {
+			case 0x05:
+				_xtOut = !_xtOut;
+				_xtMsb = true;
+				_xtLsb = false;
+				_xtB1 = true;
+				break;
+
+			case 0x06:
+				_xtOut = false;
+				_xtMsb = false;
+				_xtLsb = false;
+				_xtB1 = false;
+				_xtB2 = false;
+				break;
+
+			case 0x07:
+				_xtOut = !_xtOut;
+				_xtMsb = false;
+				_xtLsb = true;
+				_xtB2 = true;
+				break;
 		}
 	}
 
@@ -1225,6 +1394,8 @@ public:
 		SV(_mmc3Chr01); SV(_mmc3Chr23); SV(_mmc3Chr4); SV(_mmc3Chr5); SV(_mmc3Chr6); SV(_mmc3Chr7);
 		SV(_mmc3IrqLatch); SV(_mmc3IrqCounter); SV(_mmc3IrqPreset); SV(_mmc3IrqPresetVbl);
 		SV(_mmc3IrqEnable); SV(_lastPpuScanline); SV(_lastBandScanline); SV(_lastSplitBand);
+		SV(_xtOut); SV(_xtEnabled); SV(_xtLsb); SV(_xtMsb); SV(_xtB1); SV(_xtB2);
+		SV(_xtScan); SV(_xtScanPrev);
 		SV(_lpcReceiving); SV(_lpcNibbleCount); SV(_lpcByte);
 		SV(_lpcAudio);
 		SV(_printer); SV(_lptLast); SV(_lptShift);

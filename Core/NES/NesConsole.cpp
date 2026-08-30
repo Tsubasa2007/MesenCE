@@ -702,23 +702,38 @@ void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem syst
 			expDevice = ControllerType::Sb2kKeyboard;
 			log("[Input] SB-2000 mouse connected");
 			port2 = ControllerType::Sb2kMouse;
-		} else if(dynamic_cast<YuxingMapper*>(mapper)) {
-			//The YuXing machines scan a 14x8 key matrix through the mapper's own registers,
-			//and their mouse is the 3-byte serial device NintendulatorNRS documents
-			log("[Input] YuXing keyboard connected");
-			expDevice = ControllerType::YuxingKeyboard;
-			log("[Input] YuXing mouse connected");
-			port2 = ControllerType::YuxingMouse;
-			if(GetNesConfig().YuxingDTypeMouse) {
-				//Both mice at once: the later machines' BIOS only ever talks to the built-in
-				//one and the D-type disks only ever talk to this one, so a machine that has
-				//to run both wants both plugged in. YuxingMouse answers on either address
-				//regardless of which port it sits in, so it moves aside to the first port and
-				//leaves 017 to this device, which answers only its own port. It costs the
-				//joypad on the first port, which is what plugging a mouse in costs anyway.
-				log("[Input] YuXing D-type serial mouse connected");
-				port1 = ControllerType::YuxingMouse;
-				port2 = ControllerType::YuxingSerialMouse;
+		} else if(YuxingMapper* yuxing = dynamic_cast<YuxingMapper*>(mapper)) {
+			if(yuxing->UsesXtKeyboard()) {
+				//The V5.0 predates the key matrix: its BIOS scans a plain PC/XT keyboard over
+				//$4016/$4017, which is why it never touches $4202/$4203/$4207. The protocol
+				//itself lives in YuxingMapper, which already owns those two addresses -
+				//this device just reports which keys are down, in the scan-code set an XT
+				//keyboard sends. No mouse on this machine.
+				log("[Input] XT keyboard connected");
+				expDevice = ControllerType::Sb2kKeyboard;
+			} else if(yuxing->UsesFamilyBasicKeyboard()) {
+				//Likewise the V4.0, which takes the Family Basic keyboard. Untested - no dump
+				//of that BIOS is on hand - but it is what the reference emulator plugs in.
+				log("[Input] Family Basic Keyboard connected");
+				expDevice = ControllerType::FamilyBasicKeyboard;
+			} else {
+				//The YuXing machines scan a 14x8 key matrix through the mapper's own registers,
+				//and their mouse is the 3-byte serial device NintendulatorNRS documents
+				log("[Input] YuXing keyboard connected");
+				expDevice = ControllerType::YuxingKeyboard;
+				log("[Input] YuXing mouse connected");
+				port2 = ControllerType::YuxingMouse;
+				if(GetNesConfig().YuxingDTypeMouse) {
+					//Both mice at once: the later machines' BIOS only ever talks to the built-in
+					//one and the D-type disks only ever talk to this one, so a machine that has
+					//to run both wants both plugged in. YuxingMouse answers on either address
+					//regardless of which port it sits in, so it moves aside to the first port and
+					//leaves 017 to this device, which answers only its own port. It costs the
+					//joypad on the first port, which is what plugging a mouse in costs anyway.
+					log("[Input] YuXing D-type serial mouse connected");
+					port1 = ControllerType::YuxingMouse;
+					port2 = ControllerType::YuxingSerialMouse;
+				}
 			}
 		} else if(dynamic_cast<SuborWindows2002*>(mapper)) {
 			//The mouse takes the first port so it answers $4016 and leaves $4017 to the keyboard,

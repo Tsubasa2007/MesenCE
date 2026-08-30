@@ -227,6 +227,12 @@ public:
 	uint8_t ReadRam(uint16_t addr) override { return 0; }
 	void WriteRam(uint16_t addr, uint8_t value) override {}
 
+	//How many keys the matrix holds, so a caller can walk it.
+	static constexpr uint8_t KeyCount = 99;
+
+	//The scan code a key reports, in the same form GetNextKeyEvent returns it.
+	static uint8_t GetScanCode(uint8_t index) { return index < KeyCount ? ScanCodes[index] : 0; }
+
 	//Returns one pending key transition: the scan code in bits 0-7 (bit 7 set = extended,
 	//to be sent as $E0 + code) and bit 8 set for a release; -1 when nothing changed.
 	//One event per call - the keyboard sends one make/break sequence per report interval,
