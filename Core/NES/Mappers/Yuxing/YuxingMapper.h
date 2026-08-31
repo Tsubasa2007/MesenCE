@@ -531,6 +531,13 @@ private:
 	}
 
 protected:
+	//The 2C02 suppresses the vblank flag and the NMI when $2002 is read on the dot before
+	//vblank. The BBK, 语音二号 and Dr. PC Jr. clone PPUs were all found to lack that race,
+	//and so does this one: the V5.0's BIOS polls $2002 in a 7-cycle loop while its own NMI
+	//handler reads the same register, and on Dendy's constant-length frame the poll lands on
+	//that exact dot and kills the frame's flag - leaving the machine waiting forever.
+	bool EnablePpuNmiSuppressRace() override { return false; }
+
 	uint16_t GetPrgPageSize() override { return 0x2000; }
 	uint16_t GetChrPageSize() override { return 0x400; }
 	uint16_t GetChrRamPageSize() override { return 0x400; }
