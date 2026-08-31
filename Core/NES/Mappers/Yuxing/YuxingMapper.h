@@ -1231,7 +1231,7 @@ public:
 	static bool IsFloppyImage(const string& path)
 	{
 		string ext = path.size() >= 4 ? path.substr(path.size() - 4) : string();
-		std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+		std::transform(ext.begin(), ext.end(), ext.begin(), [](char c) { return (char)::tolower((uint8_t)c); });
 		return ext == ".img" || ext == ".ima";
 	}
 
@@ -1259,8 +1259,13 @@ public:
 		//per medium rather than two. Matched on the filename alone - the resolved path comes
 		//back with a separator the folder listing does not use, so comparing paths misses.
 		auto leaf = [](const string& path) {
-			string name = FolderUtilities::GetFilename(path, true);
-			std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+			//Not FolderUtilities::GetFilename: this also has to take the leaf of a name that
+			//came out of a .cue rather than off the filesystem, and std::filesystem throws on
+			//bytes that are not valid UTF-8 - which reached the UI as "external component has
+			//thrown an exception" the moment the media folder was pointed at such a disc.
+			size_t sep = path.find_last_of("/\\");
+			string name = sep == string::npos ? path : path.substr(sep + 1);
+			std::transform(name.begin(), name.end(), name.begin(), [](char c) { return (char)::tolower((uint8_t)c); });
 			return name;
 		};
 

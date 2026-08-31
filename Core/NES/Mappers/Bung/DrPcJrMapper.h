@@ -110,6 +110,8 @@ private:
 	//paired, boots with an empty drive, which looks exactly like the selection having done
 	//nothing. Keyed by rom path so another machine does not inherit it; an empty path means
 	//"ejected on purpose", which must also survive.
+	inline static string _persistedDiscRom;
+	inline static string _persistedDiscPath;
 	inline static string _persistedDiskRom;
 	inline static string _persistedDiskPath;
 	inline static bool _persistedDiskValid = false;
@@ -383,6 +385,21 @@ private:
 		return folder[0] ? string(folder) : string();
 	}
 
+	//The configured folder and the rom's own can name the same place in two spellings - the
+	//one built from the rom path ends in a separator and the setting does not - and listing
+	//it twice puts every disk in the list twice.
+	static bool SameFolder(const string& a, const string& b)
+	{
+		auto tidy = [](string path) {
+			std::transform(path.begin(), path.end(), path.begin(), [](char c) {
+				return c == '\\' ? '/' : (char)::tolower((uint8_t)c);
+			});
+			while(!path.empty() && path.back() == '/') { path.pop_back(); }
+			return path;
+		};
+		return tidy(a) == tidy(b);
+	}
+
 	//Paired by name with the rom, the way the other machines here mount their media.
 	//Deferred to the first bus access, as YuxingMapper does: the emulator's rom info is not
 	//filled in yet during InitMapper OR during the first CPU cycles - asking that early
@@ -416,7 +433,7 @@ private:
 		string baseName = FolderUtilities::GetFilename(romPath, false);
 		vector<string> folders = { FolderUtilities::GetFolderName(romPath) };
 		string configured = GetConfiguredDiskFolder();
-		if(!configured.empty() && configured != folders[0]) {
+		if(!configured.empty() && !SameFolder(configured, folders[0])) {
 			folders.push_back(configured);
 		}
 
@@ -424,10 +441,20 @@ private:
 		//one - the two 32KB machines use a different, unimplemented interface - so the
 		//search is gated on the rom type and nothing changes for anything else.
 		if(_romType == 1 || _romType == 2) {
-			for(string& folder : folders)
-			for(string ext : { ".cue", ".CUE", ".bin", ".BIN", ".iso", ".ISO" }) {
-				if(_cd.LoadDisc(FolderUtilities::CombinePath(folder, baseName + ext))) {
-					break;
+			_cd.SetPresent(true);
+			//A disc chosen from the media list survives a power cycle, the way a floppy
+			//does. It is the only way onto the KW3000 at the moment: it does not look at the
+			//drive again once it has settled, so a disc going in mid-run is never noticed.
+			if(_persistedDiscRom == romPath && !_persistedDiscPath.empty()) {
+				_cd.LoadDisc(_persistedDiscPath);
+			}
+
+			if(!_cd.IsMounted() && !(_persistedDiscRom == romPath && _persistedDiscPath.empty())) {
+				for(string& folder : folders)
+				for(string ext : { ".cue", ".CUE", ".bin", ".BIN", ".iso", ".ISO" }) {
+					if(_cd.LoadDisc(FolderUtilities::CombinePath(folder, baseName + ext))) {
+						break;
+					}
 				}
 			}
 		}
@@ -452,10 +479,22 @@ public:
 		return (uint32_t)GetDiskFileList().size();
 	}
 
-	//Full path of the disk currently in the drive, or "" when the drive is empty
+	//Full path of whatever is in a drive, or "" when both are empty. The KW machines take a
+	//disc as well as a floppy and the same list offers both, so the disc answers when the
+	//floppy drive is empty.
 	string GetCurrentDiskFilename()
 	{
-		return _fdc.IsDiskInserted() ? _fdc.GetDiskFilename() : "";
+		if(_fdc.IsDiskInserted()) {
+			return _fdc.GetDiskFilename();
+		}
+		return _cd.IsMounted() ? _cd.GetDiscPath() : "";
+	}
+
+	static bool IsDiscImage(const string& path)
+	{
+		string ext = path.size() >= 4 ? path.substr(path.size() - 4) : string();
+		std::transform(ext.begin(), ext.end(), ext.begin(), [](char c) { return (char)::tolower((uint8_t)c); });
+		return ext == ".cue" || ext == ".bin" || ext == ".iso";
 	}
 
 	//Every floppy image sitting beside the rom, in name order - what the swap shortcuts
@@ -468,23 +507,68 @@ public:
 		//"no disk selection" looks like from the outside.
 		vector<string> folders = { FolderUtilities::GetFolderName(_emu->GetRomInfo().RomFile.GetFilePath()) };
 		string configured = GetConfiguredDiskFolder();
-		if(!configured.empty() && configured != folders[0]) {
+		if(!configured.empty() && !SameFolder(configured, folders[0])) {
 			folders.push_back(configured);
+		}
+
+		//The KW machines read a CD too, so their list offers discs alongside floppies; the
+		//two 32KB machines have a different, unimplemented CD interface and are left alone.
+		std::unordered_set<string> extensions = { ".img", ".ima" };
+		if(_romType == 1 || _romType == 2) {
+			extensions.insert(".cue");
+			extensions.insert(".bin");
+			extensions.insert(".iso");
 		}
 
 		vector<string> files;
 		for(string& folder : folders) {
-			for(string& file : FolderUtilities::GetFilesInFolder(folder, { ".img", ".ima" }, false)) {
+			for(string& file : FolderUtilities::GetFilesInFolder(folder, extensions, false)) {
 				files.push_back(file);
 			}
 		}
 		std::sort(files.begin(), files.end());
+
+		//A .cue and the image it names are one disc; drop the image so the list has one
+		//entry per medium rather than two. Matched on the filename alone - the resolved path
+		//comes back with a separator the folder listing does not use, so comparing whole
+		//paths misses. Same as the YuXing list does.
+		auto leaf = [](const string& path) {
+			//Not FolderUtilities::GetFilename: this also has to take the leaf of a name that
+			//came out of a .cue rather than off the filesystem, and std::filesystem throws on
+			//bytes that are not valid UTF-8 - which reached the UI as "external component has
+			//thrown an exception" the moment the media folder was pointed at such a disc.
+			size_t sep = path.find_last_of("/\\");
+			string name = sep == string::npos ? path : path.substr(sep + 1);
+			std::transform(name.begin(), name.end(), name.begin(), [](char c) { return (char)::tolower((uint8_t)c); });
+			return name;
+		};
+
+		vector<string> named;
+		for(string& file : files) {
+			string name = leaf(file);
+			if(name.size() >= 4 && name.compare(name.size() - 4, 4, ".cue") == 0) {
+				named.push_back(leaf(DrPcJrCdDrive::ResolveCueSheet(file)));
+			}
+		}
+		files.erase(std::remove_if(files.begin(), files.end(), [&named, &leaf](const string& file) {
+			return std::find(named.begin(), named.end(), leaf(file)) != named.end();
+		}), files.end());
 		return files;
 	}
 
 	void EjectDisk()
 	{
 		auto lock = _emu->AcquireLock();
+		if(_cd.IsMounted() && !_fdc.IsDiskInserted()) {
+			MessageManager::DisplayMessage("Dr.PC Jr.", "Disc ejected: " +
+				FolderUtilities::GetFilename(_cd.GetDiscPath(), true));
+			_cd.EjectDisc();
+			_diskIndex = -1;
+			_persistedDiscRom = _emu->GetRomInfo().RomFile.GetFilePath();
+			_persistedDiscPath = "";
+			return;
+		}
+
 		if(_fdc.IsDiskInserted()) {
 			MessageManager::DisplayMessage("Dr.PC Jr.", "Disk ejected: " +
 				FolderUtilities::GetFilename(_fdc.GetDiskFilename(), true));
@@ -502,6 +586,19 @@ public:
 		auto lock = _emu->AcquireLock();
 		vector<string> disks = GetDiskFileList();
 		if(index >= disks.size()) {
+			return;
+		}
+
+		if(IsDiscImage(disks[index])) {
+			//A disc, not a floppy. The player reads the drive through its own link, so
+			//nothing has to be signalled here - it polls and picks the new disc up.
+			if(_cd.LoadDisc(disks[index])) {
+				_diskIndex = (int32_t)index;
+				_persistedDiscRom = _emu->GetRomInfo().RomFile.GetFilePath();
+				_persistedDiscPath = disks[index];
+				MessageManager::DisplayMessage("Dr.PC Jr.", "Disc inserted: " +
+					FolderUtilities::GetFilename(disks[index], true));
+			}
 			return;
 		}
 
@@ -1572,7 +1669,7 @@ protected:
 			case 0x41AB: return _fdc.IsDiskInserted() ? (_regs[0x2B] | 0x10) : _regs[0x2B];
 			case 0x41AF: {
 				uint8_t value = _fdc.IsDiskInserted() ? (_regs[0x2F] | 0x01) : _regs[0x2F];
-				if(_cd.IsMounted()) {
+				if(_cd.IsPresent()) {
 					//Bits 7 and 6 belong to the drive; 0-1 are the BIOS group, so the rest
 					//is left exactly as the machine last wrote it
 					value &= 0x3F;
@@ -1585,7 +1682,7 @@ protected:
 			//Bit 6 is the decoder's own "room for more" line. A BIOS that is feeding a
 			//phrase waits on it between nibbles.
 			case 0x41AC: return _speech->IsReady() ? 0x40 : 0x00;
-			case 0x41AE: return _cd.IsMounted() ? _cd.ReadByte() : _regs[0x2E];
+			case 0x41AE: return _cd.IsPresent() ? _cd.ReadByte() : _regs[0x2E];
 		}
 
 		if(addr >= 0x4180 && addr <= 0x41BF) {
@@ -1670,7 +1767,7 @@ protected:
 				break;
 
 			case 0x41AE:
-				if(_cd.IsMounted()) {
+				if(_cd.IsPresent()) {
 					_cd.WriteByte(value);
 				}
 				break;

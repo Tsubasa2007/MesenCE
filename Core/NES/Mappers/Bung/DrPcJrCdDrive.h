@@ -2,6 +2,7 @@
 #include "pch.h"
 #include "Shared/MessageManager.h"
 #include "Utilities/FolderUtilities.h"
+#include "Utilities/StringUtilities.h"
 #include "Utilities/Serializer.h"
 
 //The CD drive the KW machines' player front end talks to, over $41AE/$41AF.
@@ -30,6 +31,7 @@ class DrPcJrCdDrive final : public ISerializable
 private:
 	//Flattened to 2KB user data per sector, the way every caller wants to address it
 	vector<uint8_t> _image;
+	bool _present = false;
 	string _discPath;
 
 	//What the machine sends, kept flat rather than split into packets - the packet length
@@ -73,14 +75,39 @@ public:
 			size_t start = line.find('"');
 			size_t end = start == string::npos ? string::npos : line.find('"', start + 1);
 			if(line.find("FILE") != string::npos && end != string::npos) {
-				return FolderUtilities::CombinePath(FolderUtilities::GetFolderName(path), line.substr(start + 1, end - start - 1));
+				string named = line.substr(start + 1, end - start - 1);
+				string resolved = FolderUtilities::CombinePath(FolderUtilities::GetFolderName(path), named);
+				if(StringUtilities::IsValidUtf8(named) && ifstream(resolved, ios::in | ios::binary)) {
+					return resolved;
+				}
+
+				//The name written inside a sheet is in whatever code page made it, and the
+				//discs here name their image in GBK while the file on disk carries the same
+				//characters as UTF-8 - the two never match, and feeding those bytes to
+				//std::filesystem throws. The pair share a stem in every dump seen, so fall
+				//back to the sheet's own name with the extension it named.
+				size_t sep = path.find_last_of("/\\");
+				size_t cueDot = path.find_last_of('.');
+				size_t namedDot = named.find_last_of('.');
+				if(namedDot != string::npos && cueDot != string::npos && (sep == string::npos || cueDot > sep)) {
+					string alt = path.substr(0, cueDot) + named.substr(namedDot);
+					if(ifstream(alt, ios::in | ios::binary)) {
+						return alt;
+					}
+				}
+				return resolved;
 			}
 		}
 		return path;
 	}
 
-public:
 	bool IsMounted() { return !_image.empty(); }
+
+	//The drive itself is always fitted on these machines; only the disc comes and goes. The
+	//mapper drives the port whenever the machine is a KW one, and this says so; IsMounted
+	//says only whether there is a disc in the tray.
+	bool IsPresent() { return _present; }
+	void SetPresent(bool present) { _present = present; }
 	string GetDiscPath() { return _discPath; }
 	uint32_t GetSectorCount() { return (uint32_t)(_image.size() / 0x800); }
 
@@ -102,7 +129,7 @@ public:
 	bool LoadDisc(string path)
 	{
 		string ext = path.size() >= 4 ? path.substr(path.size() - 4) : string();
-		std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+		std::transform(ext.begin(), ext.end(), ext.begin(), [](char c) { return (char)::tolower((uint8_t)c); });
 		string imagePath = ext == ".cue" ? ResolveCueSheet(path) : path;
 		ifstream file(imagePath, ios::in | ios::binary);
 		if(!file) {
@@ -139,8 +166,12 @@ public:
 		//exist happen after the real disc is already in.
 		_trackCount = ext == ".cue" ? CountCueTracks(path) : 1;
 
-
-		Reset();
+		//Deliberately NOT Reset(): a disc can go in while the machine is part way through an
+		//exchange, and clearing the link state there loses reply bytes it is already waiting
+		//on - it then sits in the read loop at $59E1 for ever. Swapping the disc changes what
+		//the drive will serve, not what it has already been asked for.
+		_streamPos = 0;
+		_streamLeft = 0;
 		MessageManager::Log("[Dr. PC Jr.] Disc mounted: " + FolderUtilities::GetFilename(path, true) +
 			" (" + std::to_string(GetSectorCount()) + " sectors)");
 		return true;
@@ -278,7 +309,10 @@ public:
 	//which those two constants are what prove.
 	void QueueReply()
 	{
-		Queue(0xC1);
+		//Bits 7 and 6 are the tray and the disc, bit 0 the ready flag. Nothing set at all
+		//with an empty tray: bit 0 on its own reads as 碟仓打开 and then has the machine try
+		//to load what it takes to be a bad disc.
+		Queue(IsMounted() ? 0xC1 : 0x00);
 		Queue(0x00);
 		Queue(0x00);
 

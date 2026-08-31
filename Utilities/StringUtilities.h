@@ -57,6 +57,39 @@ public:
 		return str;
 	}
 
+	//Whether a byte string is well-formed UTF-8. Paths are UTF-8 by contract here and
+	//std::filesystem::u8path throws on anything else, so text that came from a file's
+	//contents rather than from the filesystem has to be checked before it is used as one.
+	static bool IsValidUtf8(const string& str)
+	{
+		for(size_t i = 0; i < str.size(); ) {
+			uint8_t c = (uint8_t)str[i];
+			int extra;
+			uint32_t code;
+			if(c < 0x80) { i++; continue; }
+			else if((c & 0xE0) == 0xC0) { extra = 1; code = c & 0x1F; }
+			else if((c & 0xF0) == 0xE0) { extra = 2; code = c & 0x0F; }
+			else if((c & 0xF8) == 0xF0) { extra = 3; code = c & 0x07; }
+			else { return false; }
+
+			if(i + extra >= str.size()) { return false; }
+			for(int j = 1; j <= extra; j++) {
+				uint8_t cc = (uint8_t)str[i + j];
+				if((cc & 0xC0) != 0x80) { return false; }
+				code = (code << 6) | (cc & 0x3F);
+			}
+
+			//Overlong forms, surrogates and anything past the last code point are all
+			//ill-formed, and all of them make u8path throw just as a stray byte does
+			if(extra == 1 && code < 0x80) { return false; }
+			if(extra == 2 && code < 0x800) { return false; }
+			if(extra == 3 && code < 0x10000) { return false; }
+			if(code > 0x10FFFF || (code >= 0xD800 && code <= 0xDFFF)) { return false; }
+			i += extra + 1;
+		}
+		return true;
+	}
+
 	static void CopyToBuffer(string str, char* outBuffer, uint32_t maxSize)
 	{
 		memcpy(outBuffer, str.c_str(), std::min<uint32_t>((uint32_t)str.size(), maxSize));

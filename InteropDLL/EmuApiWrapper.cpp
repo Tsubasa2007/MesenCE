@@ -209,15 +209,24 @@ extern "C"
 	DllExport void __stdcall GetNesDiskList(char* outBuffer, uint32_t maxLength)
 	{
 		std::ostringstream out;
-		if(NesConsole* nes = dynamic_cast<NesConsole*>(_emu->GetConsole().get())) {
-			int32_t currentIndex = -1;
-			vector<string> disks = nes->GetBbkDiskList(currentIndex);
-			if(!disks.empty()) {
-				out << currentIndex << "[!|!]";
-				for(string& name : disks) {
-					out << name << "[!|!]";
+		//The list is built by scanning a folder the user picked, so it meets whatever is in
+		//it. Anything thrown here crosses the interop boundary and reaches the UI as the
+		//useless "external component has thrown an exception" - an empty list and a line in
+		//the log is a far better answer than taking the emulator down.
+		try {
+			if(NesConsole* nes = dynamic_cast<NesConsole*>(_emu->GetConsole().get())) {
+				int32_t currentIndex = -1;
+				vector<string> disks = nes->GetBbkDiskList(currentIndex);
+				if(!disks.empty()) {
+					out << currentIndex << "[!|!]";
+					for(string& name : disks) {
+						out << name << "[!|!]";
+					}
 				}
 			}
+		} catch(std::exception& ex) {
+			MessageManager::Log(string("[Disk] Could not list the media folder: ") + ex.what());
+			out.str("");
 		}
 
 		StringUtilities::CopyToBuffer(out.str(), outBuffer, maxLength);

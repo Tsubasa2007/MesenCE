@@ -2,6 +2,7 @@
 #include "pch.h"
 #include "Shared/MessageManager.h"
 #include "Utilities/FolderUtilities.h"
+#include "Utilities/StringUtilities.h"
 #include "Utilities/Serializer.h"
 
 //YuXing VCD drive - the CD-ROM the V9.2 models boot their software from, emulated at the
@@ -417,7 +418,27 @@ public:
 			size_t start = line.find('"');
 			size_t end = start == string::npos ? string::npos : line.find('"', start + 1);
 			if(line.find("FILE") != string::npos && end != string::npos) {
-				return FolderUtilities::CombinePath(FolderUtilities::GetFolderName(path), line.substr(start + 1, end - start - 1));
+				string named = line.substr(start + 1, end - start - 1);
+				string resolved = FolderUtilities::CombinePath(FolderUtilities::GetFolderName(path), named);
+				if(StringUtilities::IsValidUtf8(named) && ifstream(resolved, ios::in | ios::binary)) {
+					return resolved;
+				}
+
+				//The name written inside a sheet is in whatever code page made it, and the
+				//discs here name their image in GBK while the file on disk carries the same
+				//characters as UTF-8 - the two never match, and feeding those bytes to
+				//std::filesystem throws. The pair share a stem in every dump seen, so fall
+				//back to the sheet's own name with the extension it named.
+				size_t sep = path.find_last_of("/\\");
+				size_t cueDot = path.find_last_of('.');
+				size_t namedDot = named.find_last_of('.');
+				if(namedDot != string::npos && cueDot != string::npos && (sep == string::npos || cueDot > sep)) {
+					string alt = path.substr(0, cueDot) + named.substr(namedDot);
+					if(ifstream(alt, ios::in | ios::binary)) {
+						return alt;
+					}
+				}
+				return resolved;
 			}
 		}
 		return path;
@@ -426,7 +447,7 @@ public:
 	bool LoadDisc(string path)
 	{
 		string ext = path.size() >= 4 ? path.substr(path.size() - 4) : string();
-		std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+		std::transform(ext.begin(), ext.end(), ext.begin(), [](char c) { return (char)::tolower((uint8_t)c); });
 		string imagePath = ext == ".cue" ? ResolveCueSheet(path) : path;
 
 		ifstream file(imagePath, ios::in | ios::binary);
