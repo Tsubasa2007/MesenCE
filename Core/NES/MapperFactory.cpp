@@ -492,13 +492,15 @@ BaseMapper* MapperFactory::GetMapperFromID(RomData& romData)
 			return new Kaiser7058();
 		case 172: return new Txc22211B();
 		case 173:
-			//The VirtuaNES-BBK fork reuses 173 for the Bung Doctor PC Jr. family. A real
-			//Idea-Tek 173 cart is small and has CHR ROM; these machines are a 128KB BIOS
-			//with CHR-RAM only, which is what tells them apart. A .CDV is one of their games
+			//The VirtuaNES-BBK fork reuses 173 for the Bung Doctor PC Jr. family, and routes
+			//the whole mapper there - it has no Idea-Tek support to keep. A real Idea-Tek 173
+			//cart is small and has CHR ROM, and the KW machines are a 128KB BIOS with CHR-RAM
+			//only, which is what tells those two apart. The original 32KB Bung machines look
+			//exactly like a cart by that test, so they are named by PRG CRC instead. A .CDV is one of their games
 			//and says so in its own header, so it needs no guessing - and unlike the BIOS it
 			//does carry CHR.
-			if(!romData.CdvHeader.empty() || (romData.PrgRom.size() >= 0x20000 && romData.ChrRom.size() == 0)) {
-				//Asking for an input type is what gets the auto-configure step to run at all
+			if(!romData.CdvHeader.empty() || DrPcJrMapper::IsDrPcJr32k(romData.Info.Hash.PrgCrc32) ||
+				(romData.PrgRom.size() >= 0x20000 && romData.ChrRom.size() == 0)) {
 				//Asking for an input type is what gets the auto-configure step to run at all
 				romData.Info.InputType = GameInputType::SuborKeyboardMouse1;
 				return new DrPcJrMapper();

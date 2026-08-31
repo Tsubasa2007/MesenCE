@@ -71,6 +71,11 @@ public:
 	static bool IsKw2000(uint32_t prgCrc) { return prgCrc == 0x9982BF45; }
 	static bool IsKw3000(uint32_t prgCrc) { return prgCrc == 0xCFF8F964; }
 
+	//The two original Bung machines are only 32KB, which is the size a real Idea-Tek 173
+	//cart is, so the size-and-no-CHR test that picks the KW machines out cannot see them.
+	//They have to be named. 1.0a and 1.5a differ only in their own version strings.
+	static bool IsDrPcJr32k(uint32_t prgCrc) { return prgCrc == 0xC8FBEF89 || prgCrc == 0x98F2033B; }
+
 private:
 	//The FDS disk shortcuts, reused to eject and swap floppies - the same arrangement
 	//YuxingMapper uses for its media.
@@ -897,6 +902,23 @@ private:
 	uint8_t PrgReadBank() { return _regs[0x10] & 0x0F; }
 	uint8_t PrgWriteBank() { return _regs[0x11] & 0x0F; }
 
+	//The KW3000 lays its window out differently - see UpdatePrgMapping. $41B4 names an 8KB
+	//ROM bank in its low nibble and opens the save RAM with bit 7; $41B7 picks which 8KB of
+	//that save RAM; $4190 names one 16KB RAM bank rather than the KW2000's 32KB one.
+	uint8_t Kw3000RomBank() { return _regs[0x34] & 0x0F; }
+	bool Kw3000SaveRamEnabled() { return (_regs[0x34] & 0x80) != 0; }
+	uint8_t Kw3000SaveRamBank() { return _regs[0x37] & 0x03; }
+	uint32_t Kw3000RamBank() { return _regs[0x10] & ((PrgMask() << 1) | 1); }
+
+	//$6000-$7FFF on the KW3000, which does NOT follow load mode - the reference maps this
+	//window the same way whether the machine is in load mode or running its own image, and
+	//it is the save RAM $41B7 names rather than the KW2000's BIOS-group slice.
+	void MapKw3000SaveRam()
+	{
+		uint32_t offset = SramBase + (Kw3000SaveRamEnabled() ? Kw3000SaveRamBank() * 0x2000 : 0);
+		SetCpuMemoryMapping(0x6000, 0x7FFF, PrgMemoryType::WorkRam, offset, MemoryAccessType::Read);
+	}
+
 	//$4181: bits 4-5 machine mode, bits 2-3 PRG bank size, bits 0-1 CHR bank size
 	uint8_t MachineMode() { return (_regs[0x01] >> 4) & 0x03; }
 	uint8_t NewPrgSize() { return (_regs[0x01] >> 2) & 0x03; }
@@ -930,6 +952,24 @@ private:
 	void UpdatePrgMapping()
 	{
 		if(_loadMode) {
+			if(_romType == 2) {
+				//The KW3000 divides the window three ways instead of two. The top 8KB is a
+				//fixed ROM bank - the first of the image, not the last - which is why its
+				//reset vector reads out of offset $1FFA and points at $E000. Below that
+				//$C000-$DFFF is a banked 8KB ROM window, and only $8000-$BFFF is RAM: one
+				//16KB bank, where the KW2000 has a 32KB one covering everything.
+				SelectPrgPage(6, 0);
+				SelectPrgPage(7, 1);
+				SelectPrgPage(4, (uint16_t)(Kw3000RomBank() * 2));
+				SelectPrgPage(5, (uint16_t)(Kw3000RomBank() * 2 + 1));
+				SetCpuMemoryMapping(0x8000, 0xBFFF, PrgMemoryType::WorkRam, Kw3000RamBank() * 0x4000, MemoryAccessType::Read);
+
+				//With $41B4 bit 7 closed nothing can write here, so bank 0 reads back as the
+				//zeroes the reference's untouched scratch RAM would give.
+				MapKw3000SaveRam();
+				return;
+			}
+
 			//$E000 and $F000 are the only ROM in the machine's map; everything below is RAM.
 			//Both 4KB pages come from the same 32KB BIOS group, $F000 always taking its last.
 			SelectPrgPage(6, (BiosGroup() << 3) | BiosBank());
@@ -986,7 +1026,11 @@ private:
 		}
 
 		//$6000-$7FFF is the save RAM once load mode is over, whatever $4180 bit 7 says
-		SetCpuMemoryMapping(0x6000, 0x7FFF, PrgMemoryType::WorkRam, SramBase + BiosGroup() * 0x2000, MemoryAccessType::Read);
+		if(_romType == 2) {
+			MapKw3000SaveRam();
+		} else {
+			SetCpuMemoryMapping(0x6000, 0x7FFF, PrgMemoryType::WorkRam, SramBase + BiosGroup() * 0x2000, MemoryAccessType::Read);
+		}
 	}
 
 	//$4198-$419F select CHR. How many of them are consulted, and how wide a bank each
@@ -1350,6 +1394,10 @@ protected:
 			InitCdv();
 			UpdatePrgMapping();
 			UpdateChrMapping();
+		} else if(_romType == 2) {
+			//InitMapper() ran before the rom type was known, so redo the mapping now that
+			//the KW3000 layout applies
+			UpdatePrgMapping();
 		}
 	}
 
@@ -1521,7 +1569,24 @@ protected:
 		MountPairedFloppy();
 
 		if(addr >= 0x6000) {
+			if(_romType == 2 && addr < 0x8000) {
+				//Same window as MapKw3000SaveRam, and like it this does not follow load
+				//mode. With $41B4 bit 7 closed the write is dropped, as in the reference.
+				if(Kw3000SaveRamEnabled()) {
+					_workRam[SramBase + Kw3000SaveRamBank() * 0x2000 + (addr & 0x1FFF)] = value;
+				}
+				return;
+			}
+
 			if(_loadMode) {
+				if(_romType == 2) {
+					//Only the 16KB RAM bank takes writes up here; the rest is ROM
+					if(addr <= 0xBFFF) {
+						_workRam[Kw3000RamBank() * 0x4000 + (addr & 0x3FFF)] = value;
+					}
+					return;
+				}
+
 				//The RAM window. Reads come from the bank $4190 names and writes go to the
 				//one $4191 names, so this cannot be left to the page table. $E000-$FFFF is
 				//BIOS ROM here, so writes there go nowhere.
@@ -1622,8 +1687,19 @@ protected:
 				//over to the copy. Everything above $6000 changes meaning at this point.
 				//Leaving load mode on instead is demonstrably wrong: the very next thing the
 				//BIOS does is set $4190 to a bank it never filled.
-				_loadMode = false;
-				UpdatePrgMapping();
+				if(_romType != 2) {
+					_loadMode = false;
+					UpdatePrgMapping();
+				}
+				break;
+
+			case 0x41B5:
+				//The KW3000 hands over here instead, and unlike the KW2000 it can go back:
+				//bit 5 is load mode itself rather than a one-way trigger.
+				if(_romType == 2) {
+					_loadMode = (value & 0x20) != 0;
+					UpdatePrgMapping();
+				}
 				break;
 
 			case 0x4181:
@@ -1639,6 +1715,8 @@ protected:
 			case 0x4183:
 			case 0x4192:
 			case 0x4193:
+			case 0x41B4:
+			case 0x41B7:
 				UpdatePrgMapping();
 				break;
 
