@@ -11,6 +11,7 @@
 #include "NES/NesControlManager.h"
 #include "NES/Mappers/Bbk/PcFdc.h"
 #include "NES/Mappers/Bung/DrPcJrCdDrive.h"
+#include "NES/Mappers/Bung/DrPcJrGameChips.h"
 #include "NES/Mappers/Bbk/BbkPrinter.h"
 #include "NES/Mappers/Bbk/BbkLpcAudio.h"
 #include "Shared/MessageManager.h"
@@ -116,9 +117,14 @@ private:
 	inline static string _persistedDiskPath;
 	inline static bool _persistedDiskValid = false;
 
-	//$4181 bits 4-5. Only MachineNew is ported - the other three are cartridge modes.
+	//$4181 bits 4-5: which personality the window takes once a game has the machine.
+	//0 is a converted board that banks itself, 1 the machine's own system-bank window,
+	//and 2 and 3 hand the game's own mapper writes to an imitated controller - see
+	//DrPcJrGameChips.
 	static constexpr uint8_t MachineOld = 0;
 	static constexpr uint8_t MachineNew = 1;
+	static constexpr uint8_t MachineMmc1 = 2;
+	static constexpr uint8_t MachineMmc3 = 3;
 
 	//The 32KB SRAM lives at the top of the work RAM allocation
 	static constexpr uint32_t SramBase = 0x80000;
@@ -134,6 +140,7 @@ private:
 	//reads of this range go through ReadRegister, so a private array is invisible to every
 	//tool - emu.read returns open bus for it, which has cost two investigations.
 	bool _loadMode = true;
+	bool _placeUseB = false;
 	uint16_t _irqCounter = 0;
 	bool _irqEnabled = false;
 	uint8_t _lineCounter = 0;
@@ -171,8 +178,14 @@ private:
 	void MousePoll()
 	{
 		//$FFAB-$FFAD are PRG-RAM through the system-mode banking, so there is nowhere to
-		//put the report until the machine has left load mode
-		if(!_mouseEnabled || _loadMode) {
+		//put the report until the machine has left load mode - and once a disc game is
+		//running there is nowhere for it again, because those three bytes are now the game's
+		//own code. Writing the report there anyway corrupts the game: the neutral report is
+		//C0 80 80, and on one disc title it landed on $9FAB, turning BEQ/LDA into
+		//CPY #$80 / NOP #$71 / ASL $C9 / LDY #$90 and running the processor into the $02 two
+		//bytes later, which jams it. The machine is a cartridge now; its own mouse is not
+		//part of that.
+		if(!_mouseEnabled || _loadMode || GameWindow()) {
 			return;
 		}
 
@@ -217,6 +230,26 @@ private:
 	//CHR at $1800-$1FFF while $4194 is $7E and $4198 is $3F - which is what its graphical
 	//screens do, and why they came out with the wrong tiles until this was here.
 	bool _autoBank = false;
+	//Set by a write to $42FC-$42FF: a disc game has taken the machine over
+	bool _gameLaunched = false;
+	//What a write to $8000-$FFFF means once a game has taken the machine over. The game is
+	//a converted cartridge and still banks itself the way its own board did, and the
+	//hand-over value at $42FC-$42FF says which board that was: 0 and 7 do not bank at all,
+	//1-4 move the PRG window (1 and 4 the CHR with it), 5 and 6 move only the CHR.
+	uint8_t _gameMode = 0;
+	//The four 8KB PRG-RAM banks the game's window is made of, and its 8KB CHR bank
+	uint8_t _gamePrgBanks[4] = { 0, 1, 2, 3 };
+	uint8_t _gameChrBank = 0;
+	//The window is laid out once, on the first hand-over - see StartGameMode
+	bool _gameReset = false;
+	//Which controller the game asked the machine to be: 0 for a converted board that
+	//banks itself, otherwise MachineMmc1 or MachineMmc3, whose registers live in these
+	uint8_t _gameChip = 0;
+	DrPcJrMmc1 _mmc1;
+	DrPcJrMmc3 _mmc3;
+	//The game's eight 1KB CHR pages. A board that moves a whole 8KB at a time fills
+	//these from _gameChrBank; the two controllers name them one by one.
+	uint16_t _gameChrPages[8] = { 0, 1, 2, 3, 4, 5, 6, 7 };
 
 	uint8_t _exRamNt[0x800] = {};
 	uint16_t _extNtAddr = 0;
@@ -226,8 +259,15 @@ private:
 	//mode 2 draws ordinary 2bpp tiles out of a per-cell 4K bank, mode 3 draws 1bpp
 	//glyphs out of a 2K bank and colours them from the per-cell byte.
 	bool ExtLatchEnabled() { return (_regs[0x0D] & 0x03) >= 2; }
+	uint16_t ChrMask1K() { return (uint16_t)(((_regs[0x03] & 0x0F) << 5) | 31); }
 	uint8_t ChrMask4K() { return (uint8_t)(((_regs[0x03] & 0x0F) << 3) | 7); }
 	uint8_t ChrMask2K() { return (uint8_t)(((_regs[0x03] & 0x0F) << 4) | 15); }
+	uint8_t ChrMask8K() { return (uint8_t)(((_regs[0x03] & 0x0F) << 2) | 3); }
+	uint8_t PrgMask8K() { return (uint8_t)(((_regs[0x03] >> 4) << 2) | 3); }
+	uint8_t PrgMask16K() { return (uint8_t)(((_regs[0x03] >> 4) << 1) | 1); }
+	uint8_t PrgMask32K() { return (uint8_t)(_regs[0x03] >> 4); }
+	//How much PRG-RAM the game was given, in 8KB banks
+	uint8_t GamePrgBankCount() { return (uint8_t)((((_regs[0x03] >> 4) & 0x0F) + 1) << 2); }
 
 	//A .CDV is a game rather than a machine: it brings its own register settings, and its
 	//PRG and CHR are what the BIOS would otherwise have loaded from a floppy. Kept from the
@@ -1033,6 +1073,53 @@ private:
 		SetCpuMemoryMapping(0x6000, 0x7FFF, PrgMemoryType::WorkRam, offset, MemoryAccessType::Read);
 	}
 
+	//A transfer the drive carries out itself is given its destination in registers, and
+	//the BIOS writes them immediately before the command goes out. A file arrives in two
+	//pieces and each has its own set:
+	//
+	//  EDAD: LDX #$00 / STX $41A8      first piece:  $41A8 / $41A9 / $41AA
+	//  EDB4: LDX #$02 / LSR A / ROR $00 / DEX / BNE      a 16-bit shift right by 2
+	//  EDBC: STA $41AA / LDA $00 / STA $41A9
+	//  EDE5: STX $41B8                 second piece: $41B8 / $41B9 / $41BA
+	//  EDE8: LDX #$03 ...              shifted by 3 instead
+	//
+	//so the pair is an address with its low byte implied zero: $41A9 carries bits 8-15 and
+	//$41AA bits 16-23. Measured, the first piece of a program 3 banks in comes out as
+	//$00C000, which is where it has to be.
+	//
+	//Which set applies is simply whichever was written last - the BIOS fills one and sends
+	//a command, fills the other and sends the next.
+	uint32_t PlacedDestination()
+	{
+		uint8_t mid = _placeUseB ? _regs[0x39] : _regs[0x29];
+		uint8_t high = _placeUseB ? _regs[0x3A] : _regs[0x2A];
+		return (uint32_t)(((high << 8) | mid) << 8);
+	}
+
+	void PlaceDiscTransfer()
+	{
+		const uint8_t* data = nullptr;
+		uint32_t len = 0;
+		if(!_cd.TakePlacedTransfer(data, len)) {
+			return;
+		}
+
+		//The two sets do not address the same memory. A file's first piece is the program -
+		//it carries its own vectors at the top of its first 16KB, which is what the launcher
+		//jumps through - so it goes to PRG-RAM. Its second piece is the pictures, far too
+		//large to sit above it, and goes to the video memory, which is the same size and
+		//holds exactly one of them. Both are addressed from zero, which is only possible
+		//because they are different memories.
+		uint32_t at = PlacedDestination();
+		if(_placeUseB) {
+			if(at < _chrRamSize) {
+				memcpy(_chrRam + at, data, std::min(len, (uint32_t)(_chrRamSize - at)));
+			}
+		} else if(at < SramBase) {
+			memcpy(_workRam + at, data, std::min(len, (uint32_t)(SramBase - at)));
+		}
+	}
+
 	//$4181: bits 4-5 machine mode, bits 2-3 PRG bank size, bits 0-1 CHR bank size
 	uint8_t MachineMode() { return (_regs[0x01] >> 4) & 0x03; }
 	uint8_t NewPrgSize() { return (_regs[0x01] >> 2) & 0x03; }
@@ -1120,6 +1207,25 @@ private:
 		SelectPrgPage(6, (uint16_t)(lastPage - 1));
 		SelectPrgPage(7, lastPage);
 
+		//Once a game off a disc has taken over, $8000-$FFFF is the game sitting in PRG-RAM,
+		//not the BIOS rom - mapping the rom there is what crashed it on launch. The window
+		//is four 8KB banks the game picks itself: StartGameMode lays out the one it starts
+		//in and SetGameBank moves it after that, the same way the board it was converted
+		//from would have.
+		//
+		//$6000-$7FFF is the game's save RAM. Reads come from SramBase; writes still go
+		//through the BIOS-group banking below, so a game that actually uses SRAM would read
+		//back the wrong 8KB - untested, no disc game on hand touches it.
+		if(GameWindow()) {
+			for(int i = 0; i < 4; i++) {
+				uint16_t start = (uint16_t)(0x8000 + i * 0x2000);
+				SetCpuMemoryMapping(start, (uint16_t)(start + 0x1FFF), PrgMemoryType::WorkRam,
+					(_gamePrgBanks[i] & PrgMask8K()) * 0x2000, MemoryAccessType::Read);
+			}
+			SetCpuMemoryMapping(0x6000, 0x7FFF, PrgMemoryType::WorkRam, SramBase, MemoryAccessType::Read);
+			return;
+		}
+
 		//The system-bank mode redirects the whole window into PRG-RAM instead
 		if(MachineMode() == MachineNew) {
 			switch(NewPrgSize()) {
@@ -1161,6 +1267,18 @@ private:
 			return;
 		}
 
+		//A game off a disc is a cartridge, and a cartridge's pattern window is a plain 8KB
+		//run of CHR-RAM at the bank the game asked for. It cannot come from $4198-$419F: the
+		//loader clears those on its way out and the width in $4181 is 1KB, which folds all
+		//eight pages onto the first 1KB of the game's tiles. That it came out linear at all
+		//is an accident of nothing having re-run this since load mode - which held for a
+		//game that only ever wants its first bank, and left the second bank unreachable.
+		if(GameWindow()) {
+			for(int i = 0; i < 8; i++) {
+				SelectChrPage(i, (uint16_t)(_gameChrPages[i] & ChrMask1K()));
+			}
+			return;
+		}
 		uint8_t chrMask = _regs[0x03] & 0x0F;
 		switch(_regs[0x01] & 0x03) {
 			case 0: {
@@ -1205,6 +1323,17 @@ private:
 	//outright; the last four hand the choice to $42FC-$42FF, either in part or in full.
 	//Leaving those four unhandled is not harmless: the arrangement then keeps whatever it
 	//had, and a program that expected two nametables writes both of them onto one page.
+	//The four arrangements $42FC-$42FF and the two controllers all name with two bits
+	void SetMirroringValue(uint8_t value)
+	{
+		switch(value & 3) {
+			case 0: SetMirroringType(MirroringType::ScreenAOnly); break;
+			case 1: SetMirroringType(MirroringType::ScreenBOnly); break;
+			case 2: SetMirroringType(MirroringType::Vertical); break;
+			default: SetMirroringType(MirroringType::Horizontal); break;
+		}
+	}
+
 	void MirrorSync()
 	{
 		switch((_regs[0x02] >> 4) & 0x07) {
@@ -1222,18 +1351,208 @@ private:
 				break;
 
 			default:
-				switch(_mirroring & 3) {
-					case 0: SetMirroringType(MirroringType::ScreenAOnly); break;
-					case 1: SetMirroringType(MirroringType::ScreenBOnly); break;
-					case 2: SetMirroringType(MirroringType::Vertical); break;
-					default: SetMirroringType(MirroringType::Horizontal); break;
-				}
+				SetMirroringValue(_mirroring);
 				break;
 		}
 	}
 
 	//The machine is running its own software rather than a cartridge personality
 	bool SystemMode() { return ((_regs[0x01] >> 4) & 0x03) == 1; }
+
+	//The opposite end: a disc game has taken the machine over. $8000-$FFFF is the game
+	//rather than the BIOS, and the learning machine's own devices are out of the picture -
+	//the same condition UpdatePrgMapping uses to hand the window to the game.
+	bool CartridgeMode() { return _gameLaunched && MachineMode() == MachineOld; }
+
+	//A game holds the window whichever of the three cartridge personalities it asked
+	//for; only MachineNew leaves it to the machine's own software.
+	bool GameWindow() { return _gameLaunched && MachineMode() != MachineNew; }
+
+	//The window a game starts in, and what it banks itself into afterwards. A converted
+	//cartridge keeps its own board's banking, so the machine has to offer the same thing:
+	//the hand-over value picks which shape, and a write anywhere in $8000-$FFFF is that
+	//board's bank register.
+	void SetGamePrg16K(uint8_t slot, uint8_t bank)
+	{
+		bank &= PrgMask16K();
+		_gamePrgBanks[slot] = (uint8_t)(bank * 2);
+		_gamePrgBanks[slot + 1] = (uint8_t)(bank * 2 + 1);
+	}
+
+	//A board that moves a whole 8KB of CHR at a time still has to leave the page list
+	//behind it, because that is what the window is laid out from now that two of the
+	//personalities name pages one by one.
+	void SetGameChr8K(uint8_t bank)
+	{
+		_gameChrBank = bank;
+		bank &= ChrMask8K();
+		for(int i = 0; i < 8; i++) {
+			_gameChrPages[i] = (uint16_t)(bank * 8 + i);
+		}
+	}
+
+	void SetGamePrg32K(uint8_t bank)
+	{
+		bank &= PrgMask32K();
+		for(int i = 0; i < 4; i++) {
+			_gamePrgBanks[i] = (uint8_t)(bank * 4 + i);
+		}
+	}
+
+	//The size of the game's CHR, in 8KB banks. The loader leaves the game's header in the
+	//machine's own RAM at $600 and reads it back from there itself, so that is where the
+	//two shapes that ask about CHR have to look for it.
+	uint8_t GameChrBankCount()
+	{
+		uint8_t* ram = _console->GetMemoryManager()->GetInternalRam();
+		static const char* Magic = "FC GAMES";
+		for(int i = 0; i < 8; i++) {
+			if(ram[0x600 + i] != (uint8_t)Magic[i]) {
+				return 0;
+			}
+		}
+		return ram[0x609];
+	}
+
+	//A write into the game's own window. The byte is masked with the size the game's header
+	//declared, because the games do not write a bare bank number: the usual idiom reads a
+	//byte out of the program and writes it straight back, so that the value on the bus
+	//matches what is already there. The table one game reads holds $30, $31, $32, $33 for
+	//banks 0-3 - everything above the size mask is that byte's own high bits and not part
+	//of the selection.
+	void SetGameBank(uint8_t value)
+	{
+		switch(_gameMode) {
+			case 1:
+				SetGamePrg16K(0, (uint8_t)((value >> 2) & 0x0F));
+				SetGameChr8K((uint8_t)(value & 0x03));
+				break;
+
+			case 2:
+			case 3:
+				//Mode 2 banks the low half of the window, mode 3 the high half
+				SetGamePrg16K((uint8_t)((_gameMode << 1) - 4), value);
+				break;
+
+			case 4:
+				SetGamePrg32K((uint8_t)((value >> 4) & 0x07));
+				SetGameChr8K((uint8_t)((value & 0x03) | ((value & 0x40) >> 4)));
+				break;
+
+			case 5:
+			case 6:
+				SetGameChr8K(value);
+				break;
+
+			default:
+				//0 and 7 do not bank
+				return;
+		}
+
+		UpdatePrgMapping();
+		UpdateChrMapping();
+	}
+
+	//The whole window off the top of the PRG. A game with no CHR of its own only gets half
+	//the PRG-RAM to take it from, so the top is the middle of the image rather than its end -
+	//which is why this cannot be written out as "the last four banks".
+	void SetGameTop32K(uint8_t prgBanks, uint8_t chrBanks)
+	{
+		uint8_t top = (uint8_t)(prgBanks >> ((prgBanks == 0x20 && chrBanks == 0) ? 1 : 0));
+		for(int i = 0; i < 4; i++) {
+			_gamePrgBanks[i] = (uint8_t)(top - 4 + i);
+		}
+	}
+
+	//Called on the hand-over, once the game is in place and before it runs. The two sizes
+	//are parameters because a game loaded on its own has no machine to ask: it carries them
+	//in its own header, where the disc path reads them off $4183 and out of the loader's
+	//copy of that header in RAM.
+	void StartGameMode(uint8_t handover, uint8_t prgBanks, uint8_t chrBanks)
+	{
+
+		//Bits 5-7 name the shape; zero there leaves the machine to pick by size
+		_gameMode = (uint8_t)((handover >> 5) & 0x07);
+		if(_gameMode == 0) {
+			_gameMode = (prgBanks == 0x20) ? 1 : 2;
+		}
+
+		//The shape follows every write here, but the window it starts in is laid out ONCE.
+		//The startup stub a game brings with it writes this register a second time as it
+		//runs - measured, the loader writes it and the stub writes it again in the same
+		//frame - and re-laying the window underneath throws away what the stub has already
+		//put there. This is the mirror image of the mirroring, which has to follow every
+		//write; getting either of them the wrong way round garbles the game.
+		//Shapes 5 and 6 do not bank PRG at all, so their window is the top 32KB and there is
+		//nothing for the game to have put there - which makes this the one selection that is
+		//laid out on EVERY hand-over rather than only the first. A game's startup stub relies
+		//on it: one of them banks its way along the PRG copying its tiles into CHR-RAM, and
+		//then names shape 6 and reads the window straight back, expecting the game to be
+		//there. That stub checks the byte it reads against a constant it knows, which is what
+		//pins the layout down - with the top 32KB in place the check passes, and with the
+		//window the stub left behind, or with the layout the other shapes start in, it does
+		//not.
+		if(_gameMode == 5 || _gameMode == 6) {
+			SetGameTop32K(prgBanks, chrBanks);
+		}
+
+		if(_gameReset) {
+			return;
+		}
+		_gameReset = true;
+		SetGameChr8K(0);
+
+		//Most shapes start with the first 16KB low and the last 16KB high
+		_gamePrgBanks[0] = 0;
+		_gamePrgBanks[1] = 1;
+		_gamePrgBanks[2] = (uint8_t)(prgBanks - 2);
+		_gamePrgBanks[3] = (uint8_t)(prgBanks - 1);
+
+		if(_gameMode == 1) {
+			SetGameTop32K(prgBanks, chrBanks);
+		} else if(_gameMode == 3) {
+			//This shape banks the high half, so the fixed half is the one that goes low
+			_gamePrgBanks[0] = (uint8_t)(prgBanks - 2);
+			_gamePrgBanks[1] = (uint8_t)(prgBanks - 1);
+			_gamePrgBanks[2] = (uint8_t)(prgBanks - 4);
+			_gamePrgBanks[3] = (uint8_t)(prgBanks - 3);
+		} else if(_gameMode == 4 && chrBanks == 0) {
+			_gamePrgBanks[0] = 0;
+			_gamePrgBanks[1] = 1;
+			_gamePrgBanks[2] = 0x0E;
+			_gamePrgBanks[3] = 0x0F;
+		}
+	}
+
+	//The imitated controller has moved something. Both of them speak in the banks their
+	//own hardware used, so what comes back is four 8KB PRG banks and eight 1KB CHR
+	//pages, and the machine's own size masks are applied where the window is laid out -
+	//exactly as they are for a board that banks itself.
+	void ApplyGameChip(bool takeMirroring)
+	{
+		if(_gameChip == MachineMmc1) {
+			_mmc1.GetPrgBanks(GamePrgBankCount(), _gamePrgBanks);
+			_mmc1.GetChrPages(_gameChrPages);
+			_mirroring = _mmc1.Mirroring();
+		} else if(_gameChip == MachineMmc3) {
+			_mmc3.GetPrgBanks(GamePrgBankCount(), _gamePrgBanks);
+			_mmc3.GetChrPages(_gameChrPages);
+			_mirroring = _mmc3.Mirroring();
+		} else {
+			return;
+		}
+
+		//A controller names the arrangement itself, and gets it - the reference lets the
+		//chip win here rather than running the selection back through $4182, and 114 of
+		//the 121 games concerned have $4182 deferring to the selection anyway. The
+		//hand-over still goes through MirrorSync, so the arrangement a game starts with
+		//is the machine's until the game says otherwise.
+		if(takeMirroring) {
+			SetMirroringValue(_mirroring);
+		}
+		UpdatePrgMapping();
+		UpdateChrMapping();
+	}
 
 protected:
 	uint16_t GetPrgPageSize() override { return 0x1000; }
@@ -1260,6 +1579,11 @@ protected:
 
 	void NotifyVramAddressChange(uint16_t addr) override
 	{
+		//The imitated controller counts picture lines off this line going high
+		if(_gameChip == MachineMmc3) {
+			_mmc3.ClockA12(addr, _console->GetMasterClock());
+		}
+
 		if((addr >> 12) != 2) {
 			return;
 		}
@@ -1389,6 +1713,7 @@ protected:
 
 	void MapperWriteVram(uint16_t addr, uint8_t value) override
 	{
+
 		//Uploading CHR into the top of the pattern space while those two registers hold
 		//these values is what arms the per-tile bank table
 		if(_regs[0x14] == 0x7E) {
@@ -1397,6 +1722,15 @@ protected:
 			}
 		} else {
 			_autoBank = false;
+		}
+
+		//The per-cell bank table is a real thing the program uploads, not just something
+		//inferred from $4194. It is readable back at PPU $1800-$1FFF while $4198 is $3F, and
+		//the write side of that window was never implemented - so the shadow only ever held
+		//the $4194 stamps, and a screen drawn from the program's own table came out garbled
+		//whenever bAUTO was not armed. Record what the program actually writes.
+		if(_regs[0x18] == 0x3F && addr >= 0x1800 && addr < 0x2000) {
+			_exRamNt[addr - 0x1800] = value;
 		}
 
 		//Every nametable write stamps the current CHR bank into the shadow
@@ -1437,7 +1771,9 @@ protected:
 		_printer.Clock();
 		_fdc.Clock();
 
-		if(_kbdRaiseIrq || _lineIrqPending) {
+		//The controller's own counter joins the two the machine has. It has to be held
+		//and answered rather than pulsed: this line is rewritten every CPU clock.
+		if(_kbdRaiseIrq || _lineIrqPending || (_gameChip == MachineMmc3 && _mmc3.IrqPending())) {
 			_console->GetCpu()->SetIrqSource(IRQSource::External);
 		} else {
 			_console->GetCpu()->ClearIrqSource(IRQSource::External);
@@ -1528,6 +1864,18 @@ protected:
 		_loadMode = false;
 
 		memcpy(_workRam, _cdvPrg.data(), std::min((size_t)_workRamSize, _cdvPrg.size()));
+
+		//A game smaller than the window it is given has to appear in all of it - a 16KB one
+		//is a half-size board, and its vectors live at the top of the window, not at the top
+		//of its own image. On a disc the loader arranges that; here the file is all there is,
+		//so repeat it. Without this a 16KB game reads its reset vector out of empty RAM.
+		size_t span = (size_t)GamePrgBankCount() * 0x2000;
+		if(!_cdvPrg.empty() && _cdvPrg.size() < span) {
+			for(size_t at = _cdvPrg.size(); at < std::min((size_t)_workRamSize, span); at += _cdvPrg.size()) {
+				memcpy(_workRam + at, _cdvPrg.data(),
+					std::min(_cdvPrg.size(), std::min((size_t)_workRamSize, span) - at));
+			}
+		}
 		if(!_cdvChr.empty()) {
 			memcpy(_chrRam, _cdvChr.data(), std::min((size_t)_chrRamSize, _cdvChr.size()));
 		}
@@ -1537,6 +1885,25 @@ protected:
 			uint32_t offset = (uint32_t)((_cdvHeader[0x0A] << 8) & 0x1FFF);
 			size_t len = std::min(_cdvTrainer.size(), (size_t)(0x2000 - offset));
 			memcpy(_workRam + SramBase + offset, _cdvTrainer.data(), len);
+		}
+
+		//A game loaded on its own carries the hand-over the BIOS would have made for it, at
+		//$0E of its header, and nothing here was acting on it: the window kept the machine's
+		//own default and $4181 was never read for a controller either. Measured on three
+		//files pulled off a disc - only the shape that does not bank at all came up, and the
+		//two that do landed on a blank screen, one of them with the processor loose in RAM.
+		_gameLaunched = true;
+		if(MachineMode() == MachineMmc1 || MachineMode() == MachineMmc3) {
+			_gameReset = true;
+			_gameChip = MachineMode();
+			if(_gameChip == MachineMmc1) {
+				_mmc1.Reset();
+			} else {
+				_mmc3.Reset();
+			}
+			ApplyGameChip(false);
+		} else if(MachineMode() == MachineOld) {
+			StartGameMode(_cdvHeader[0x0E], GamePrgBankCount(), _cdvHeader[0x09]);
 		}
 
 		//$4194 bit 6 says the game is one of the machine's own rather than a plain cartridge
@@ -1584,6 +1951,20 @@ protected:
 		_mirroring = 0;
 		_logoMode = false;
 		_autoBank = false;
+		_gameLaunched = false;
+		_gameMode = 0;
+		_gamePrgBanks[0] = 0;
+		_gamePrgBanks[1] = 1;
+		_gamePrgBanks[2] = 2;
+		_gamePrgBanks[3] = 3;
+		_gameChrBank = 0;
+		_gameReset = false;
+		_gameChip = 0;
+		_mmc1.Reset();
+		_mmc3.Reset();
+		for(int i = 0; i < 8; i++) {
+			_gameChrPages[i] = (uint16_t)i;
+		}
 		_diskType = 0;
 		memset(_exRamNt, 0, sizeof(_exRamNt));
 		_extNtAddr = 0;
@@ -1626,10 +2007,25 @@ protected:
 		switch(addr) {
 			case 0x4016:
 			case 0x4017:
-				//Nothing answers the controller ports on this machine. The BIOS polls
-				//$4017 looking for a serial mouse the hardware reports as absent, and
-				//reads back a clean zero rather than the open bus a controller would
-				//leave there - anything else and the poll sees phantom data.
+				//A disc game is a cartridge, and these are the joypad ports again. Left
+				//answering zero the game polls them for ever and reads no buttons: it runs,
+				//nothing the player does reaches it, and it plays itself to a game over.
+				//Only the first port carries a joypad - the second holds the machine's mouse,
+				//which is not on this bus at all - so a two-player game gets one pad. Moving
+				//the mouse aside would desync every recording, so it stays where it is.
+				//
+				//This asks whether a game has the window, NOT whether it is the personality
+				//that banks itself: a game that asked for one of the imitated controllers is
+				//just as much a cartridge, and gating on the narrower test left every one of
+				//them reading zero off both ports - 8 polls a frame, no buttons, for ever.
+				if(GameWindow()) {
+					return NesControls()->ReadRam(addr);
+				}
+
+				//The machine's own software sees nothing on the controller ports. The BIOS
+				//polls $4017 looking for a serial mouse the hardware reports as absent, and
+				//reads back a clean zero rather than the open bus a controller would leave
+				//there - anything else and the poll sees phantom data.
 				return 0;
 
 			case 0x4188: _fdc.MarkActivity(); return _fdc.Read(4);
@@ -1728,6 +2124,18 @@ protected:
 				}
 			} else if(addr < 0x8000) {
 				_workRam[SramBase + (BiosGroup() * 0x2000) + (addr & 0x1FFF)] = value;
+			} else if(CartridgeMode()) {
+				//A cartridge banks itself by writing into its own window
+				SetGameBank(value);
+			} else if(_gameChip == MachineMmc1) {
+				//The game keeps its own mapper writes and the machine is the controller
+				if(_mmc1.Write(addr, value, _console->GetMasterClock())) {
+					ApplyGameChip(true);
+				}
+			} else if(_gameChip == MachineMmc3) {
+				if(_mmc3.Write(addr, value)) {
+					ApplyGameChip(true);
+				}
 			} else if(MachineMode() == MachineNew) {
 				//Same banks the reads come through. Bounds-checked, NOT masked: the work RAM
 				//is 0x88000 bytes (512KB + the 32KB SRAM) and masking with size-1 is only
@@ -1746,8 +2154,13 @@ protected:
 		}
 
 		if(addr == 0x4016) {
-			//The KW3000 reports a mouse unconditionally; the KW2000 asks for one here
-			_mouseEnabled = (_romType == 2) || (value != 0);
+			//The KW3000 reports a mouse unconditionally; the KW2000 asks for one here. A
+			//game writing here is only strobing the joypad, and taking that for a request is
+			//what set the machine writing mouse reports over the game's own code. True of a
+			//game under either imitated controller too, hence the wider test.
+			if(!GameWindow()) {
+				_mouseEnabled = (_romType == 2) || (value != 0);
+			}
 
 			//This is still the controller strobe - the mapper only listens in
 			NesControls()->WriteRam(addr, value);
@@ -1759,6 +2172,9 @@ protected:
 		}
 
 		switch(addr) {
+			case 0x41A9: _placeUseB = false; break;
+			case 0x41B9: _placeUseB = true; break;
+
 			case 0x4180:
 			case 0x4190:
 			case 0x4191:
@@ -1769,6 +2185,7 @@ protected:
 			case 0x41AE:
 				if(_cd.IsPresent()) {
 					_cd.WriteByte(value);
+					PlaceDiscTransfer();
 				}
 				break;
 
@@ -1856,9 +2273,41 @@ protected:
 			case 0x42FC: case 0x42FD: case 0x42FE: case 0x42FF:
 				//Enter game mode and set the mirroring $4182 can defer to
 				_mirroring = (uint8_t)((addr & 1 ? 2 : 0) | (value & 0x10 ? 1 : 0));
-				if(SystemMode()) {
-					MirrorSync();
+				//A game off a disc hands over here, and from this point the machine is a
+				//cartridge rather than a learning machine
+				_gameLaunched = true;
+				//Which shape of cartridge it is, and the window it starts in. Only a hand-over
+				//that leaves the machine a cartridge starts a game: the one the disc menu makes
+				//on its own way out still has the machine in system mode, and the sizes it would
+				//be read with there are the reset values, not the game's.
+				if(CartridgeMode()) {
+					StartGameMode(value, GamePrgBankCount(), GameChrBankCount());
+				} else if(_gameLaunched && !_gameReset &&
+					(MachineMode() == MachineMmc1 || MachineMode() == MachineMmc3)) {
+					//The other two personalities are controllers rather than window shapes: the
+					//game keeps its own mapper writes and the machine imitates the chip. Started
+					//once, for the same reason the window shapes are - the startup stub a game
+					//brings with it writes here again while it runs.
+					_gameReset = true;
+					_gameChip = MachineMode();
+					if(_gameChip == MachineMmc1) {
+						_mmc1.Reset();
+					} else {
+						_mmc3.Reset();
+					}
+					ApplyGameChip(false);
 				}
+				//$4182 says how this selection is used: it can name an arrangement outright, or
+				//defer here either in part - bit 4 alone, picking between the two-screen
+				//arrangements - or in full, where the ADDRESS bit picks two-screen against
+				//one-screen and bit 4 picks which of the pair. 97 of the games on the disc defer
+				//in part and 28 in full, and one of those spends the whole game toggling a single
+				//page back and forth through here - forcing horizontal or vertical instead drew it
+				//as a band repeated down the screen. This has to follow EVERY write: the value that
+				//matters arrives on a later one.
+				MirrorSync();
+				UpdatePrgMapping();
+				UpdateChrMapping();
 				break;
 		}
 	}
@@ -1867,7 +2316,7 @@ protected:
 	{
 		BaseMapper::Serialize(s);
 		SVArray(_regs, 0x40);
-		SV(_loadMode);
+		SV(_loadMode); SV(_placeUseB);
 		SV(_irqCounter);
 		SV(_irqEnabled);
 		SV(_lineCounter); SV(_lastIrqScanline); SV(_lineIrqPending);
@@ -1879,7 +2328,9 @@ protected:
 		SV(_fdc);
 		SV(_cd);
 		SVArray(_exRamNt, 0x800); SV(_extNtAddr); SV(_extFetchCounter); SV(_diskType);
-		SV(_ntData); SV(_logoMode); SV(_autoBank); SV(_mirroring);
+		SV(_ntData); SV(_logoMode); SV(_autoBank); SV(_gameLaunched); SV(_mirroring);
+		SV(_gameMode); SVArray(_gamePrgBanks, 4); SV(_gameChrBank); SV(_gameReset);
+		SV(_gameChip); SVArray(_gameChrPages, 8); SV(_mmc1); SV(_mmc3);
 		SV(_lptData); SV(_lptCtrl); SV(_printer);
 		SV(_speechByte); SV(_speechNibbleCount); SV(_speech);
 		SV(_mouseEnabled); SV(_mouseFrame); SV(_cdvApuReady);

@@ -193,6 +193,7 @@
     <ClInclude Include="NES\Mappers\Bbk\BbkPrinter.h" />
     <ClInclude Include="NES\Mappers\Bbk\Bbk928Mapper.h" />
     <ClInclude Include="NES\Mappers\Subor\SuborWindows2002.h" />
+    <ClInclude Include="NES\Mappers\Bung\DrPcJrGameChips.h" />
     <ClInclude Include="NES\Mappers\Bung\DrPcJrMapper.h" />
     <ClInclude Include="NES\Mappers\Bbk\Yuyin2Mapper.h" />
     <ClInclude Include="NES\Mappers\Sb2k\Sb2kMapper.h" />

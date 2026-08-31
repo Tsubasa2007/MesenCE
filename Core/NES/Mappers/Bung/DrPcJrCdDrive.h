@@ -57,6 +57,10 @@ private:
 	uint32_t _streamPos = 0;
 	uint32_t _streamLeft = 0;
 
+	//A transfer the drive carries out itself rather than handing over a byte at a time -
+	//see the $E1 case in StartTransfer
+	uint32_t _placePos = 0;
+	uint32_t _placeLen = 0;
 
 	//How many tracks the cue sheet lists, for the drive's table of contents
 	uint32_t _trackCount = 0;
@@ -102,6 +106,20 @@ public:
 	}
 
 	bool IsMounted() { return !_image.empty(); }
+
+	//The drive has a transfer to carry out itself. The mapper owns the memory, so it does
+	//the placing; this only says what and how much.
+	bool TakePlacedTransfer(const uint8_t*& data, uint32_t& len)
+	{
+		if(_placeLen == 0 || _placePos >= _image.size()) {
+			_placeLen = 0;
+			return false;
+		}
+		len = std::min(_placeLen, (uint32_t)(_image.size() - _placePos));
+		data = _image.data() + _placePos;
+		_placeLen = 0;
+		return true;
+	}
 
 	//The drive itself is always fitted on these machines; only the disc comes and goes. The
 	//mapper drives the port whenever the machine is a KW one, and this says so; IsMounted
@@ -374,6 +392,19 @@ public:
 		}
 		uint32_t msf = ((uint32_t)_params[0] * 60 + _params[1]) * 75 + _params[2];
 		uint32_t lba = msf >= 150 ? msf - 150 : 0;
+
+		//$E0 and $E1 ask for the same thing and differ in who moves it. $E0 is read back a
+		//byte at a time through the port, which is what the smaller machine does. $E1 the
+		//drive carries out itself: the machine sets bit 7 of block[12] against it, which is
+		//its own "no transfer to read" flag, and never comes back for the data - so leaving
+		//it in the port only poisons the link, because the machine drains anything waiting
+		//there before its next command and fails that command for each byte it finds.
+		if(_cmd == 0xE1) {
+			_placePos = lba * 0x800;
+			_placeLen = sectors * 0x800;
+			return;
+		}
+
 		_streamPos = lba * 0x800;
 		_streamLeft = sectors * 0x800;
 	}
@@ -400,6 +431,8 @@ public:
 		SV(_paramCount);
 		SV(_streamPos);
 		SV(_streamLeft);
+		SV(_placePos);
+		SV(_placeLen);
 		SV(_trackCount);
 	}
 };
