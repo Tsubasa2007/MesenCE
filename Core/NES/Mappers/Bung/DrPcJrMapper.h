@@ -10,6 +10,7 @@
 #include "NES/Input/Sb2kMouse.h"
 #include "NES/NesControlManager.h"
 #include "NES/Mappers/Bbk/PcFdc.h"
+#include "NES/Mappers/Bung/DrPcJrCdDrive.h"
 #include "NES/Mappers/Bbk/BbkPrinter.h"
 #include "NES/Mappers/Bbk/BbkLpcAudio.h"
 #include "Shared/MessageManager.h"
@@ -126,7 +127,10 @@ private:
 	//generic bank pointer, so every address in the range that is not one of the registers
 	//above still reads back what was written to it. The BIOS does use it: it writes $4200
 	//during start-up. Leaving the range unmapped instead makes those reads open bus.
-	uint8_t _exRam[0x2000] = {};
+	//$4020-$5FFF is the machine's own RAM, and the software it loads runs out of it. It is
+	//the base mapper's array rather than one of our own purely so the debugger can see it:
+	//reads of this range go through ReadRegister, so a private array is invisible to every
+	//tool - emu.read returns open bus for it, which has cost two investigations.
 	bool _loadMode = true;
 	uint16_t _irqCounter = 0;
 	bool _irqEnabled = false;
@@ -354,6 +358,7 @@ private:
 	//register on read and the data rate select on write, $4189 the data register, and
 	//$418B the digital output register.
 	PcFdc _fdc;
+	DrPcJrCdDrive _cd;
 	bool _floppyChecked = false;
 
 	NesControlManager* NesControls() { return (NesControlManager*)_console->GetControlManager(); }
@@ -413,6 +418,18 @@ private:
 		string configured = GetConfiguredDiskFolder();
 		if(!configured.empty() && configured != folders[0]) {
 			folders.push_back(configured);
+		}
+
+		//The KW machines' player front end reads a CD as well as a floppy. Only they have
+		//one - the two 32KB machines use a different, unimplemented interface - so the
+		//search is gated on the rom type and nothing changes for anything else.
+		if(_romType == 1 || _romType == 2) {
+			for(string& folder : folders)
+			for(string ext : { ".cue", ".CUE", ".bin", ".BIN", ".iso", ".ISO" }) {
+				if(_cd.LoadDisc(FolderUtilities::CombinePath(folder, baseName + ext))) {
+					break;
+				}
+			}
 		}
 
 		for(string& folder : folders)
@@ -1135,6 +1152,9 @@ protected:
 	//buffer left zero-length - which corrupts the heap rather than failing visibly. Nothing
 	//is known to battery-back this RAM on the real machine either.
 	uint32_t GetWorkRamSize() override { return SramBase + 0x8000; }
+
+	//$4020-$5FFF, see the note on the array
+	uint32_t GetMapperRamSize() override { return 0x2000; }
 	uint32_t GetSaveRamSize() override { return 0; }
 
 	bool EnableCpuClockHook() override { return true; }
@@ -1439,7 +1459,7 @@ protected:
 		_romInfo.System = GameSystem::Dendy;
 
 		memset(_regs, 0, sizeof(_regs));
-		memset(_exRam, 0, sizeof(_exRam));
+		memset(_mapperRam, 0, _mapperRamSize);
 		_regs[0x03] = 0xFF;
 		_loadMode = true;
 		_irqCounter = 0;
@@ -1550,18 +1570,28 @@ protected:
 			//reference reports them - set only once an image is actually mounted. The machine
 			//boots to its own screen either way; it does not wait for a disk.
 			case 0x41AB: return _fdc.IsDiskInserted() ? (_regs[0x2B] | 0x10) : _regs[0x2B];
-			case 0x41AF: return _fdc.IsDiskInserted() ? (_regs[0x2F] | 0x01) : _regs[0x2F];
+			case 0x41AF: {
+				uint8_t value = _fdc.IsDiskInserted() ? (_regs[0x2F] | 0x01) : _regs[0x2F];
+				if(_cd.IsMounted()) {
+					//Bits 7 and 6 belong to the drive; 0-1 are the BIOS group, so the rest
+					//is left exactly as the machine last wrote it
+					value &= 0x3F;
+					value |= _cd.DataAvailable() ? 0x80 : 0x00;
+					value |= _cd.Busy() ? 0x40 : 0x00;
+				}
+				return value;
+			}
 
 			//Bit 6 is the decoder's own "room for more" line. A BIOS that is feeding a
 			//phrase waits on it between nibbles.
 			case 0x41AC: return _speech->IsReady() ? 0x40 : 0x00;
-			case 0x41AE: return _regs[0x2E];
+			case 0x41AE: return _cd.IsMounted() ? _cd.ReadByte() : _regs[0x2E];
 		}
 
 		if(addr >= 0x4180 && addr <= 0x41BF) {
 			return _regs[addr & 0x3F];
 		}
-		return _exRam[addr - 0x4020];
+		return _mapperRam[addr - 0x4020];
 	}
 
 	void WriteRegister(uint16_t addr, uint8_t value) override
@@ -1615,7 +1645,7 @@ protected:
 		}
 
 		if(addr < 0x6000) {
-			_exRam[addr - 0x4020] = value;
+			_mapperRam[addr - 0x4020] = value;
 		}
 
 		if(addr == 0x4016) {
@@ -1637,6 +1667,12 @@ protected:
 			case 0x4191:
 			case 0x41AF:
 				UpdatePrgMapping();
+				break;
+
+			case 0x41AE:
+				if(_cd.IsMounted()) {
+					_cd.WriteByte(value);
+				}
 				break;
 
 			case 0x4182:
@@ -1734,7 +1770,6 @@ protected:
 	{
 		BaseMapper::Serialize(s);
 		SVArray(_regs, 0x40);
-		SVArray(_exRam, 0x2000);
 		SV(_loadMode);
 		SV(_irqCounter);
 		SV(_irqEnabled);
@@ -1745,6 +1780,7 @@ protected:
 		SVArray(_kbdQueue, 32); SV(_kbdQueueLen); SV(_kbdPollFrame);
 		SVArray(_kbdHold, Sb2kKeyboard::KeyCount);
 		SV(_fdc);
+		SV(_cd);
 		SVArray(_exRamNt, 0x800); SV(_extNtAddr); SV(_extFetchCounter); SV(_diskType);
 		SV(_ntData); SV(_logoMode); SV(_autoBank); SV(_mirroring);
 		SV(_lptData); SV(_lptCtrl); SV(_printer);
