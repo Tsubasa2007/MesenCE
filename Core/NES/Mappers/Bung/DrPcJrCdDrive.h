@@ -67,12 +67,32 @@ private:
 
 	//A play request the machine has made that the front end has not collected yet, and the
 	//play itself. See the $D0 case in WriteByte for the packet these come out of.
-	uint8_t _playTrack = 0;
+	//
+	//The track is which video is playing, and before anything has been asked for, which one
+	//the drive is sitting on. That has to be the first one rather than nothing: the play key
+	//does not name a video, it asks $A0 which one the drive is on ($6DE9) and plays that, so
+	//a zero here would have it ask for a video that is not on the disc.
+	uint8_t _playTrack = 1;
 	uint8_t _playStart[3] = {};
 	uint8_t _playEnd[3] = {};
 	bool _playPending = false;
 	bool _playBusy = false;
 	uint16_t _playOffered = 0;
+
+	//How many pictures the play has been running for, which is where the drive says it is
+	uint32_t _playElapsed = 0;
+
+	//Whether the play came from a key on the panel rather than a $D0 packet. A key means the
+	//transport was told to run, so it carries on into the next video when this one ends; a
+	//packet names a stretch of one video and stops at the end of it.
+	bool _panelPlay = false;
+
+	//The last byte handed over, and whether nothing has been written since. $595E will not
+	//start a command while a byte is waiting: it reads whatever is there and echoes it
+	//straight back with STA $41AE, so the drive sees its own byte arrive as if it were a
+	//command. That matters now that a byte below $A0 does something.
+	uint8_t _lastRead = 0;
+	bool _echoPossible = false;
 
 	//How long a request is held out before the drive gives up on anyone taking it. The
 	//machine sits in its wait loop for as long as the drive says it is still playing, so
@@ -255,6 +275,8 @@ public:
 		}
 		uint8_t value = _reply[0];
 		memmove(_reply, _reply + 1, --_replyLen);
+		_lastRead = value;
+		_echoPossible = true;
 		return value;
 	}
 
@@ -266,6 +288,8 @@ public:
 		//transfer is dropped when a new COMMAND arrives - see below, and note that it is the
 		//command that does it, not any write at all.
 		_sent++;
+		bool echo = _echoPossible && value == _lastRead;
+		_echoPossible = false;
 		if(_openCount < LogSize) {
 			_open[_openCount++] = value;
 		}
@@ -294,6 +318,9 @@ public:
 		//above; $59AB sends seven more bytes first when it is $C0 or above, and treats $FF
 		//as "nothing to do" and returns without reading anything.
 		if(value == 0xFF || value < 0xA0) {
+			if(!echo) {
+				TakePanelKey(value);
+			}
 			return;
 		}
 
@@ -316,6 +343,25 @@ public:
 		//what was asked, and the reply depends on it, so record it the same way.
 		_cmd = value;
 		QueueReply();
+	}
+
+	//Where in the track the drive says it is: the start of the stretch it was asked for plus
+	//however long it has been playing, in minutes, seconds and sectors - 75 to the second,
+	//all in plain binary. Nothing here decodes the picture, so the only clock available is
+	//how long the machine has been waiting, and at a picture a frame that is near enough the
+	//clock the decoder is running on.
+	void GetPlayPosition(uint8_t pos[3])
+	{
+		uint32_t start = ((uint32_t)_playStart[0] * 60 + _playStart[1]) * 75 + _playStart[2];
+		uint32_t end = ((uint32_t)_playEnd[0] * 60 + _playEnd[1]) * 75 + _playEnd[2];
+		uint32_t now = start + _playElapsed * 75 / 60;
+		if(end > start && now > end) {
+			//Never past the end of what was asked for
+			now = end;
+		}
+		pos[0] = (uint8_t)(now / (60 * 75));
+		pos[1] = (uint8_t)(now / 75 % 60);
+		pos[2] = (uint8_t)(now % 75);
 	}
 
 	//The eight bytes the machine reads back into block[8..15] after a command.
@@ -344,12 +390,52 @@ public:
 	//which those two constants are what prove.
 	void QueueReply()
 	{
+		uint8_t pos[3];
+		GetPlayPosition(pos);
+
 		//Bits 7 and 6 are the tray and the disc, bit 0 the ready flag. Nothing set at all
 		//with an empty tray: bit 0 on its own reads as 碟仓打开 and then has the machine try
 		//to load what it takes to be a bad disc.
 		Queue(IsMounted() ? 0xC1 : 0x00);
-		Queue(0x00);
-		Queue(0x00);
+
+		//$C5 is where the machine asks how far in it is, and the answer is two positions:
+		//block[10..12] is where what is playing starts, block[13..15] is where the drive is
+		//now, and $6C72 subtracts the one from the other. That difference is the clock on
+		//the player's screen, and $6CAD also writes it into entry zero of the three tables
+		//the position marker is looked up in. With both triples zero the clock sat at 00:00
+		//and the marker never left the left-hand end.
+		//
+		//The first triple can simply be zero: only the difference is ever used, and
+		//GetPlayPosition already counts from the start of the track.
+		//
+		//block[9] is the minutes of that same position when the question was $A0.
+		Queue(_cmd == 0xA0 ? pos[0] : 0x00);
+		if(_cmd == 0xC5) {
+			Queue(0x00);
+			Queue(0x00);
+			Queue(0x00);
+			Queue(pos[0]);
+			Queue(pos[1]);
+			Queue(pos[2]);
+			return;
+		}
+
+		//block[10] is the other half of the disc-kind field WHEN THE QUESTION WAS $A1, and the
+		//player will not take an answer to that with nothing in it: $63B0 asks ten times over
+		//and gives up while it stays zero, which cost ten times the traffic for every reading
+		//the transport took. Bit 3 is its "video CD" bit, which is what these discs are, and
+		//it cannot change the label drawn - $64C7 tests block[11] bit 0 first and that one is
+		//already set.
+		//
+		//Only for $A1. The same byte is a time field in the answer to $C5, where a stray 8
+		//turns up in the player's clock - that answer is built above and never reaches here.
+		//
+		//$A0 carries the position too, to the second: $6D9F asks it and walks the same tables
+		//to place the marker, and the two seek keys read it as the point to move away from
+		//($6E44 counts it down a second at a time, $6E8A up) before handing it back as the
+		//start of a fresh $D0. All three want it counted from the start of the track, which
+		//is what those tables hold.
+		Queue((_cmd == 0xA1 && IsMounted()) ? 0x08 : (_cmd == 0xA0 ? pos[1] : 0x00));
 
 		//block[10] and block[11] are the kind of disc, and the player front end reads the two
 		//as one field - it tests four bits in a fixed order and draws a different label for
@@ -385,13 +471,77 @@ public:
 			return;
 		}
 
-		Queue(0x00);
+		//block[12] is the track being played, which the machine takes at its word: $6C67
+		//copies it straight into the parameter of the $C5 that follows, and the seek keys
+		//hand it back as the track of a fresh $D0. So it has to be numbered the way the $D0
+		//that started the play numbered it.
+		Queue(_cmd == 0xA0 ? _playTrack : 0x00);
 		//Byte 5 bit 7 says the drive has finished what it was asked to do: $6671 issues $A0
 		//and spins on LDA $6792 / AND #$80 / BEQ until it is set. It means the drive has
 		//taken the command, not that a video is over - see EndPlayback for that.
 		Queue(0x80);
 		Queue(0x00);
 		Queue(0x00);
+	}
+
+	//A key on the player's own front panel. These go out as one byte with nothing read back
+	//($5977 only exchanges a block for $A0 and above), so the drive is expected to act on
+	//them unasked; which video it is on then comes back through $A0 block[12] like anything
+	//else, and the panel draws that.
+	//
+	//The codes are read out of the front end rather than guessed at. $6A51 holds one
+	//rectangle per widget in the order the panel draws them - five bytes each, and the x
+	//co-ordinates line the groups up exactly with what is on screen: ten number keys from
+	//x=66 stepping 15, three beside the display at 123, 139 and 155, nine along the bottom
+	//from x=21 stepping 24 - and $6340 holds the byte each widget sends. The one key pressed
+	//in a capture, with the pointer at 31,224, arrives as widget $0F, which is the bottom
+	//row's first rectangle at x=21. So the order is not in doubt.
+	//
+	//Only the keys whose meaning follows from that order are acted on. The rest are left
+	//alone: the loader sends $1C on its way into a game, so these bytes are not the panel's
+	//alone, and there is nothing to check a guess against.
+	void TakePanelKey(uint8_t key)
+	{
+		//The ten number keys, in the order the panel draws them
+		static constexpr uint8_t NumberKeys[10] = { 0x16, 0x15, 0x39, 0x09, 0x0F, 0x0E, 0x0B, 0x23, 0x24, 0x49 };
+		for(int i = 0; i < 10; i++) {
+			if(key == NumberKeys[i]) {
+				PlayVideo((uint8_t)(i + 1));
+				return;
+			}
+		}
+
+		//The bottom row's first two, drawn as the two skip keys
+		if(key == 0x41) {
+			PlayVideo((uint8_t)(_playTrack > 1 ? _playTrack - 1 : 1));
+		} else if(key == 0x3A) {
+			PlayVideo((uint8_t)(_playTrack + 1));
+		}
+	}
+
+	//Start a video from its beginning, the way a key that names one does. The same request
+	//the $D0 packet makes, so whoever plays those plays these.
+	void PlayVideo(uint8_t track)
+	{
+		if(!IsMounted() || _trackCount < 2) {
+			return;
+		}
+
+		//The sheet counts the filesystem as track 1, so the videos are 1 to one less than
+		//the number of tracks. A key for one that is not there does nothing.
+		if(track < 1 || track > _trackCount - 1) {
+			return;
+		}
+
+		_playTrack = track;
+		_panelPlay = true;
+		memset(_playStart, 0, sizeof(_playStart));
+		//No end, so it runs to the end of the track
+		memset(_playEnd, 0, sizeof(_playEnd));
+		_playPending = true;
+		_playBusy = true;
+		_playOffered = 0;
+		_playElapsed = 0;
 	}
 
 	//$D0 asks for a stretch of one video track to be played, and the machine then waits on
@@ -426,19 +576,27 @@ public:
 		memcpy(_playStart, _params, 3);
 		memcpy(_playEnd, _params + 3, 3);
 		_playTrack = _params[6];
+		_panelPlay = false;
 		_playPending = true;
 		_playBusy = true;
 		_playOffered = 0;
+		_playElapsed = 0;
 	}
 
 public:
 	//Called once a picture, to time out a request nobody is going to take
 	void ClockFrame()
 	{
-		if(_playPending && ++_playOffered > OfferTimeout) {
-			//Ended the same way a real one would, so the title carries on rather than
-			//sitting in its playback loop for the rest of the run
-			EndPlayback();
+		if(_playPending) {
+			if(++_playOffered > OfferTimeout) {
+				//Ended the same way a real one would, so the title carries on rather than
+				//sitting in its playback loop for the rest of the run
+				EndPlayback();
+			}
+		} else if(_playBusy) {
+			//Somebody took the request, so the picture is running somewhere and the drive
+			//has a position to report
+			_playElapsed++;
 		}
 	}
 
@@ -466,13 +624,26 @@ public:
 	//         CMP #$9F / BNE $9E12      anything else is not the end
 	//
 	//so $9F, once, is what lets the title out and back to drawing its own screen.
-	void EndPlayback()
+	//"completed" says the video reached its end rather than being stopped part way. The
+	//transport is not a one-shot: told to play, a real one runs on through the disc, which is
+	//why the player has no way at all of leaving the decoder on its own - the only exits are
+	//the right mouse button ($6283, device $0D bit 0), the keyboard's $08 ($625D) and the
+	//disc being taken out ($6551). So a video that ends by itself is followed by the next
+	//one, and only being stopped by hand actually stops.
+	//
+	//Only for a play a panel key started. A $D0 names a stretch of one video, and a title
+	//that asked for one is waiting for it to be over.
+	void EndPlayback(bool completed = false)
 	{
 		if(_playBusy) {
 			Queue(0x9F);
 		}
 		_playPending = false;
 		_playBusy = false;
+
+		if(completed && _panelPlay) {
+			PlayVideo((uint8_t)(_playTrack + 1));
+		}
 	}
 
 private:
@@ -540,5 +711,9 @@ private:
 		SV(_playPending);
 		SV(_playBusy);
 		SV(_playOffered);
+		SV(_playElapsed);
+		SV(_lastRead);
+		SV(_echoPossible);
+		SV(_panelPlay);
 	}
 };

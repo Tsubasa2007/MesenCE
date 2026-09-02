@@ -256,10 +256,12 @@ extern "C"
 		return false;
 	}
 
-	DllExport void __stdcall NesVideoPlaybackEnded()
+	//"completed" says the video ran to its end rather than being stopped part way, which is
+	//what decides whether the transport carries on into the next one
+	DllExport void __stdcall NesVideoPlaybackEnded(bool completed)
 	{
 		if(NesConsole* nes = dynamic_cast<NesConsole*>(_emu->GetConsole().get())) {
-			nes->EndVideoPlayback();
+			nes->EndVideoPlayback(completed);
 		}
 	}
 

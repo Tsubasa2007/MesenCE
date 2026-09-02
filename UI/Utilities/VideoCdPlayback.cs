@@ -24,6 +24,11 @@ namespace Mesen.Utilities
 	{
 		private static readonly object _lock = new();
 		private static bool _playing = false;
+		//Whether the video ran to its end rather than being closed part way. A transport told
+		//to play runs on through the disc, so the machine is told which of the two happened
+		//and carries on into the next video only when the first is true. Closing the window is
+		//how the user stops it.
+		private static bool _completed = false;
 		//Cancelled when a play ends some other way, so a window that was closed by hand does
 		//not get a second ending when its running time would have been up
 		private static CancellationTokenSource? _running;
@@ -50,7 +55,8 @@ namespace Mesen.Utilities
 				//would stall it until the request timed out, so take it and answer it at once
 				//rather than opening a second window on top of the first.
 				if(EmuApi.GetNesVideoPlayRequest(out _, out _, out _)) {
-					EmuApi.NesVideoPlaybackEnded();
+					//Not a video that ended, so the transport does not carry on from it
+					EmuApi.NesVideoPlaybackEnded(false);
 				}
 				return;
 			}
@@ -61,6 +67,7 @@ namespace Mesen.Utilities
 
 			lock(_lock) {
 				_playing = true;
+				_completed = false;
 			}
 
 			Task.Run(() => {
@@ -130,6 +137,11 @@ namespace Mesen.Utilities
 					if(t.IsCanceled) {
 						return;
 					}
+					//Set before the window goes, because closing it raises Exited and that
+					//gets to Finish first
+					lock(_lock) {
+						_completed = true;
+					}
 					ClosePlayer(player);
 					Finish(true);
 				}, TaskScheduler.Default);
@@ -187,6 +199,7 @@ namespace Mesen.Utilities
 		private static void Finish(bool hadWindow)
 		{
 			CancellationTokenSource? cts;
+			bool completed;
 			lock(_lock) {
 				if(!_playing) {
 					//The running time was up and the window was closed by hand at the same
@@ -194,12 +207,13 @@ namespace Mesen.Utilities
 					return;
 				}
 				_playing = false;
+				completed = _completed;
 				cts = _running;
 				_running = null;
 			}
 			cts?.Cancel();
 			cts?.Dispose();
-			EmuApi.NesVideoPlaybackEnded();
+			EmuApi.NesVideoPlaybackEnded(completed);
 
 			if(hadWindow) {
 				//Movement was not reaching the machine while the video had the focus, so its
@@ -219,6 +233,7 @@ namespace Mesen.Utilities
 			List<string> files;
 			lock(_lock) {
 				_playing = false;
+				_completed = false;
 				cts = _running;
 				_running = null;
 				files = new List<string>(_extracted.Values);

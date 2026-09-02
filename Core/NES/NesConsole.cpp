@@ -503,10 +503,10 @@ bool NesConsole::TakeVideoPlayRequest(uint8_t& track, uint32_t& startMsf, uint32
 	return false;
 }
 
-void NesConsole::EndVideoPlayback()
+void NesConsole::EndVideoPlayback(bool completed)
 {
 	if(DrPcJrMapper* pcjr = dynamic_cast<DrPcJrMapper*>(_mapper.get())) {
-		pcjr->EndVideoPlayback();
+		pcjr->EndVideoPlayback(completed);
 	}
 }
 

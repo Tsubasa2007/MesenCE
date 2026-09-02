@@ -122,7 +122,7 @@ namespace Mesen.Interop
 		//The video the running machine has asked to play, if any. True once per request - the
 		//machine's program is stopped until NesVideoPlaybackEnded() answers it.
 		[DllImport(DllPath)][return: MarshalAs(UnmanagedType.I1)] public static extern bool GetNesVideoPlayRequest(out byte track, out UInt32 startMsf, out UInt32 endMsf);
-		[DllImport(DllPath)] public static extern void NesVideoPlaybackEnded();
+		[DllImport(DllPath)] public static extern void NesVideoPlaybackEnded([MarshalAs(UnmanagedType.I1)] bool completed);
 
 		[DllImport(DllPath, EntryPoint = "GetNesDiskList")] private static extern void GetNesDiskListWrapper(IntPtr outList, Int32 maxLength);
 		//Returns the swappable BBK floppy disk names and the index of the inserted disk (-1 if none).

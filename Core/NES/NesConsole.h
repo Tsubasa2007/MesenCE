@@ -85,7 +85,7 @@ public:
 	bool IsBbkGame();
 	string GetVideoDiscPath();
 	bool TakeVideoPlayRequest(uint8_t& track, uint32_t& startMsf, uint32_t& endMsf);
-	void EndVideoPlayback();
+	void EndVideoPlayback(bool completed);
 	NesSoundMixer* GetSoundMixer() { return _mixer.get(); }
 	Emulator* GetEmulator();
 	NesConfig& GetNesConfig();

@@ -541,7 +541,7 @@ public:
 		return _cd.TakePlayRequest(track, startMsf, endMsf);
 	}
 
-	void EndVideoPlayback() { _cd.EndPlayback(); }
+	void EndVideoPlayback(bool completed) { _cd.EndPlayback(completed); }
 
 	static bool IsDiscImage(const string& path)
 	{
