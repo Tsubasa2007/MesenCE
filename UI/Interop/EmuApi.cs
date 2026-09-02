@@ -110,6 +110,20 @@ namespace Mesen.Interop
 		//Queue a .img/.ima to mount on the next BBK boot (call before loading the BBK BIOS ROM).
 		[DllImport(DllPath)] public static extern void SetBbkBootDisk([MarshalAs(UnmanagedType.LPUTF8Str)] string path);
 
+		[DllImport(DllPath, EntryPoint = "GetNesVideoDiscPath")] private static extern void GetNesVideoDiscPathWrapper(IntPtr outPath, Int32 maxLength);
+		//The disc the running machine has mounted, or an empty string when it has none.
+		public static string GetNesVideoDiscPath()
+		{
+			return Utf8Utilities.CallStringApi((IntPtr outPath, Int32 maxLength) => {
+				GetNesVideoDiscPathWrapper(outPath, maxLength);
+			}, 2000);
+		}
+
+		//The video the running machine has asked to play, if any. True once per request - the
+		//machine's program is stopped until NesVideoPlaybackEnded() answers it.
+		[DllImport(DllPath)][return: MarshalAs(UnmanagedType.I1)] public static extern bool GetNesVideoPlayRequest(out byte track, out UInt32 startMsf, out UInt32 endMsf);
+		[DllImport(DllPath)] public static extern void NesVideoPlaybackEnded();
+
 		[DllImport(DllPath, EntryPoint = "GetNesDiskList")] private static extern void GetNesDiskListWrapper(IntPtr outList, Int32 maxLength);
 		//Returns the swappable BBK floppy disk names and the index of the inserted disk (-1 if none).
 		//The list is empty for non-BBK games.

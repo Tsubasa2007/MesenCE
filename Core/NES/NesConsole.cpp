@@ -483,6 +483,33 @@ vector<string> NesConsole::GetBbkDiskList(int32_t& currentIndex)
 	return result;
 }
 
+//The mounted video disc, for the UI's "play a track in an external player" menu. Only the
+//machine with a CD drive can have one; everything else has nothing to offer and says so.
+string NesConsole::GetVideoDiscPath()
+{
+	if(DrPcJrMapper* pcjr = dynamic_cast<DrPcJrMapper*>(_mapper.get())) {
+		return pcjr->GetDiscPath();
+	}
+	return "";
+}
+
+//A video the machine has asked to play. It is waiting on the answer, so whoever takes the
+//request has to call EndVideoPlayback when the video is over - see DrPcJrCdDrive.
+bool NesConsole::TakeVideoPlayRequest(uint8_t& track, uint32_t& startMsf, uint32_t& endMsf)
+{
+	if(DrPcJrMapper* pcjr = dynamic_cast<DrPcJrMapper*>(_mapper.get())) {
+		return pcjr->TakeVideoPlayRequest(track, startMsf, endMsf);
+	}
+	return false;
+}
+
+void NesConsole::EndVideoPlayback()
+{
+	if(DrPcJrMapper* pcjr = dynamic_cast<DrPcJrMapper*>(_mapper.get())) {
+		pcjr->EndVideoPlayback();
+	}
+}
+
 bool NesConsole::IsBbkGame()
 {
 	//Also true for the SB-2000, the YuXing machines and the Doctor PC jr., which reuse the

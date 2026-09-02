@@ -3792,6 +3792,7 @@ E
 			<Value ID="Pause">Pause</Value>
 			<Value ID="PowerOff">Power Off</Value>
 			<Value ID="SelectDisk">Select Disk</Value>
+			<Value ID="PlayVideoTrack">Play Video Track</Value>
 			<Value ID="EjectDisk">Eject Disk</Value>
 			
 			<Value ID="InsertCoin1">Insert Coin (1)</Value>

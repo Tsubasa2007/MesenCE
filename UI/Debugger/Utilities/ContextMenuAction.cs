@@ -684,6 +684,8 @@ namespace Mesen.Debugger.Utilities
 
 		[IconFile("SaveFloppy")]
 		SelectDisk,
+		[IconFile("MediaPlay")]
+		PlayVideoTrack,
 		[IconFile("MediaEject")]
 		EjectDisk,
 

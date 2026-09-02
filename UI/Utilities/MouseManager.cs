@@ -36,6 +36,24 @@ namespace Mesen.Utilities
 		private int _prevPositionY;
 		private bool _mouseCaptured = false;
 
+		//Normally the capture is taken when the picture is clicked. That does not suit a
+		//machine whose mouse reports movement and never position: until the capture is on,
+		//movement is not passed on, so the pointer that machine draws stays where it was last
+		//left and there is no way to aim - the first click has to land on the old spot before
+		//anything can be moved. That only bites after something else has had the focus, so
+		//rather than change when the capture is taken, the one case that causes it asks for it.
+		//See VideoCdPlayback, which asks when a video window it opened has closed.
+		private static DateTime _captureWantedUntil = DateTime.MinValue;
+
+		//Good for a few seconds: long enough to cover the pointer being moved back over the
+		//picture, short enough not to surprise anyone later on.
+		public static void WantCaptureSoon()
+		{
+			_captureWantedUntil = DateTime.Now.AddSeconds(5);
+		}
+
+		private static bool CaptureWanted => DateTime.Now < _captureWantedUntil;
+
 		//A captured mouse is normally pinned - a clipping rectangle holds the pointer inside
 		//the window, it is re-centered on every poll, and the drift from center is the
 		//movement. Neither half survives Remote Desktop, where the pointer belongs to the
@@ -145,9 +163,12 @@ namespace Mesen.Utilities
 				InputApi.SetKeyState(MouseButton4KeyCode, mouseState.Button4);
 				InputApi.SetKeyState(MouseButton5KeyCode, mouseState.Button5);
 
-				if(!_mouseCaptured && AllowMouseCapture && buttonPressed) {
+				if(!_mouseCaptured && AllowMouseCapture && (buttonPressed || CaptureWanted)) {
 					//If the mouse button is clicked and mouse isn't captured but can be, turn on mouse capture
-					CaptureMouse();
+					CaptureMouse(buttonPressed);
+					if(_mouseCaptured) {
+						_captureWantedUntil = DateTime.MinValue;
+					}
 				}
 
 				if(_mouseCaptured) {
@@ -288,7 +309,8 @@ namespace Mesen.Utilities
 			}
 		}
 
-		private void CaptureMouse()
+		//announce is off for a capture nobody asked for by clicking - saying so would be noise
+		private void CaptureMouse(bool announce = true)
 		{
 			if(!_mouseCaptured && AllowMouseCapture) {
 				PixelPoint topLeft = _wnd.Renderer.PointToScreen(new Point());
@@ -299,7 +321,9 @@ namespace Mesen.Utilities
 						//Keep the capture, drop the clipping rectangle - see the note above
 						InputApi.ReleaseMouse();
 					}
-					DisplayMessageHelper.DisplayMessage("Input", ResourceHelper.GetMessage("MouseModeEnabled"));
+					if(announce) {
+						DisplayMessageHelper.DisplayMessage("Input", ResourceHelper.GetMessage("MouseModeEnabled"));
+					}
 					_mouseCaptured = true;
 				}
 			}

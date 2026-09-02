@@ -83,6 +83,9 @@ public:
 	//currentIndex is set to the inserted disk's index, or -1 when none/not applicable.
 	vector<string> GetBbkDiskList(int32_t& currentIndex);
 	bool IsBbkGame();
+	string GetVideoDiscPath();
+	bool TakeVideoPlayRequest(uint8_t& track, uint32_t& startMsf, uint32_t& endMsf);
+	void EndVideoPlayback();
 	NesSoundMixer* GetSoundMixer() { return _mixer.get(); }
 	Emulator* GetEmulator();
 	NesConfig& GetNesConfig();

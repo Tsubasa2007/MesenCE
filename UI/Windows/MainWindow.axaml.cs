@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
@@ -394,10 +394,17 @@ namespace Mesen.Windows
 					break;
 
 				case ConsoleNotificationType.EmulationStopped:
+					VideoCdPlayback.Reset();
 					Dispatcher.UIThread.Post(() => {
 						_model.RomInfo = new RomInfo();
 						_model.RecentGames.Init(GameScreenMode.RecentGames);
 					});
+					break;
+
+				case ConsoleNotificationType.PpuFrameDone:
+					//A machine with a video disc can ask for a track to be played; nothing
+					//else reaches this. See VideoCdPlayback.
+					VideoCdPlayback.Poll();
 					break;
 
 				case ConsoleNotificationType.ResolutionChanged:

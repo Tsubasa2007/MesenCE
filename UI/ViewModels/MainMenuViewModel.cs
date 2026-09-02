@@ -282,6 +282,56 @@ namespace Mesen.ViewModels
 					IsVisible = () => IsBbkGame,
 				},
 
+				//A disc can carry video tracks the machine itself cannot show - its picture comes
+				//from a decoder chip that is not emulated - so they are handed to whatever the
+				//system plays MPEG files with rather than drawn here.
+				new MainMenuAction() {
+					ActionType = ActionType.PlayVideoTrack,
+					IsVisible = () => VideoTracks.Count > 0,
+					SubActions = new List<object>() {
+						GetVideoTrackItem(0),
+						GetVideoTrackItem(1),
+						GetVideoTrackItem(2),
+						GetVideoTrackItem(3),
+						GetVideoTrackItem(4),
+						GetVideoTrackItem(5),
+						GetVideoTrackItem(6),
+						GetVideoTrackItem(7),
+						GetVideoTrackItem(8),
+						GetVideoTrackItem(9),
+						GetVideoTrackItem(10),
+						GetVideoTrackItem(11),
+						GetVideoTrackItem(12),
+						GetVideoTrackItem(13),
+						GetVideoTrackItem(14),
+						GetVideoTrackItem(15),
+						GetVideoTrackItem(16),
+						GetVideoTrackItem(17),
+						GetVideoTrackItem(18),
+						GetVideoTrackItem(19),
+						GetVideoTrackItem(20),
+						GetVideoTrackItem(21),
+						GetVideoTrackItem(22),
+						GetVideoTrackItem(23),
+						GetVideoTrackItem(24),
+						GetVideoTrackItem(25),
+						GetVideoTrackItem(26),
+						GetVideoTrackItem(27),
+						GetVideoTrackItem(28),
+						GetVideoTrackItem(29),
+						GetVideoTrackItem(30),
+						GetVideoTrackItem(31),
+						GetVideoTrackItem(32),
+						GetVideoTrackItem(33),
+						GetVideoTrackItem(34),
+						GetVideoTrackItem(35),
+						GetVideoTrackItem(36),
+						GetVideoTrackItem(37),
+						GetVideoTrackItem(38),
+						GetVideoTrackItem(39),
+					}
+				},
+
 				new ContextMenuSeparator() { IsVisible = () => IsVsSystemGame },
 
 				new MainMenuAction(EmulatorShortcut.VsInsertCoin1) { ActionType = ActionType.InsertCoin1, IsVisible = () => IsVsSystemGame },
@@ -312,6 +362,52 @@ namespace Mesen.ViewModels
 						},
 					}
 				},
+			};
+		}
+
+		//The video tracks on the mounted disc, re-read whenever the menu asks. A disc is
+		//swapped while the machine runs, so this cannot be cached at startup.
+		private string _videoDiscPath = "";
+		private string _videoBinPath = "";
+		private List<VideoCdTrack> _videoTracks = new();
+
+		private List<VideoCdTrack> VideoTracks
+		{
+			get
+			{
+				string path = IsGameRunning ? EmuApi.GetNesVideoDiscPath() : "";
+				if(path != _videoDiscPath) {
+					_videoDiscPath = path;
+					_videoTracks = VideoCdTrack.ReadCueSheet(path, out _videoBinPath);
+				}
+				return _videoTracks;
+			}
+		}
+
+		//A fixed set of slots, the way the disk-side items are done - the submenu is built once
+		//and each entry shows itself only while the mounted disc has a track for it.
+		private MainMenuAction GetVideoTrackItem(int index)
+		{
+			return new MainMenuAction() {
+				ActionType = ActionType.Custom,
+				DynamicText = () => index < VideoTracks.Count ? VideoTracks[index].Label : "",
+				IsVisible = () => index < VideoTracks.Count,
+				OnClick = () => {
+					if(index >= VideoTracks.Count) {
+						return;
+					}
+					VideoCdTrack track = VideoTracks[index];
+					try {
+						string outPath = Path.Combine(Path.GetTempPath(),
+							Path.GetFileNameWithoutExtension(_videoBinPath) + "_track" + track.Number + ".mpg");
+						if(!File.Exists(outPath) || new FileInfo(outPath).Length == 0) {
+							track.ExtractToFile(_videoBinPath, outPath);
+						}
+						VideoCdTrack.OpenInPlayer(outPath);
+					} catch(Exception ex) {
+						EmuApi.WriteLogEntry("[Video CD] Could not open the track: " + ex.Message);
+					}
+				}
 			};
 		}
 

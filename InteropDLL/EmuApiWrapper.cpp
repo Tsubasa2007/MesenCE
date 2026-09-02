@@ -234,6 +234,35 @@ extern "C"
 
 	//True while a BBK learning machine game/BIOS is running, regardless of how many disk images
 	//are available - lets the UI show the disk menu (and its Change Folder option) on an empty folder.
+	//The path of the disc the running machine has mounted, so the UI can offer its video
+	//tracks to an external player. Empty when there is no disc, or no drive to hold one.
+	DllExport void __stdcall GetNesVideoDiscPath(char* outBuffer, uint32_t maxLength)
+	{
+		string path;
+		if(NesConsole* nes = dynamic_cast<NesConsole*>(_emu->GetConsole().get())) {
+			path = nes->GetVideoDiscPath();
+		}
+		StringUtilities::CopyToBuffer(path, outBuffer, maxLength);
+	}
+
+	//The video the machine is waiting on, if it has asked for one. Returns true once per
+	//request; the caller then owns it and must call NesVideoPlaybackEnded, because the
+	//machine's own program is stopped until it does.
+	DllExport bool __stdcall GetNesVideoPlayRequest(uint8_t* track, uint32_t* startMsf, uint32_t* endMsf)
+	{
+		if(NesConsole* nes = dynamic_cast<NesConsole*>(_emu->GetConsole().get())) {
+			return nes->TakeVideoPlayRequest(*track, *startMsf, *endMsf);
+		}
+		return false;
+	}
+
+	DllExport void __stdcall NesVideoPlaybackEnded()
+	{
+		if(NesConsole* nes = dynamic_cast<NesConsole*>(_emu->GetConsole().get())) {
+			nes->EndVideoPlayback();
+		}
+	}
+
 	DllExport bool __stdcall IsNesBbkGame()
 	{
 		if(NesConsole* nes = dynamic_cast<NesConsole*>(_emu->GetConsole().get())) {

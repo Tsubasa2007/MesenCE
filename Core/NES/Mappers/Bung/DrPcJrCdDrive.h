@@ -65,6 +65,22 @@ private:
 	//How many tracks the cue sheet lists, for the drive's table of contents
 	uint32_t _trackCount = 0;
 
+	//A play request the machine has made that the front end has not collected yet, and the
+	//play itself. See the $D0 case in WriteByte for the packet these come out of.
+	uint8_t _playTrack = 0;
+	uint8_t _playStart[3] = {};
+	uint8_t _playEnd[3] = {};
+	bool _playPending = false;
+	bool _playBusy = false;
+	uint16_t _playOffered = 0;
+
+	//How long a request is held out before the drive gives up on anyone taking it. The
+	//machine sits in its wait loop for as long as the drive says it is still playing, so
+	//with nothing listening - a headless run, or any front end that does not implement this
+	//- that wait would never end. Two seconds is far longer than the single frame a front
+	//end needs to notice.
+	static constexpr uint16_t OfferTimeout = 120;
+
 
 public:
 	static string ResolveCueSheet(string path)
@@ -267,6 +283,7 @@ public:
 			}
 			_paramsLeft--;
 			if(_paramsLeft == 0) {
+				StartPlayback();
 				QueueReply();
 				StartTransfer();
 			}
@@ -370,12 +387,95 @@ public:
 
 		Queue(0x00);
 		//Byte 5 bit 7 says the drive has finished what it was asked to do: $6671 issues $A0
-		//and spins on LDA $6792 / AND #$80 / BEQ until it is set.
+		//and spins on LDA $6792 / AND #$80 / BEQ until it is set. It means the drive has
+		//taken the command, not that a video is over - see EndPlayback for that.
 		Queue(0x80);
 		Queue(0x00);
 		Queue(0x00);
 	}
 
+	//$D0 asks for a stretch of one video track to be played, and the machine then waits on
+	//the finished bit above until it is over. The title scripts are what name the fields:
+	//they are markup, and a play reads
+	//
+	//  <CVCD Operate=PartPlay Area=(00,00,00,01,14,00,01)>
+	//
+	//with the seven numbers going into the packet as they are written: a start position, an
+	//END position, and the number of the video. The last number runs 1 to 32 across the four
+	//script sets on the teaching disc here, one per video file.
+	//
+	//The second triple looks like a length on that disc, because every play there starts at
+	//0:00:00 and the two readings coincide. A game disc settles it - it plays four short
+	//stretches of one video and the pairs step forward together:
+	//
+	//  start 0:12:30  ->  0:22:00        each about nine and a half seconds
+	//  start 0:23:30  ->  0:32:00
+	//  start 0:34:30  ->  0:42:00
+	//  start 0:44:30  ->  0:53:00
+	//
+	//which is only a segment if the second number is where to stop.
+	//
+	//Nothing here can decode MPEG, so the drive only records the request. Whoever collects
+	//it decides what to do with it, and says when it is over; until then the machine is told
+	//the drive is still playing, which is what a real one would say.
+	void StartPlayback()
+	{
+		if(_cmd != 0xD0 || _paramCount < 7) {
+			return;
+		}
+		memcpy(_playStart, _params, 3);
+		memcpy(_playEnd, _params + 3, 3);
+		_playTrack = _params[6];
+		_playPending = true;
+		_playBusy = true;
+		_playOffered = 0;
+	}
+
+public:
+	//Called once a picture, to time out a request nobody is going to take
+	void ClockFrame()
+	{
+		if(_playPending && ++_playOffered > OfferTimeout) {
+			//Ended the same way a real one would, so the title carries on rather than
+			//sitting in its playback loop for the rest of the run
+			EndPlayback();
+		}
+	}
+
+	//The request the machine is waiting on, if one is outstanding. Taking it makes the
+	//caller responsible for calling EndPlayback - the machine waits until it does.
+	bool TakePlayRequest(uint8_t& track, uint32_t& startMsf, uint32_t& endMsf)
+	{
+		if(!_playPending) {
+			return false;
+		}
+		_playPending = false;
+		track = _playTrack;
+		startMsf = ((uint32_t)_playStart[0] << 16) | ((uint32_t)_playStart[1] << 8) | _playStart[2];
+		endMsf = ((uint32_t)_playEnd[0] << 16) | ((uint32_t)_playEnd[1] << 8) | _playEnd[2];
+		return true;
+	}
+
+	//The end of a video is a byte the drive sends, not a status bit. The title watches for
+	//it from inside the loop it runs while the picture belongs to the decoder:
+	//
+	//  $9E12: JSR $8BA3                 the keyboard, so a key can cut the video short
+	//         CPX #$1C / CPX #$39       ... and two of them have their own paths
+	//  $9E33: LDA #$84 / JSR $5860      ask the link for a byte
+	//         BCC $9E12                 nothing waiting, go round again
+	//         CMP #$9F / BNE $9E12      anything else is not the end
+	//
+	//so $9F, once, is what lets the title out and back to drawing its own screen.
+	void EndPlayback()
+	{
+		if(_playBusy) {
+			Queue(0x9F);
+		}
+		_playPending = false;
+		_playBusy = false;
+	}
+
+private:
 
 	//The parameters are block[1..7]: block[4] is how many 2KB sectors follow the reply, and
 	//block[1..3] address the disc. They read as minutes/seconds/frames - the first $E0 seen
@@ -434,5 +534,11 @@ public:
 		SV(_placePos);
 		SV(_placeLen);
 		SV(_trackCount);
+		SV(_playTrack);
+		SVArray(_playStart, 3);
+		SVArray(_playEnd, 3);
+		SV(_playPending);
+		SV(_playBusy);
+		SV(_playOffered);
 	}
 };

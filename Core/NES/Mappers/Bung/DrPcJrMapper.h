@@ -530,6 +530,19 @@ public:
 		return _cd.IsMounted() ? _cd.GetDiscPath() : "";
 	}
 
+	//The mounted disc on its own. GetCurrentDiskFilename prefers whatever is in the floppy
+	//drive, but a machine can have both, and the video tracks are only ever on the disc.
+	string GetDiscPath() { return _cd.IsMounted() ? _cd.GetDiscPath() : ""; }
+
+	//The video the machine has asked for, and the answer that its wait loop is holding out
+	//for. Both belong to the drive; this is only the way out to the front end.
+	bool TakeVideoPlayRequest(uint8_t& track, uint32_t& startMsf, uint32_t& endMsf)
+	{
+		return _cd.TakePlayRequest(track, startMsf, endMsf);
+	}
+
+	void EndVideoPlayback() { _cd.EndPlayback(); }
+
 	static bool IsDiscImage(const string& path)
 	{
 		string ext = path.size() >= 4 ? path.substr(path.size() - 4) : string();
@@ -1763,6 +1776,7 @@ protected:
 			_kbdPollFrame = frame;
 			KbdPollKeys();
 			KbdRepeatKeys();
+			_cd.ClockFrame();
 		}
 
 		KbdClock();
