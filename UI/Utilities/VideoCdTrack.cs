@@ -109,12 +109,15 @@ namespace Mesen.Utilities
 			//stretch can run past the boundary, and on a disc whose videos do not line up with
 			//its tracks it usually does. Counting sectors from the start position rather than
 			//stopping at the end of the track is what the machine itself does.
-			bool wholeTrack = lastSector <= firstSector;
-			uint count = wholeTrack ? (Sectors > from ? Sectors - from : 0) : lastSector - firstSector;
+			uint count = lastSector > firstSector ? lastSector - firstSector : (Sectors > from ? Sectors - from : 0);
 			bool dropTail = false;
+			//However much of the front turned out to belong to the video before this one. The
+			//play asked for a length, so the read runs on by the same amount rather than
+			//coming up short by it.
+			uint discarded = 0;
 
 			src.Seek((long)(Lba + from) * RawSectorSize, SeekOrigin.Begin);
-			for(uint i = 0; i < count; i++) {
+			for(uint i = 0; i < count + discarded; i++) {
 				if(src.Read(sector, 0, RawSectorSize) != RawSectorSize) {
 					break;
 				}
@@ -144,12 +147,13 @@ namespace Mesen.Utilities
 					//and one of seventy at the back, so the position sits at the end from the
 					//moment it opens.
 					//
-					//Only when the whole track was asked for. A stretch with an end position
-					//was meant to start where it starts.
-					dropTail = wholeTrack && clock.Value >= TailThreshold;
+					//Only when the play starts where the track does. One that names a position
+					//part way in was meant to start there, and its own start is not a tail.
+					dropTail = from == 0 && clock.Value >= TailThreshold;
 				} else if(dropTail && clock.HasValue && clock.Value < TailThreshold) {
 					//The clock has gone back to the beginning, so everything so far belonged
 					//to the video before this one
+					discarded = i;
 					dst.SetLength(0);
 					dst.Position = 0;
 					dropTail = false;
