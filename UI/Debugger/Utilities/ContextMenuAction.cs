@@ -686,6 +686,7 @@ namespace Mesen.Debugger.Utilities
 		SelectDisk,
 		[IconFile("MediaPlay")]
 		PlayVideoTrack,
+		ShowDiscMenu,
 		[IconFile("MediaEject")]
 		EjectDisk,
 

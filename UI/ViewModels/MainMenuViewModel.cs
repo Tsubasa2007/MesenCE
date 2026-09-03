@@ -285,9 +285,12 @@ namespace Mesen.ViewModels
 				//A disc can carry video tracks the machine itself cannot show - its picture comes
 				//from a decoder chip that is not emulated - so they are handed to whatever the
 				//system plays MPEG files with rather than drawn here.
+				//The still pictures its menus are drawn from come from that same chip, so they
+				//belong under the same entry - after the videos, which is the order the machine
+				//itself puts them in.
 				new MainMenuAction() {
 					ActionType = ActionType.PlayVideoTrack,
-					IsVisible = () => VideoTracks.Count > 0,
+					IsVisible = () => VideoTracks.Count > 0 || MenuStills.Count > 0,
 					SubActions = new List<object>() {
 						GetVideoTrackItem(0),
 						GetVideoTrackItem(1),
@@ -329,6 +332,15 @@ namespace Mesen.ViewModels
 						GetVideoTrackItem(37),
 						GetVideoTrackItem(38),
 						GetVideoTrackItem(39),
+
+						//The menu screens, as one entry: a disc carries a couple of hundred and
+						//they are only worth stepping through in the player's own order.
+						new MainMenuAction() {
+							ActionType = ActionType.ShowDiscMenu,
+							DynamicText = () => ResourceHelper.GetEnumText(ActionType.ShowDiscMenu) + " (" + MenuStills.Count + ")",
+							IsVisible = () => MenuStills.Count > 0,
+							OnClick = () => ShowDiscMenu()
+						},
 					}
 				},
 
@@ -371,6 +383,8 @@ namespace Mesen.ViewModels
 		private string _videoBinPath = "";
 		private List<VideoCdTrack> _videoTracks = new();
 
+		private List<VideoCdTrack> _menuStills = new();
+
 		private List<VideoCdTrack> VideoTracks
 		{
 			get
@@ -379,8 +393,54 @@ namespace Mesen.ViewModels
 				if(path != _videoDiscPath) {
 					_videoDiscPath = path;
 					_videoTracks = VideoCdTrack.ReadCueSheet(path, out _videoBinPath);
+					_menuStills = _videoBinPath.Length > 0 ? VideoCdTrack.ReadMenuStills(_videoBinPath) : new();
 				}
 				return _videoTracks;
+			}
+		}
+
+		//Read at the same time as the tracks, so the disc is walked once
+		private List<VideoCdTrack> MenuStills
+		{
+			get
+			{
+				_ = VideoTracks;
+				return _menuStills;
+			}
+		}
+
+		//Every menu screen written out side by side and the first one opened. There is no way
+		//to click one of them - a player takes no answer back - so what this gives is the
+		//menu to look at, and the choice is still made from the disk list. They are numbered
+		//in disc order so a player's own next and previous step through them in that order.
+		private void ShowDiscMenu()
+		{
+			List<VideoCdTrack> stills = MenuStills;
+			if(stills.Count == 0) {
+				return;
+			}
+
+			try {
+				string dir = Path.Combine(Path.GetTempPath(), "Mesen.VideoCd",
+					Path.GetFileNameWithoutExtension(_videoBinPath) + "_menu");
+				Directory.CreateDirectory(dir);
+
+				string first = "";
+				for(int i = 0; i < stills.Count; i++) {
+					string outPath = Path.Combine(dir, $"page{(i + 1):D3}_{stills[i].SegmentName}.mpg");
+					if(!File.Exists(outPath) || new FileInfo(outPath).Length == 0) {
+						stills[i].ExtractToFile(_videoBinPath, outPath);
+					}
+					if(first.Length == 0) {
+						first = outPath;
+					}
+				}
+
+				if(first.Length > 0) {
+					VideoCdTrack.OpenInPlayer(first);
+				}
+			} catch(Exception ex) {
+				EmuApi.WriteLogEntry("[Video CD] Could not open the disc's menu: " + ex.Message);
 			}
 		}
 

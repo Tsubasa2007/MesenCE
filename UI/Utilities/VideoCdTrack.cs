@@ -25,6 +25,10 @@ namespace Mesen.Utilities
 		public string? SegmentName { get; init; }
 		public bool IsSegment => SegmentName != null;
 
+		//A segment item whose clock never moves: one of the menu screens the disc's player
+		//draws, rather than something with a running time. See ReadMenuStills.
+		public bool IsStill { get; init; }
+
 		public TimeSpan Duration => TimeSpan.FromSeconds(Sectors / 75.0);
 
 		//The disc counts its filesystem as track 1, so the first video sits in track 2. Both
@@ -32,9 +36,11 @@ namespace Mesen.Utilities
 		//one video 1, so naming it by the raw track number is off by one against everything
 		//else that names it.
 		public int VideoNumber => Number - 1;
-		public string Label => IsSegment
-			? $@"{SegmentName} ({Duration:mm\:ss})"
-			: $@"Video {VideoNumber} ({Duration:mm\:ss})";
+		public string Label => IsStill
+			? SegmentName ?? ""
+			: IsSegment
+				? $@"{SegmentName} ({Duration:mm\:ss})"
+				: $@"Video {VideoNumber} ({Duration:mm\:ss})";
 
 		private const int RawSectorSize = 2352;
 		//Mode 2 form 2: 12 sync + 4 header + 8 subheader, then the payload
@@ -67,6 +73,21 @@ namespace Mesen.Utilities
 
 		public static List<VideoCdTrack> ReadSegmentItems(string binPath)
 		{
+			return ReadSegments(binPath, false);
+		}
+
+		//The other half of the same walk: the items with no running time at all. Those are the
+		//menu screens - on a disc whose programs are picked from a menu the decoder draws,
+		//they are the whole of the front end, and there is no way to show them here. They are
+		//offered to the same external player the videos go to, in the order the disc lists
+		//them, which is the order its menus step through.
+		public static List<VideoCdTrack> ReadMenuStills(string binPath)
+		{
+			return ReadSegments(binPath, true);
+		}
+
+		private static List<VideoCdTrack> ReadSegments(string binPath, bool wantStills)
+		{
 			List<VideoCdTrack> items = new();
 			try {
 				using FileStream src = File.OpenRead(binPath);
@@ -77,14 +98,20 @@ namespace Mesen.Utilities
 					}
 					double? first = SegmentClock(src, lba, false);
 					double? last = SegmentClock(src, lba + sectors - 1, true);
-					if(first == null || last == null || last.Value - first.Value < MinSegmentSeconds) {
+					//A still is simply anything with no running time, which includes the ones
+					//that answer with no clock at all: the allocation for one is 150 sectors
+					//and the picture only fills the front of it, so reading the clock at the
+					//far end lands in the blank padding and comes back with nothing.
+					bool hasRunningTime = first != null && last != null && last.Value - first.Value >= MinSegmentSeconds;
+					if(hasRunningTime == wantStills) {
 						continue;
 					}
 					items.Add(new VideoCdTrack() {
 						Number = items.Count + 1,
 						Lba = lba,
 						Sectors = sectors,
-						SegmentName = Path.GetFileNameWithoutExtension(name)
+						SegmentName = Path.GetFileNameWithoutExtension(name),
+						IsStill = wantStills
 					});
 				}
 			} catch(Exception) {
