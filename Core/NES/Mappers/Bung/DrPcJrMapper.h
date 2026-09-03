@@ -2036,10 +2036,30 @@ protected:
 					return NesControls()->ReadRam(addr);
 				}
 
-				//The machine's own software sees nothing on the controller ports. The BIOS
-				//polls $4017 looking for a serial mouse the hardware reports as absent, and
-				//reads back a clean zero rather than the open bus a controller would leave
-				//there - anything else and the poll sees phantom data.
+				//The 32KB machines drive their own file browser off the joypad, so for those
+				//the first port is a real one even while the BIOS has the machine. $F801
+				//strobes $4016 and clocks eight bits out of it, taking bit 0 for the first
+				//pad and bit 1 for the second the way a famiclone wires them, and acts on
+				//what is newly pressed:
+				//
+				//  F801: LDX #$01 / STX $4016      strobe on
+				//  F806: DEX / STX $4016           strobe off
+				//  F810: LDA $4016
+				//  F813: LSR A / ROL $8C           bit 0 -> the first pad
+				//  F816: LSR A / ROL $C5           bit 1 -> the second
+				//  F81C: LDA $8C / ORA $C5 / STA $8C
+				//  F822: EOR $8B / AND $8C / STA $8D    newly pressed
+				//
+				//Answering zero left the browser unable to move its cursor or start
+				//anything, which reads from the outside as a machine that has hung.
+				//
+				//The KW pair do not do this - they read their keyboard over $418E instead -
+				//and their BIOS polls $4017 looking for a serial mouse the hardware reports
+				//as absent, where it wants a clean zero rather than the open bus a
+				//controller would leave there, or the poll sees phantom data.
+				if(_romType == 0 && addr == 0x4016) {
+					return NesControls()->ReadRam(addr);
+				}
 				return 0;
 
 			case 0x4188: _fdc.MarkActivity(); return _fdc.Read(4);
