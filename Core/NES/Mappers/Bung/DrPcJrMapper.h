@@ -193,6 +193,7 @@ private:
 		if(frame == _mouseFrame) {
 			return;
 		}
+
 		_mouseFrame = frame;
 
 		shared_ptr<Sb2kMouse> mouse = _console->GetControlManager()->GetControlDevice<Sb2kMouse>();
@@ -200,26 +201,46 @@ private:
 			return;
 		}
 
-		int8_t dx, dy;
-		uint8_t buttons;
-		mouse->TakeDelta(dx, dy, buttons);
+		//Whether the machine has actually taken the last report, which decides whether there
+		//is anything to build a new one out of. It answers two different ways, and the
+		//difference matters: having read all three bytes it strips the framing bit from the
+		//second and third as it decodes them, but its polling loop also blindly zeroes the
+		//first byte at the top of a frame whether or not anything was there. Reading only
+		//the first byte therefore cannot tell "taken" from "thrown away unread", and a
+		//report replaced on the second reading is a report whose movement is gone - the
+		//device's accumulator was drained to build it. The machine takes one every second
+		//frame, so that was half of every gesture, and the pointer covered about a third of
+		//the distance the hand moved. Nothing on its desktop could be hit.
+		uint32_t dataOffset = SystemBankOffset(0xFFAC);
+		bool taken = dataOffset >= _workRamSize || (_workRam[dataOffset] & 0x80) == 0;
 
-		//Byte 0 carries both buttons and the top two bits of each delta; the other two
-		//carry the low six bits. The high bits are the machine's own framing.
-		uint8_t bx = (uint8_t)dx;
-		uint8_t by = (uint8_t)dy;
-		uint8_t report[3] = {
-			(uint8_t)(0xC0 | ((buttons & 0x01) << 5) | ((buttons & 0x02) << 3) | ((by & 0xC0) >> 4) | ((bx & 0xC0) >> 6)),
-			(uint8_t)(0x80 | (bx & 0x3F)),
-			(uint8_t)(0x80 | (by & 0x3F))
-		};
+		if(taken) {
+			int8_t dx, dy;
+			uint8_t buttons;
+			mouse->TakeDelta(dx, dy, buttons);
+
+			//Byte 0 carries both buttons and the top two bits of each delta; the other two
+			//carry the low six bits. The high bits are the machine's own framing.
+			uint8_t bx = (uint8_t)dx;
+			uint8_t by = (uint8_t)dy;
+			_mouseReport[0] = (uint8_t)(0xC0 | ((buttons & 0x01) << 5) | ((buttons & 0x02) << 3) | ((by & 0xC0) >> 4) | ((bx & 0xC0) >> 6));
+			_mouseReport[1] = (uint8_t)(0x80 | (bx & 0x3F));
+			_mouseReport[2] = (uint8_t)(0x80 | (by & 0x3F));
+		}
+
+		//Put it back either way. An untaken report is simply re-armed with the movement it
+		//already carries, so a blind clear costs a frame of latency rather than the gesture.
 		for(int i = 0; i < 3; i++) {
 			uint32_t offset = SystemBankOffset((uint16_t)(0xFFAB + i));
 			if(offset < _workRamSize) {
-				_workRam[offset] = report[i];
+				_workRam[offset] = _mouseReport[i];
 			}
 		}
 	}
+
+	//The last report built, kept so an untaken one can be re-armed without drawing fresh
+	//movement out of the device. See MousePoll.
+	uint8_t _mouseReport[3] = { 0xC0, 0x80, 0x80 };
 
 	uint8_t _ntData = 0;
 	bool _logoMode = false;
@@ -2368,6 +2389,7 @@ protected:
 		SV(_lptData); SV(_lptCtrl); SV(_printer);
 		SV(_speechByte); SV(_speechNibbleCount); SV(_speech);
 		SV(_mouseEnabled); SV(_mouseFrame); SV(_cdvApuReady);
+		SVArray(_mouseReport, 3);
 
 		if(!s.IsSaving()) {
 			UpdatePrgMapping();
