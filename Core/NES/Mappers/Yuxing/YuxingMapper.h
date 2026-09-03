@@ -1285,6 +1285,10 @@ public:
 
 	//Whichever medium is loaded; the floppy wins when both are, since it is the one that
 	//can be swapped while the machine runs
+	//The image in the disc drive, for a front end that wants to look inside it - see
+	//NesConsole::GetVideoDiscPath.
+	string GetVcdDiscPath() { return _vcd.GetDiscFilename(); }
+
 	string GetCurrentDiskFilename()
 	{
 		if(!_fdc.IsDiskInserted() && _vcd.GetProgramIndex() >= 0) {

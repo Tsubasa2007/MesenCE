@@ -399,7 +399,8 @@ namespace Mesen.ViewModels
 					VideoCdTrack track = VideoTracks[index];
 					try {
 						string outPath = Path.Combine(Path.GetTempPath(),
-							Path.GetFileNameWithoutExtension(_videoBinPath) + "_track" + track.Number + ".mpg");
+							Path.GetFileNameWithoutExtension(_videoBinPath) +
+							(track.IsSegment ? "_" + track.SegmentName : "_track" + track.Number) + ".mpg");
 						if(!File.Exists(outPath) || new FileInfo(outPath).Length == 0) {
 							track.ExtractToFile(_videoBinPath, outPath);
 						}

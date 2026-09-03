@@ -490,6 +490,12 @@ string NesConsole::GetVideoDiscPath()
 	if(DrPcJrMapper* pcjr = dynamic_cast<DrPcJrMapper*>(_mapper.get())) {
 		return pcjr->GetDiscPath();
 	}
+	//The YuXing machines read a disc too. Theirs carry their video as segment items inside a
+	//single data track rather than as video tracks, which is the front end's problem rather
+	//than this one's - it only has to say which image is in the drive.
+	if(YuxingMapper* yuxing = dynamic_cast<YuxingMapper*>(_mapper.get())) {
+		return yuxing->GetVcdDiscPath();
+	}
 	return "";
 }
 
