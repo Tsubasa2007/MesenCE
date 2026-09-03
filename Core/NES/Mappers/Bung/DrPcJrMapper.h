@@ -219,6 +219,20 @@ private:
 			uint8_t buttons;
 			mouse->TakeDelta(dx, dy, buttons);
 
+			//A mouse sitting still with a button held down says nothing at all: it sends one
+			//report when the button goes down and another when it comes up. Repeating "still
+			//held" every frame is not harmless chatter. The machine only reports a press as
+			//an edge against a latch of what is currently held, and a program is free to
+			//clear that latch itself once it has taken the event - one of them does, every
+			//pass of its main loop. Against a report that keeps saying "held", the edge is
+			//found again and again, and one click of a button arrives as four presses. The
+			//program acted on all four and finished where it started, which read as the
+			//click doing nothing at all.
+			if(dx == 0 && dy == 0 && buttons == _lastMouseButtons) {
+				return;
+			}
+			_lastMouseButtons = buttons;
+
 			//Byte 0 carries both buttons and the top two bits of each delta; the other two
 			//carry the low six bits. The high bits are the machine's own framing.
 			uint8_t bx = (uint8_t)dx;
@@ -241,6 +255,9 @@ private:
 	//The last report built, kept so an untaken one can be re-armed without drawing fresh
 	//movement out of the device. See MousePoll.
 	uint8_t _mouseReport[3] = { 0xC0, 0x80, 0x80 };
+
+	//What the buttons were in the last report, so an unchanged one is not sent again
+	uint8_t _lastMouseButtons = 0;
 
 	uint8_t _ntData = 0;
 	bool _logoMode = false;
@@ -2389,7 +2406,7 @@ protected:
 		SV(_lptData); SV(_lptCtrl); SV(_printer);
 		SV(_speechByte); SV(_speechNibbleCount); SV(_speech);
 		SV(_mouseEnabled); SV(_mouseFrame); SV(_cdvApuReady);
-		SVArray(_mouseReport, 3);
+		SVArray(_mouseReport, 3); SV(_lastMouseButtons);
 
 		if(!s.IsSaving()) {
 			UpdatePrgMapping();
