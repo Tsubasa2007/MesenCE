@@ -47,6 +47,7 @@ namespace Mesen.Config
 		[ObservableProperty] public partial bool Yuyin2Printer { get; set; } = false;
 		[ObservableProperty] public partial bool YuxingSkipVcdScreen { get; set; } = true;
 		[ObservableProperty] public partial bool YuxingDTypeMouse { get; set; } = false;
+		[ObservableProperty] public partial bool KewangDisableVideoPlayback { get; set; } = false;
 		[ObservableProperty] public partial string BbkDiskFolder { get; set; } = "";
 		[ObservableProperty] public partial VsDualOutputOption VsDualVideoOutput { get; set; } = VsDualOutputOption.Both;
 		[ObservableProperty] public partial VsDualOutputOption VsDualAudioOutput { get; set; } = VsDualOutputOption.Both;

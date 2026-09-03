@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+﻿<?xml version="1.0" encoding="UTF-8"?>
 <Resources>
 	<Forms>
 		<Form ID="MainMenuView">
@@ -304,6 +304,9 @@
 			<Control ID="lblYuxingSettings">YuXing Learning Machine Settings</Control>
 			<Control ID="chkYuxingSkipVcdScreen">Start on the computer side, skipping the VCD player screen (when no disc is inserted)</Control>
 			<Control ID="chkYuxingDTypeMouse">Use the D-type add-on serial mouse instead of the built-in mouse</Control>
+
+			<Control ID="lblKewangSettings">Kingwon / Doctor PC jr. Settings</Control>
+			<Control ID="chkKewangDisableVideoPlayback">Do not open a video player for the disc's video tracks</Control>
 
 			<Control ID="lblVsDualSystem">VS. DualSystem Settings</Control>
 			<Control ID="lblVsDualPlayAudio">Play audio for:</Control>

@@ -1,4 +1,5 @@
-﻿using Mesen.Interop;
+﻿using Mesen.Config;
+using Mesen.Interop;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -62,6 +63,15 @@ namespace Mesen.Utilities
 			}
 
 			if(!EmuApi.GetNesVideoPlayRequest(out byte track, out uint startMsf, out uint endMsf)) {
+				return;
+			}
+
+			if(ConfigManager.Config.Nes.KewangDisableVideoPlayback) {
+				//Answered rather than ignored. The machine is stopped in its playback loop until
+				//somebody says the video is over, and leaving it there costs it the two seconds
+				//the drive waits before giving up on its own. Not a completion, so a transport
+				//running through the disc stops here instead of stepping to the next video.
+				EmuApi.NesVideoPlaybackEnded(false);
 				return;
 			}
 
