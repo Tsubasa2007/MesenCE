@@ -382,25 +382,52 @@ namespace Mesen.Utilities
 		//menu screens together come to hundreds of megabytes, so the folder is emptied the
 		//first time a run asks for it rather than left to grow.
 		private static bool _scratchSwept = false;
-		public static string GetScratchFolder()
+		private static readonly object ScratchLock = new();
+		private static string ScratchPath => Path.Combine(Path.GetTempPath(), "Mesen.VideoCd");
+
+		//Emptied once a run, and at startup rather than on the way out: a run that ends in a
+		//crash never gets to tidy up after itself, and waiting until someone opens the next
+		//video means a folder left by one that did crash can sit there for good. Another copy
+		//of the emulator may still be playing one of these, so it goes a file at a time and
+		//whatever will not delete is left where it is.
+		public static void SweepScratchFolder()
 		{
-			string folder = Path.Combine(Path.GetTempPath(), "Mesen.VideoCd");
 			lock(ScratchLock) {
-				if(!_scratchSwept) {
-					_scratchSwept = true;
+				if(_scratchSwept) {
+					return;
+				}
+				_scratchSwept = true;
+			}
+
+			try {
+				if(!Directory.Exists(ScratchPath)) {
+					return;
+				}
+				foreach(string file in Directory.EnumerateFiles(ScratchPath, "*", SearchOption.AllDirectories)) {
 					try {
-						if(Directory.Exists(folder)) {
-							Directory.Delete(folder, true);
-						}
+						File.Delete(file);
 					} catch(Exception) {
-						//A file still open in a player - leave it and carry on
+						//Open in a player somewhere - leave it and take the rest
 					}
 				}
+				foreach(string dir in Directory.EnumerateDirectories(ScratchPath)) {
+					try {
+						Directory.Delete(dir, true);
+					} catch(Exception) {
+						//Whatever could not be emptied above
+					}
+				}
+			} catch(Exception) {
+				//The folder went away underneath us, or is not readable at all
 			}
-			Directory.CreateDirectory(folder);
-			return folder;
 		}
-		private static readonly object ScratchLock = new();
+
+		public static string GetScratchFolder()
+		{
+			SweepScratchFolder();
+			Directory.CreateDirectory(ScratchPath);
+			return ScratchPath;
+		}
 
 		//Hand the file to whatever the system opens MPEG files with. Deliberately not a
 		//player of our own: see the note at the top of this file.

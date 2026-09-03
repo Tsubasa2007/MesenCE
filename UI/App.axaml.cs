@@ -1,11 +1,12 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Controls.Platform;
 using Avalonia.Markup.Xaml;
 using Avalonia.Styling;
 using Avalonia.Threading;
-using Mesen.Config;
+using Mesen.Config;
+using System.Threading.Tasks;
 using Mesen.Interop;
 using Mesen.Localization;
 using Mesen.Utilities;
@@ -65,6 +66,11 @@ namespace Mesen
 						base.OnFrameworkInitializationCompleted();
 						return;
 					}
+
+					//Anything a disc was unpacked into last time is worth nothing now, and a run
+					//that crashed never got to clear it. Off the UI thread: it can be thousands
+					//of files and none of it is needed before the window opens.
+					Task.Run(() => VideoCdTrack.SweepScratchFolder());
 
 					try {
 						desktop.MainWindow = new MainWindow();
