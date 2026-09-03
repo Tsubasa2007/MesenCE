@@ -421,7 +421,7 @@ namespace Mesen.ViewModels
 			}
 
 			try {
-				string dir = Path.Combine(Path.GetTempPath(), "Mesen.VideoCd",
+				string dir = Path.Combine(VideoCdTrack.GetScratchFolder(),
 					Path.GetFileNameWithoutExtension(_videoBinPath) + "_menu");
 				Directory.CreateDirectory(dir);
 
@@ -458,7 +458,7 @@ namespace Mesen.ViewModels
 					}
 					VideoCdTrack track = VideoTracks[index];
 					try {
-						string outPath = Path.Combine(Path.GetTempPath(),
+						string outPath = Path.Combine(VideoCdTrack.GetScratchFolder(),
 							Path.GetFileNameWithoutExtension(_videoBinPath) +
 							(track.IsSegment ? "_" + track.SegmentName : "_track" + track.Number) + ".mpg");
 						if(!File.Exists(outPath) || new FileInfo(outPath).Length == 0) {

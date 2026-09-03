@@ -169,8 +169,7 @@ namespace Mesen.Utilities
 				}
 			}
 
-			string folder = Path.Combine(Path.GetTempPath(), "Mesen.VideoCd");
-			Directory.CreateDirectory(folder);
+			string folder = VideoCdTrack.GetScratchFolder();
 			string span = to > from ? $" {from}-{to}" : "";
 			string outPath = Path.Combine(folder,
 				Path.GetFileNameWithoutExtension(discPath) + $" - Video {wanted.VideoNumber}{span}.mpg");

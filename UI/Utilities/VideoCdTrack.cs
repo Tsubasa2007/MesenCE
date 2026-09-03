@@ -91,9 +91,15 @@ namespace Mesen.Utilities
 			List<VideoCdTrack> items = new();
 			try {
 				using FileStream src = File.OpenRead(binPath);
+				//What the image actually holds. A directory record is only as trustworthy as
+				//the disc it came off: one of these carries records naming four-gigabyte items
+				//on a six-hundred-megabyte image, and reading a length like that on trust wrote
+				//gigabytes of the wrong thing into the temp folder. Nothing that does not fit
+				//is offered.
+				uint imageSectors = (uint)(src.Length / RawSectorSize);
 				foreach((string name, uint lba, uint size) in ReadIsoDirectory(src, "SEGMENT")) {
 					uint sectors = (size + 2047) / 2048;
-					if(sectors == 0) {
+					if(sectors == 0 || lba >= imageSectors || sectors > imageSectors - lba) {
 						continue;
 					}
 					double? first = SegmentClock(src, lba, false);
@@ -370,6 +376,31 @@ namespace Mesen.Utilities
 			long low = (((sector[o + 3] << 8) | sector[o + 4]) >> 1) & 0x7FFF;
 			return ((high << 30) | (mid << 15) | low) / 90000.0;
 		}
+
+		//Where everything extracted from a disc goes. Nothing here outlives the run that
+		//made it: what is wanted twice is wanted within one session, and a disc's videos and
+		//menu screens together come to hundreds of megabytes, so the folder is emptied the
+		//first time a run asks for it rather than left to grow.
+		private static bool _scratchSwept = false;
+		public static string GetScratchFolder()
+		{
+			string folder = Path.Combine(Path.GetTempPath(), "Mesen.VideoCd");
+			lock(ScratchLock) {
+				if(!_scratchSwept) {
+					_scratchSwept = true;
+					try {
+						if(Directory.Exists(folder)) {
+							Directory.Delete(folder, true);
+						}
+					} catch(Exception) {
+						//A file still open in a player - leave it and carry on
+					}
+				}
+			}
+			Directory.CreateDirectory(folder);
+			return folder;
+		}
+		private static readonly object ScratchLock = new();
 
 		//Hand the file to whatever the system opens MPEG files with. Deliberately not a
 		//player of our own: see the note at the top of this file.
