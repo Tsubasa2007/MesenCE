@@ -292,11 +292,27 @@ public:
 		memcpy(&rootLen, root + 10, 4);
 
 		uint32_t dirLba = 0, dirLen = 0;
-		if(!FindIsoEntry(rootLba, rootLen, "PROGRAMS", true, dirLba, dirLen)) {
-			return false;
+		if(FindIsoEntry(rootLba, rootLen, "PROGRAMS", true, dirLba, dirLen)) {
+			CollectIsoFiles(dirLba, dirLen);
+		} else {
+			//Not every disc keeps its programs in a directory of their own. One carries a
+			//single one at the root of the filesystem instead, and without this the disc
+			//falls through to the "not a disc at all" path below, where the whole image is
+			//served as though it were that one program - which is not something the machine
+			//can load. The root holds the player's own directories beside it, so only the
+			//files are taken, and only those named the way a program is.
+			CollectIsoFiles(rootLba, rootLen);
+			for(size_t i = _programs.size(); i > 0; i--) {
+				const string& name = _programs[i - 1].Name;
+				size_t dot = name.find_last_of('.');
+				string ext = dot == string::npos ? string() : name.substr(dot);
+				std::transform(ext.begin(), ext.end(), ext.begin(), [](char c) { return (char)::tolower((uint8_t)c); });
+				if(ext != ".bin") {
+					_programs.erase(_programs.begin() + (i - 1));
+				}
+			}
 		}
 
-		CollectIsoFiles(dirLba, dirLen);
 		if(_programs.empty()) {
 			return false;
 		}
