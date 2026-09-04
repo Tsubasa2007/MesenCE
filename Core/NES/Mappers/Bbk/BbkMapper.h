@@ -868,6 +868,15 @@ protected:
 				//The 98's interrupt controller shadows part of the FDC range
 				switch(addr) {
 					case 0xFFB0:
+						//Bit 7 reports that nothing is pending. BRK shares the interrupt vector on this
+						//machine, and the handler tells the two apart by reading this port: a negative
+						//result sends it to a second arm that checks the stacked B flag and hands the
+						//BRK to the software-interrupt dispatcher. Answering with a source id even when
+						//no interrupt is pending makes that arm unreachable, so every BRK is serviced as
+						//a raster interrupt instead.
+						if(!_lineIrqPending) {
+							return 0x80;
+						}
 						//Reading the pending-source port acknowledges the IRQ - the handler
 						//re-enables interrupts (CLI) before dispatching, so the line must
 						//drop as soon as the source id is read
