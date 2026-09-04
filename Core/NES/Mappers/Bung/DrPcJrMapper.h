@@ -1621,13 +1621,19 @@ private:
 			return;
 		}
 
-		//A controller names the arrangement itself, and gets it - the reference lets the
-		//chip win here rather than running the selection back through $4182, and 114 of
-		//the 121 games concerned have $4182 deferring to the selection anyway. The
-		//hand-over still goes through MirrorSync, so the arrangement a game starts with
-		//is the machine's until the game says otherwise.
+		//The controller's own selection goes back through $4182 rather than straight to the
+		//PPU. $4182 bits 4-6 either name an arrangement outright or defer to the chip, and
+		//only the deferring modes are the chip's to answer - which is what MirrorSync does
+		//with the value just read out of it. 114 of the 121 games concerned defer, so for
+		//those this is the selection the chip named either way.
+		//
+		//Letting the chip win unconditionally loses the other seven. A board with no
+		//mirroring register of its own never names an arrangement, so the chip answers with
+		//its power-on default; the loader had set the arrangement through $4182 instead, and
+		//every bank switch overwrote it. A vertical scroller then walks off the bottom of
+		//its own screen and back onto the top of it, once per bank switch, all frame.
 		if(takeMirroring) {
-			SetMirroringValue(_mirroring);
+			MirrorSync();
 		}
 		UpdatePrgMapping();
 		UpdateChrMapping();
