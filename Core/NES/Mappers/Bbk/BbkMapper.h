@@ -699,23 +699,24 @@ public:
 	//tile alone, which is what the machine (and the reference emulator) show.
 	bool EnablePpuVramWriteGlitch() override { return false; }
 
-	//A 2C02 drives $2005 and $2006 from a single first/second-write toggle. This machine's clone
-	//PPU latches them separately and re-aligns the $2006 latch whenever a $2007 access starts a
-	//data transfer. A $2002 read still clears both latches, exactly as on a 2C02.
+	//This machine's clone PPU re-aligns the $2006 write latch whenever a $2007 access starts a data
+	//transfer. Everything else about the latch is 2C02: $2005 and $2006 share it, and a $2002 read
+	//clears it.
 	//
-	//Why it has to work this way: the BIOS owns the NMI vector and its handler reads $2002 before
-	//chaining to the program's own handler, so an NMI can split any unguarded $2006,$2006 or
-	//$2005,$2005 pair - and converted software does exactly that, hundreds of times per frame,
-	//while it builds a screen. Under the shared toggle one such split inverts it permanently:
-	//every later address is latched high/low swapped, the writes land in CHR space, and whole
-	//columns of the screen are never written. Separate latches make a split $2005 pair harmless to
-	//addressing, and the $2007 re-align caps a split $2006 pair at a single bad access instead of
-	//corrupting everything after it.
+	//It has to do something of the sort. The BIOS owns the NMI vector and its handler reads $2002
+	//before chaining to the program's own handler, so an NMI can split any unguarded $2006,$2006
+	//pair - and converted software does exactly that, hundreds of times per frame, while it builds
+	//a screen. Without the re-align one such split inverts the latch for good: every later address
+	//is latched high/low swapped, the writes land in CHR space, and whole columns of the screen are
+	//never written. With it, a split pair costs a single bad access.
 	//
-	//Do NOT "simplify" this by having $2002 skip the $2006 latch. That also fixes the screen
-	//builds, but it strands the latch out of phase for software that relies on $2002 to resync
-	//after an odd number of $2006 writes - it drops half of some programs' sprite tiles.
-	bool EnablePpuSharedWriteToggle() override { return false; }
+	//Two things that also clear up those screen builds and must NOT be done instead. Having $2002
+	//skip the $2006 latch strands it out of phase for software that relies on $2002 to resync after
+	//an odd number of $2006 writes, and drops half of some programs' sprite tiles. Giving $2005 a
+	//latch of its own breaks the standard $2006,$2005,$2005,$2006 mid-frame scroll sequence, which
+	//only computes the intended address because the two registers share one latch - software that
+	//splits a status bar off the top of the screen that way comes out scrolled by the bar's height.
+	bool EnablePpuVramAddrRealign() override { return true; }
 
 	//Off by default - an experiment, NOT emulated behaviour. It makes a tile take the attribute
 	//fetched for the tile column before it, which cleans up the banded-framebuffer screens on
