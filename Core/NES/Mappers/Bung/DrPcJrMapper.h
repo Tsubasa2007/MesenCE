@@ -496,18 +496,6 @@ private:
 
 		string romPath = _emu->GetRomInfo().RomFile.GetFilePath();
 
-		if(_persistedDiskValid && _persistedDiskRom == romPath) {
-			if(_persistedDiskPath.empty()) {
-				return; //ejected before the power cycle - leave the drive empty
-			}
-			if(_fdc.LoadDiskImage(_persistedDiskPath)) {
-				MessageManager::Log("[Dr.PC Jr.] Re-inserted disk: " + _persistedDiskPath);
-				DetectDiskType();
-				RememberDiskIndex(_persistedDiskPath);
-				return;
-			}
-		}
-
 		string baseName = FolderUtilities::GetFilename(romPath, false);
 		vector<string> folders = { FolderUtilities::GetFolderName(romPath) };
 		string configured = GetConfiguredDiskFolder();
@@ -518,6 +506,17 @@ private:
 		//The KW machines' player front end reads a CD as well as a floppy. Only they have
 		//one - the two 32KB machines use a different, unimplemented interface - so the
 		//search is gated on the rom type and nothing changes for anything else.
+		//
+		//This has to happen before anything below can return. The drive is part of the
+		//machine, so whether it is there cannot depend on what is in the floppy drive - and
+		//the floppy paths below return early once they have something to mount. Leaving the
+		//drive marked absent makes $41AF answer out of the last value written to it instead
+		//of from the drive, and its bit 6 - the busy line - then stays set for good: the
+		//BIOS send routine at $5860 waits for a drive that is never ready, the player's
+		//retry at $672D never gives up, and its event loop stops running, so the front end
+		//takes no further input at all. That only happened once a disk had been chosen from
+		//the media list, because only then are the persisted-disk statics set - which is why
+		//it never showed up in a headless run.
 		if(_romType == 1 || _romType == 2) {
 			_cd.SetPresent(true);
 			//A disc chosen from the media list survives a power cycle, the way a floppy
@@ -534,6 +533,18 @@ private:
 						break;
 					}
 				}
+			}
+		}
+
+		if(_persistedDiskValid && _persistedDiskRom == romPath) {
+			if(_persistedDiskPath.empty()) {
+				return; //ejected before the power cycle - leave the drive empty
+			}
+			if(_fdc.LoadDiskImage(_persistedDiskPath)) {
+				MessageManager::Log("[Dr.PC Jr.] Re-inserted disk: " + _persistedDiskPath);
+				DetectDiskType();
+				RememberDiskIndex(_persistedDiskPath);
+				return;
 			}
 		}
 
