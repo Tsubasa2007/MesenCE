@@ -1007,6 +1007,19 @@ private:
 	//several cycles later, and the keyboard drops its line as soon as its queue drains, so
 	//a handler reading a live view can find nothing asserted and no way to tell what woke
 	//it. Reading the register answers the interrupt and clears the bit.
+	//A keyboard the host is holding in the inhibit state - both wires driven low - cannot
+	//put anything on the line, so it cannot announce anything either. Its request is kept
+	//and reaches the processor as soon as the host lets go of the wires.
+	//
+	//This is not a special case for one program: a byte can only leave the keyboard once
+	//both wires are released, which is the test the send state machine makes below, so an
+	//interrupt raised while they are held names a byte that can never be fetched. A handler
+	//answering it finds nothing to read and no way to clear it, and the interrupt is taken
+	//again on the very next instruction. The disc software leaves the wires low when it
+	//takes over from the system software and never touches the interface again, so a single
+	//key press there put the machine in that loop for good.
+	bool KbdIrqAllowed() { return (_kbdCtrl & 0x03) == 0x03; }
+
 	void KbdAssertIrq(bool raise)
 	{
 		_kbdRaiseIrq = raise;
@@ -1840,7 +1853,7 @@ protected:
 
 		//The controller's own counter joins the two the machine has. It has to be held
 		//and answered rather than pulsed: this line is rewritten every CPU clock.
-		if(_kbdRaiseIrq || _lineIrqPending || _counterIrqPending || (_gameChip == MachineMmc3 && _mmc3.IrqPending())) {
+		if((_kbdRaiseIrq && KbdIrqAllowed()) || _lineIrqPending || _counterIrqPending || (_gameChip == MachineMmc3 && _mmc3.IrqPending())) {
 			_console->GetCpu()->SetIrqSource(IRQSource::External);
 		} else {
 			_console->GetCpu()->ClearIrqSource(IRQSource::External);
