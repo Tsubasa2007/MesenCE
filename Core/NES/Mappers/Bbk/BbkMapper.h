@@ -603,7 +603,8 @@ private:
 		if(_diskChecked) {
 			return;
 		}
-		_diskChecked = true;
+		//Latched only once an image actually mounts, so a disk inserted after the
+		//machine has booted is still picked up on a later controller access.
 
 		string romPath = _emu->GetRomInfo().RomFile.GetFilePath();
 		string baseName = FolderUtilities::GetFilename(romPath, false);
@@ -619,6 +620,7 @@ private:
 				_persistedDiskRom = romPath;
 				_persistedDiskPath = pending; //keep it across a power cycle, like a manually inserted disk
 				MessageManager::Log("[BBK] Mounted disk image: " + pending);
+				_diskChecked = true;
 				return;
 			}
 		}
@@ -631,6 +633,7 @@ private:
 				test.close();
 				_fdc.LoadDiskImage(_persistedDiskPath);
 				MessageManager::Log("[BBK] Re-mounted disk image: " + _persistedDiskPath);
+				_diskChecked = true;
 				return;
 			}
 		}
@@ -650,6 +653,7 @@ private:
 					test.close();
 					_fdc.LoadDiskImage(diskPath);
 					MessageManager::Log("[BBK] Mounted disk image: " + diskPath);
+					_diskChecked = true;
 					return;
 				}
 			}
