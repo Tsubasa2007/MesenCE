@@ -302,7 +302,7 @@
 			<Control ID="chkBbkAttributeLag">Color tiles with the previous column's attribute (classic models, experimental)</Control>
 
 			<Control ID="lblYuxingSettings">YuXing Learning Machine Settings</Control>
-			<Control ID="chkYuxingSkipVcdScreen">Start on the computer side, skipping the VCD player screen (when no disc is inserted)</Control>
+			<Control ID="chkYuxingSkipVcdScreen">Start on the computer side, skipping the VCD player screen (until a program is picked from the disc)</Control>
 			<Control ID="chkYuxingDTypeMouse">Use the D-type add-on serial mouse instead of the built-in mouse</Control>
 
 			<Control ID="lblKewangSettings">Kingwon / Doctor PC jr. Settings</Control>

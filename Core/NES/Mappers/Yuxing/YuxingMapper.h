@@ -1146,15 +1146,23 @@ protected:
 		bool mounted = MountPairedMedia();
 
 		//The V9.2 models power on showing the VCD player's screen, which asks for a key the
-		//emulated keyboard cannot reach - it is normally left by ejecting the disc. With no
-		//disc to play there is nothing on that screen, so drop straight to the computer side:
-		//it is the useful state, and the only one a recording can start from. A disc that did
-		//mount keeps the player, otherwise it could never be read.
+		//emulated keyboard cannot reach - it is normally left by ejecting the disc. With
+		//nothing for the drive to serve there is nothing on that screen, so drop straight to
+		//the computer side: it is the useful state, and the only one a recording can start
+		//from. Note what MountPairedMedia answers: a whole-disc image with no program picked
+		//yet does not count as mounted, so a disc like that starts on the computer side too -
+		//which is where its programs are picked from. Once one is picked the player stays,
+		//otherwise the drive could never be read.
 		if(_vcdMode && !mounted && _console->GetNesConfig().YuxingSkipVcdScreen) {
 			_vcdMode = false;
 			_reg5002 = 2;
 			UpdateMouseMode();
-			MessageManager::Log("[YuXing] No disc - starting on the computer side");
+			//Which of the two it was matters to anyone reading the log: a disc that is in the
+			//drive and simply has nothing picked off it yet looks exactly like an empty drive
+			//from here, and saying "no disc" for it reads as a disc that failed to mount.
+			MessageManager::Log(_vcd.HasDisc()
+				? "[YuXing] Disc mounted, no program picked yet - starting on the computer side"
+				: "[YuXing] No disc - starting on the computer side");
 		}
 	}
 
