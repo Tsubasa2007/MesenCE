@@ -392,8 +392,24 @@ namespace Mesen.ViewModels
 				string path = IsGameRunning ? EmuApi.GetNesVideoDiscPath() : "";
 				if(path != _videoDiscPath) {
 					_videoDiscPath = path;
-					_videoTracks = VideoCdTrack.ReadCueSheet(path, out _videoBinPath);
-					_menuStills = _videoBinPath.Length > 0 ? VideoCdTrack.ReadMenuStills(_videoBinPath) : new();
+					_videoTracks = VideoCdTrack.ReadCueSheet(path, out _videoBinPath, false);
+					_menuStills = new();
+					if(_videoBinPath.Length > 0) {
+						//The stretches of video held as segment items, which on these discs is
+						//where nearly all of it is - see ReadVideoReels.
+						List<VideoCdTrack> reels = VideoCdTrack.ReadVideoReels(_videoBinPath);
+						_videoTracks.AddRange(reels);
+						if(reels.Count == 0) {
+							//Nothing but single frames on this one, so its pages are the whole of
+							//what it has to show and the directory is as good a list of them as
+							//there is. A disc that does carry video is not made to write a few
+							//hundred megabytes of pages nobody asked for.
+							if(_videoTracks.Count == 0) {
+								_videoTracks = VideoCdTrack.ReadSegmentItems(_videoBinPath);
+							}
+							_menuStills = VideoCdTrack.ReadMenuStills(_videoBinPath);
+						}
+					}
 				}
 				return _videoTracks;
 			}
