@@ -146,6 +146,10 @@ private:
 	uint8_t _lineCounter = 0;
 	int32_t _lastIrqScanline = -2;
 	bool _lineIrqPending = false;
+	//The cycle counter's interrupt, held the same way the line one is. Setting the CPU's
+	//line from inside the count would be undone on the very next clock by the line
+	//rewritten at the top of ClockCpu, which only knows about the sources it lists.
+	bool _counterIrqPending = false;
 	uint8_t _irqStatus = 0;
 
 	//--- per-tile CHR banking ("external latch") -----------------------------------------
@@ -1836,7 +1840,7 @@ protected:
 
 		//The controller's own counter joins the two the machine has. It has to be held
 		//and answered rather than pulsed: this line is rewritten every CPU clock.
-		if(_kbdRaiseIrq || _lineIrqPending || (_gameChip == MachineMmc3 && _mmc3.IrqPending())) {
+		if(_kbdRaiseIrq || _lineIrqPending || _counterIrqPending || (_gameChip == MachineMmc3 && _mmc3.IrqPending())) {
 			_console->GetCpu()->SetIrqSource(IRQSource::External);
 		} else {
 			_console->GetCpu()->ClearIrqSource(IRQSource::External);
@@ -1862,16 +1866,22 @@ protected:
 						_lineIrqPending = true;
 					}
 				}
-			} else if(irqType == 2) {
+			} else if(irqType == 0 || irqType == 2) {
+				//Mode 0 counts the same way mode 2 does. The disc games arm the counter once
+				//a frame with $4182 holding neither 1 nor 3 in its low bits, and the count
+				//they load - $9D84, so $627B clocks short of the wrap - lands the interrupt
+				//around line 200 measured from the vblank they arm it in, which is where a
+				//status line sits. Left unhandled the interrupt never came, nothing reset the
+				//scroll part way down, and the status line scrolled with the game.
 				if(++_irqCounter >= 0xFFFF) {
 					_irqEnabled = false;
-					_console->GetCpu()->SetIrqSource(IRQSource::External);
+					_counterIrqPending = true;
 				}
 			} else if(irqType == 3) {
 				if(_irqCounter == 0 || --_irqCounter == 0) {
 					_irqEnabled = false;
 					_irqCounter = 0;
-					_console->GetCpu()->SetIrqSource(IRQSource::External);
+					_counterIrqPending = true;
 				}
 			}
 		}
@@ -1994,6 +2004,7 @@ protected:
 		_lineCounter = 0;
 		_lastIrqScanline = -2;
 		_lineIrqPending = false;
+		_counterIrqPending = false;
 		_irqStatus = 0;
 
 		_kbdCtrl = 0x03;
@@ -2132,10 +2143,19 @@ protected:
 				//shared handler dispatches on these, so with both reading zero every interrupt
 				//looks alike and a line interrupt is mistaken for the keyboard, taken down a
 				//path that never clears $41A3 and re-entered on the spot.
+				//Bit 5 is the counter block, not the line counter alone: the cycle counter
+				//shares the same registers and asks the same way. Leaving it out named no
+				//source at all for an interrupt that was being held, so the handler took the
+				//path that answers nothing and the machine re-entered it for ever.
+				//
+				//Reading here answers it, the way it answers the keyboard just below. The
+				//other machine's software re-arms through $41A3 and so cleared it either way,
+				//which is why only this one stopped.
 				uint8_t status = (uint8_t)(_irqStatus | (_kbdRaiseIrq ? 0x10 : 0) |
-					(_lineIrqPending ? 0x20 : 0));
+					((_lineIrqPending || _counterIrqPending) ? 0x20 : 0));
 				_irqStatus &= (uint8_t)~0x10;
 				_kbdRaiseIrq = false;
+				_counterIrqPending = false;
 				return status;
 			}
 
@@ -2306,6 +2326,7 @@ protected:
 				break;
 			case 0x41A3:
 				_irqEnabled = (value & 0x01) != 0;
+				_counterIrqPending = false;
 				if(!_irqEnabled) {
 					_lineIrqPending = false;
 				} else {
@@ -2402,7 +2423,7 @@ protected:
 		SV(_loadMode); SV(_placeUseB);
 		SV(_irqCounter);
 		SV(_irqEnabled);
-		SV(_lineCounter); SV(_lastIrqScanline); SV(_lineIrqPending);
+		SV(_lineCounter); SV(_lastIrqScanline); SV(_lineIrqPending); SV(_counterIrqPending);
 		SV(_irqStatus);
 		SV(_kbdCtrl); SV(_kbdClock); SV(_kbdData); SV(_kbdClockCount);
 		SV(_kbdLatch); SV(_kbdParity); SV(_kbdState); SV(_kbdRaiseIrq);
