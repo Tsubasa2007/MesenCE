@@ -34,6 +34,10 @@ namespace Mesen.Utilities
 		//not get a second ending when its running time would have been up
 		private static CancellationTokenSource? _running;
 
+		//A segment asked for while another was on screen. The machine that asks for these is
+		//not waiting on the answer, so the request outlives the window that blocked it.
+		private static (uint Lba, uint Sectors)? _queued;
+
 		//Opening a player takes a moment, and the clock here starts before it appears. Rather
 		//than cut the end off every video, give it a little longer than the machine asked for.
 		//Matches YuxingVcdDrive::SegmentTrack - "this is not a track number, it is an address"
@@ -58,10 +62,46 @@ namespace Mesen.Utilities
 				//A play asked for while one is already on screen. Leaving it in the machine
 				//would stall it until the request timed out, so take it and answer it at once
 				//rather than opening a second window on top of the first.
-				if(EmuApi.GetNesVideoPlayRequest(out _, out _, out _)) {
-					//Not a video that ended, so the transport does not carry on from it
-					EmuApi.NesVideoPlaybackEnded(false);
+				if(EmuApi.GetNesVideoPlayRequest(out byte held, out uint heldStart, out uint heldEnd)) {
+					//A machine held in its playback loop is waiting on the answer and must
+					//have it. One that is not held has already moved on and will not ask
+					//again, so its request is kept and shown when the screen is free -
+					//otherwise everything after the first is lost. Only the last is worth
+					//keeping: they are pages, and the machine is already on the newest.
+					if(held == SegmentTrack) {
+						lock(_lock) {
+							_queued = (heldStart, heldEnd);
+						}
+					} else {
+						//Not a video that ended, so the transport does not carry on from it
+						EmuApi.NesVideoPlaybackEnded(false);
+					}
 				}
+				return;
+			}
+
+			//Whatever came in while the last one was on screen
+			(uint Lba, uint Sectors)? queued;
+			lock(_lock) {
+				queued = _queued;
+				_queued = null;
+			}
+			if(queued.HasValue) {
+				lock(_lock) {
+					_playing = true;
+					_completed = false;
+				}
+				(uint lba, uint sectors) = queued.Value;
+				Task.Run(() => {
+					try {
+						if(!Start(SegmentTrack, lba, sectors)) {
+							Finish(false);
+						}
+					} catch(Exception ex) {
+						EmuApi.WriteLogEntry("[Video CD] " + ex.Message);
+						Finish(false);
+					}
+				});
 				return;
 			}
 
@@ -116,9 +156,22 @@ namespace Mesen.Utilities
 			//own address and length rather than anything the cue sheet names - see
 			//YuxingVcdDrive::TakePlayRequest.
 			if(track == SegmentTrack) {
-				if(string.IsNullOrEmpty(binPath)) {
+				if(string.IsNullOrEmpty(binPath) || !File.Exists(binPath)) {
+					EmuApi.WriteLogEntry($"[Video CD] segment at {startMsf}: no disc image behind {Path.GetFileName(discPath)}");
 					return false;
 				}
+				//Most of what these discs hold is a single frame - a page of the lesson.
+				//A player given one is a window that opens, shows it and closes again, once
+				//per page turn, which is worse to use than the blank screen it replaces. It
+				//was tried. Those pages want drawing where the machine would have drawn
+				//them, not showing somewhere else, so they wait for that.
+				double running = VideoCdTrack.SegmentRunningTime(binPath, startMsf, endMsf);
+				if(running < 1.0) {
+					EmuApi.WriteLogEntry($"[Video CD] segment at {startMsf} is a still - nothing here can show one");
+					return false;
+				}
+				EmuApi.WriteLogEntry($"[Video CD] segment at {startMsf}: {running:0.0}s, extracting");
+
 				VideoCdTrack item = new() {
 					Number = 1,
 					Lba = startMsf,
@@ -126,7 +179,9 @@ namespace Mesen.Utilities
 					SegmentName = $"Item at {startMsf}"
 				};
 				string itemPath = ExtractOnce(item, binPath, discPath, 0, 0);
-				return Launch(itemPath);
+				bool started = Launch(itemPath);
+				EmuApi.WriteLogEntry($"[Video CD] segment at {startMsf}: {(started ? "player opened" : "nothing opened it")} - {Path.GetFileName(itemPath)}");
+				return started;
 			}
 
 			VideoCdTrack? wanted = tracks.Find(t => t.Number == track + 1);
@@ -268,6 +323,9 @@ namespace Mesen.Utilities
 		//nothing else will ever come back for them.
 		public static void Reset()
 		{
+			lock(_lock) {
+				_queued = null;
+			}
 			CancellationTokenSource? cts;
 			List<string> files;
 			lock(_lock) {

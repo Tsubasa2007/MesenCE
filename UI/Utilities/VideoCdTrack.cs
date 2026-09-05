@@ -128,6 +128,21 @@ namespace Mesen.Utilities
 
 		//The pack clock at one sector, or the nearest one either side of it, so an item's
 		//running time can be had without walking all of it
+		//How long the item at an address runs for, or 0 if its clock never moves - which is
+		//what a still is. Used when the machine names an item directly rather than the disc
+		//offering one from its directory.
+		public static double SegmentRunningTime(string binPath, uint lba, uint sectors)
+		{
+			try {
+				using FileStream src = File.OpenRead(binPath);
+				double? first = SegmentClock(src, lba, false);
+				double? last = SegmentClock(src, lba + sectors - 1, true);
+				return first.HasValue && last.HasValue ? Math.Max(0, last.Value - first.Value) : 0;
+			} catch {
+				return 0;
+			}
+		}
+
 		private static double? SegmentClock(FileStream src, uint lba, bool searchBack)
 		{
 			byte[] sector = new byte[RawSectorSize];

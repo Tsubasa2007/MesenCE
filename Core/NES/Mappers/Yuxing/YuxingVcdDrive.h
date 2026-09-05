@@ -233,42 +233,23 @@ private:
 		return _segmentOrigin + (item - 1) * SegmentStride;
 	}
 
-	//The clock at the front of a sector, if it opens a pack. 90kHz, as the stream counts it.
-	bool PackClock(uint32_t lba, double& out)
-	{
-		size_t at = (size_t)lba * 0x800;
-		if(at + 16 > _image.size()) {
-			return false;
-		}
-		const uint8_t* p = _image.data() + at;
-		if(p[0] != 0x00 || p[1] != 0x00 || p[2] != 0x01 || p[3] != 0xBA || (p[4] & 0xF0) != 0x20) {
-			return false;
-		}
-		uint64_t scr = (uint64_t)((p[4] >> 1) & 7) << 30 | (uint64_t)p[5] << 22 |
-			(uint64_t)((p[6] >> 1) & 0x7F) << 15 | (uint64_t)p[7] << 7 | (uint64_t)((p[8] >> 1) & 0x7F);
-		out = (double)scr / 90000.0;
-		return true;
-	}
-
-	//Only the items that actually run. Most of what these discs carry is a single frame -
-	//a page of the lesson - and a still handed to a video player is a window that opens,
-	//shows one frame and closes again, once per page turn. Those are left alone until the
-	//picture can be drawn where it belongs.
+	//What the machine asked to show. Whether it is worth opening a player for is the front
+	//end's judgement, not the drive's: most of what these discs carry is a single frame, and
+	//it is the front end that knows what it can do with one.
 	void RequestSegmentItem(uint32_t item)
 	{
 		uint32_t lba = SegmentItemLba(item);
 		if(lba == 0) {
-			return;
-		}
-
-		double first = 0, last = 0;
-		if(!PackClock(lba, first) || !PackClock(lba + SegmentStride - 1, last) || last - first < 1.0) {
+			MessageManager::Log("[YuXing] Segment item " + std::to_string(item) +
+				" asked for, but this disc's item layout was not recognised");
 			return;
 		}
 
 		_playLba = lba;
 		_playSectors = SegmentStride;
 		_playPending = true;
+		MessageManager::Log("[YuXing] Program asked for segment item " + std::to_string(item) +
+			" (sector " + std::to_string(lba) + ")");
 	}
 
 	uint8_t KeyRead()
