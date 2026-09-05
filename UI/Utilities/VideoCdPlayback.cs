@@ -36,6 +36,9 @@ namespace Mesen.Utilities
 
 		//Opening a player takes a moment, and the clock here starts before it appears. Rather
 		//than cut the end off every video, give it a little longer than the machine asked for.
+		//Matches YuxingVcdDrive::SegmentTrack - "this is not a track number, it is an address"
+		private const byte SegmentTrack = 0xFF;
+
 		private static readonly TimeSpan StartupGrace = TimeSpan.FromSeconds(2);
 		//Extracted tracks are kept for the session: a title plays the same few over and over
 		private static readonly Dictionary<string, string> _extracted = new();
@@ -107,6 +110,25 @@ namespace Mesen.Utilities
 			}
 
 			List<VideoCdTrack> tracks = VideoCdTrack.ReadCueSheet(discPath, out string binPath);
+
+			//The YuXing machines do not ask for a stretch of a video track. Their video is
+			//held as segment items inside the one data track, so what arrives is the item's
+			//own address and length rather than anything the cue sheet names - see
+			//YuxingVcdDrive::TakePlayRequest.
+			if(track == SegmentTrack) {
+				if(string.IsNullOrEmpty(binPath)) {
+					return false;
+				}
+				VideoCdTrack item = new() {
+					Number = 1,
+					Lba = startMsf,
+					Sectors = endMsf,
+					SegmentName = $"Item at {startMsf}"
+				};
+				string itemPath = ExtractOnce(item, binPath, discPath, 0, 0);
+				return Launch(itemPath);
+			}
+
 			VideoCdTrack? wanted = tracks.Find(t => t.Number == track + 1);
 			if(wanted == null) {
 				//The scripts number the videos from one and the sheet counts the filesystem
@@ -119,6 +141,13 @@ namespace Mesen.Utilities
 			uint from = ToSectors(startMsf);
 			uint to = ToSectors(endMsf);
 			string outPath = ExtractOnce(wanted, binPath, discPath, from, to);
+			return Launch(outPath);
+		}
+
+		//Hand the file to whatever opens it, and hold the machine until either the window
+		//goes or the running time is up - whichever comes first.
+		private static bool Launch(string outPath)
+		{
 			Process? player = Process.Start(new ProcessStartInfo() { FileName = outPath, UseShellExecute = true });
 			if(player == null) {
 				//Nothing is registered for the file, or the shell handed it to something that
@@ -162,7 +191,7 @@ namespace Mesen.Utilities
 		{
 			//A stretch of a track is its own file: the same track appears several times over
 			//with different bounds, and they are not interchangeable.
-			string key = $"{binPath}#{wanted.Number}#{from}#{to}";
+			string key = $"{binPath}#{wanted.Number}#{wanted.Lba}#{from}#{to}";
 			lock(_lock) {
 				if(_extracted.TryGetValue(key, out string? cached) && File.Exists(cached)) {
 					return cached;
@@ -171,8 +200,9 @@ namespace Mesen.Utilities
 
 			string folder = VideoCdTrack.GetScratchFolder();
 			string span = to > from ? $" {from}-{to}" : "";
+			string name = wanted.IsSegment ? wanted.SegmentName ?? "Item" : $"Video {wanted.VideoNumber}";
 			string outPath = Path.Combine(folder,
-				Path.GetFileNameWithoutExtension(discPath) + $" - Video {wanted.VideoNumber}{span}.mpg");
+				Path.GetFileNameWithoutExtension(discPath) + $" - {name}{span}.mpg");
 			wanted.ExtractToFile(binPath, outPath, from, to);
 
 			lock(_lock) {

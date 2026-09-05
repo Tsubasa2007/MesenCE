@@ -113,6 +113,19 @@ private:
 	bool _keyboardSelected = false;
 	bool _readComplete = false;
 
+	//Segment items are allocated a fixed 150 sectors each, so item N lives at a constant
+	//stride from the first one. The directory is not a reliable way in: one disc lists 1081
+	//items of which 801 are placeholders with no extent at all, while the streams they name
+	//are present and readable at exactly the address this gives. Discovered from the lowest
+	//item the directory does describe, and confirmed against every other one it describes.
+	static constexpr uint32_t SegmentStride = 150;
+	uint32_t _segmentOrigin = 0;
+
+	//A video the machine has asked to show, waiting for the front end to take it
+	bool _playPending = false;
+	uint32_t _playLba = 0;
+	uint32_t _playSectors = 0;
+
 	const uint8_t* FindCommand(uint8_t cmd)
 	{
 		for(uint32_t i = 0; i < sizeof(CommandTable) / sizeof(CommandTable[0]); i++) {
@@ -173,6 +186,16 @@ private:
 				_pos = _seekPos;
 				break;
 
+			case 0xAC: {
+				//"Show this": the item number is the two bytes after the type. Nothing else
+				//on the disc is numbered anywhere near far enough for it to mean anything
+				//else - eleven entries in ENTRIES.VCD, twelve tracks, no play lists declared
+				//at all, against nearly two thousand segment items.
+				uint32_t item = ((uint32_t)_cmd[2] << 8) | _cmd[3];
+				RequestSegmentItem(item);
+				break;
+			}
+
 			case 0xA5:
 				if(_baseSector[2] == 0xFF) {
 					//First seek of the session - home to the image's base sector
@@ -199,6 +222,53 @@ private:
 				_seekPos = _pos;
 				break;
 		}
+	}
+
+	//Where a segment item's stream begins, or 0 if this disc has none
+	uint32_t SegmentItemLba(uint32_t item)
+	{
+		if(_segmentOrigin == 0 || item == 0) {
+			return 0;
+		}
+		return _segmentOrigin + (item - 1) * SegmentStride;
+	}
+
+	//The clock at the front of a sector, if it opens a pack. 90kHz, as the stream counts it.
+	bool PackClock(uint32_t lba, double& out)
+	{
+		size_t at = (size_t)lba * 0x800;
+		if(at + 16 > _image.size()) {
+			return false;
+		}
+		const uint8_t* p = _image.data() + at;
+		if(p[0] != 0x00 || p[1] != 0x00 || p[2] != 0x01 || p[3] != 0xBA || (p[4] & 0xF0) != 0x20) {
+			return false;
+		}
+		uint64_t scr = (uint64_t)((p[4] >> 1) & 7) << 30 | (uint64_t)p[5] << 22 |
+			(uint64_t)((p[6] >> 1) & 0x7F) << 15 | (uint64_t)p[7] << 7 | (uint64_t)((p[8] >> 1) & 0x7F);
+		out = (double)scr / 90000.0;
+		return true;
+	}
+
+	//Only the items that actually run. Most of what these discs carry is a single frame -
+	//a page of the lesson - and a still handed to a video player is a window that opens,
+	//shows one frame and closes again, once per page turn. Those are left alone until the
+	//picture can be drawn where it belongs.
+	void RequestSegmentItem(uint32_t item)
+	{
+		uint32_t lba = SegmentItemLba(item);
+		if(lba == 0) {
+			return;
+		}
+
+		double first = 0, last = 0;
+		if(!PackClock(lba, first) || !PackClock(lba + SegmentStride - 1, last) || last - first < 1.0) {
+			return;
+		}
+
+		_playLba = lba;
+		_playSectors = SegmentStride;
+		_playPending = true;
 	}
 
 	uint8_t KeyRead()
@@ -293,6 +363,24 @@ public:
 	string GetDiscFilename() { return _discPath; }
 	bool IsReadComplete() { return _readComplete; }
 
+	//The video the machine asked to show. A segment item is not a track of its own - it
+	//sits inside the data track at an absolute address - so it is handed over as one,
+	//which is what the sentinel track number says.
+	static constexpr uint8_t SegmentTrack = 0xFF;
+	bool TakePlayRequest(uint8_t& track, uint32_t& lba, uint32_t& sectors)
+	{
+		if(!_playPending) {
+			return false;
+		}
+		_playPending = false;
+		track = SegmentTrack;
+		lba = _playLba;
+		sectors = _playSectors;
+		return true;
+	}
+
+	void EndPlayback(bool) { }
+
 	//An ISO9660 directory record: length at 0, extent LBA at 2, data length at 10, flags at
 	//25, name length at 32, name at 33. Walks one directory looking for a name, and reports
 	//where what it found lives.
@@ -331,6 +419,78 @@ public:
 	//A whole-disc image begins with the disc's own filesystem; the drive's view has to begin
 	//with a program, which is what a single extracted .bin already hands it. Catalogue what the
 	//disc holds so one of them can be picked.
+	//Where /SEGMENT's items begin. Every item the directory describes properly sits on a
+	//150-sector boundary from the first, so the origin is read off the lowest one described
+	//and then checked against the rest: if they do not all agree this is not a disc laid out
+	//the way the arithmetic assumes, and nothing is claimed for it.
+	void ScanSegmentOrigin()
+	{
+		_segmentOrigin = 0;
+
+		const uint8_t* root = _image.data() + 16 * 0x800 + 156;
+		uint32_t rootLba = 0, rootLen = 0;
+		memcpy(&rootLba, root + 2, 4);
+		memcpy(&rootLen, root + 10, 4);
+
+		uint32_t segLba = 0, segLen = 0;
+		if(!FindIsoEntry(rootLba, rootLen, "SEGMENT", true, segLba, segLen)) {
+			return;
+		}
+		if((uint64_t)segLba * 0x800 + segLen > _image.size()) {
+			return;
+		}
+
+		uint32_t imageSectors = (uint32_t)(_image.size() / 0x800);
+		uint32_t origin = 0;
+		uint32_t agreed = 0, seen = 0;
+
+		const uint8_t* dir = _image.data() + (size_t)segLba * 0x800;
+		for(uint32_t pos = 0; pos < segLen; ) {
+			uint8_t len = dir[pos];
+			if(len == 0) {
+				pos = (pos / 0x800 + 1) * 0x800;
+				continue;
+			}
+			if(pos + len > segLen) {
+				break;
+			}
+
+			uint8_t nameLen = dir[pos + 32];
+			const char* name = (const char*)(dir + pos + 33);
+			//ITEMnnnn.DAT - the number is what the machine asks for
+			if(nameLen >= 12 && memcmp(name, "ITEM", 4) == 0) {
+				uint32_t item = 0;
+				bool digits = true;
+				for(int i = 4; i < 8; i++) {
+					if(name[i] < '0' || name[i] > '9') { digits = false; break; }
+					item = item * 10 + (uint32_t)(name[i] - '0');
+				}
+
+				uint32_t lba = 0;
+				memcpy(&lba, dir + pos + 2, 4);
+				if(digits && item > 0 && lba > 0 && lba < imageSectors) {
+					uint32_t candidate = lba - (item - 1) * SegmentStride;
+					seen++;
+					if(origin == 0) {
+						origin = candidate;
+						agreed = 1;
+					} else if(candidate == origin) {
+						agreed++;
+					}
+				}
+			}
+			pos += len;
+		}
+
+		//One disagreement is enough to drop it: the address would be a guess everywhere else
+		//as well, and a guess here reads a stream out of the middle of another item.
+		if(seen > 0 && agreed == seen) {
+			_segmentOrigin = origin;
+			MessageManager::Log("[YuXing] Segment items begin at sector " + std::to_string(origin) +
+				" (" + std::to_string(seen) + " confirming)");
+		}
+	}
+
 	bool ScanIsoPrograms()
 	{
 		if(_image.size() < 17 * 0x800 || memcmp(_image.data() + 16 * 0x800 + 1, "CD001", 5) != 0) {
@@ -560,6 +720,7 @@ public:
 		//and the disc's programs are offered through the media list, which is as close to the
 		//player's own menu as this can get without decoding the MPEG stills it was drawn from.
 		if(ScanIsoPrograms()) {
+			ScanSegmentOrigin();
 			LoadProgramNames(imagePath);
 			_disc.clear();
 			_programIndex = -1;
@@ -577,6 +738,8 @@ public:
 
 	void EjectDisc()
 	{
+		_segmentOrigin = 0;
+		_playPending = false;
 		_disc.clear();
 		_image.clear();
 		_programs.clear();

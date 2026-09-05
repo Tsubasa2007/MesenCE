@@ -1297,6 +1297,15 @@ public:
 	//NesConsole::GetVideoDiscPath.
 	string GetVcdDiscPath() { return _vcd.GetDiscFilename(); }
 
+	//A video the disc's own program has asked to show. The drive decides what is worth
+	//handing over; this is only the way out to the front end - see NesConsole.
+	bool TakeVideoPlayRequest(uint8_t& track, uint32_t& lba, uint32_t& sectors)
+	{
+		return _vcd.TakePlayRequest(track, lba, sectors);
+	}
+
+	void EndVideoPlayback(bool completed) { _vcd.EndPlayback(completed); }
+
 	string GetCurrentDiskFilename()
 	{
 		if(!_fdc.IsDiskInserted() && _vcd.GetProgramIndex() >= 0) {

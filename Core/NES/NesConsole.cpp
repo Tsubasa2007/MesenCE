@@ -506,6 +506,11 @@ bool NesConsole::TakeVideoPlayRequest(uint8_t& track, uint32_t& startMsf, uint32
 	if(DrPcJrMapper* pcjr = dynamic_cast<DrPcJrMapper*>(_mapper.get())) {
 		return pcjr->TakeVideoPlayRequest(track, startMsf, endMsf);
 	}
+	//The YuXing machines ask for a segment item rather than a stretch of a video track, so
+	//what comes back is an absolute address and a length under a sentinel track number.
+	if(YuxingMapper* yuxing = dynamic_cast<YuxingMapper*>(_mapper.get())) {
+		return yuxing->TakeVideoPlayRequest(track, startMsf, endMsf);
+	}
 	return false;
 }
 
@@ -513,6 +518,9 @@ void NesConsole::EndVideoPlayback(bool completed)
 {
 	if(DrPcJrMapper* pcjr = dynamic_cast<DrPcJrMapper*>(_mapper.get())) {
 		pcjr->EndVideoPlayback(completed);
+	}
+	if(YuxingMapper* yuxing = dynamic_cast<YuxingMapper*>(_mapper.get())) {
+		yuxing->EndVideoPlayback(completed);
 	}
 }
 
