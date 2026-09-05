@@ -1,9 +1,10 @@
-#pragma once
+﻿#pragma once
 #include "pch.h"
 #include "Shared/MessageManager.h"
 #include "Utilities/FolderUtilities.h"
 #include "Utilities/StringUtilities.h"
 #include "Utilities/Serializer.h"
+#include "NES/Mappers/CdImageFile.h"
 
 //YuXing VCD drive - the CD-ROM the V9.2 models boot their software from, emulated at the
 //command level rather than the disc level. Ported from the VirtuaNES-BBK fork
@@ -72,10 +73,10 @@ private:
 		{ 0xAF, 2, 0x06 }
 	};
 
-	//What the drive serves: one program's bytes. A whole-disc image is kept beside it in
-	//_image so another program can be selected without re-reading the file.
+	//What the drive serves: one program's bytes. The disc it came off stays on disk and is
+	//read from as programs are picked, rather than being held here - see CdImageFile.
 	vector<uint8_t> _disc;
-	vector<uint8_t> _image;
+	CdImageFile _image;
 	vector<DiscProgram> _programs;
 	int32_t _programIndex = -1;
 	string _discPath;
@@ -323,12 +324,11 @@ public:
 		}
 
 		const DiscProgram& program = _programs[index];
-		size_t start = (size_t)program.Lba * 0x800;
-		if(start + program.Size > _image.size()) {
+		_disc = _image.ReadRange((uint64_t)program.Lba * 0x800, program.Size);
+		if(_disc.empty()) {
 			return false;
 		}
 
-		_disc.assign(_image.begin() + start, _image.begin() + start + program.Size);
 		_programIndex = (int32_t)index;
 		return true;
 	}
@@ -367,11 +367,12 @@ public:
 	//where what it found lives.
 	bool FindIsoEntry(uint32_t dirLba, uint32_t dirLen, string prefix, bool wantDir, uint32_t& outLba, uint32_t& outLen)
 	{
-		if((uint64_t)dirLba * 0x800 + dirLen > _image.size()) {
+		vector<uint8_t> record = _image.ReadRange((uint64_t)dirLba * 0x800, dirLen);
+		if(record.empty()) {
 			return false;
 		}
 
-		const uint8_t* dir = _image.data() + (size_t)dirLba * 0x800;
+		const uint8_t* dir = record.data();
 		uint32_t pos = 0;
 		while(pos < dirLen) {
 			uint8_t recLen = dir[pos];
@@ -408,24 +409,30 @@ public:
 	{
 		_segmentOrigin = 0;
 
-		const uint8_t* root = _image.data() + 16 * 0x800 + 156;
+		vector<uint8_t> rootRecord = _image.ReadRange(16 * 0x800 + 156, 34);
+		if(rootRecord.empty()) {
+			return;
+		}
+
 		uint32_t rootLba = 0, rootLen = 0;
-		memcpy(&rootLba, root + 2, 4);
-		memcpy(&rootLen, root + 10, 4);
+		memcpy(&rootLba, rootRecord.data() + 2, 4);
+		memcpy(&rootLen, rootRecord.data() + 10, 4);
 
 		uint32_t segLba = 0, segLen = 0;
 		if(!FindIsoEntry(rootLba, rootLen, "SEGMENT", true, segLba, segLen)) {
 			return;
 		}
-		if((uint64_t)segLba * 0x800 + segLen > _image.size()) {
+
+		vector<uint8_t> record = _image.ReadRange((uint64_t)segLba * 0x800, segLen);
+		if(record.empty()) {
 			return;
 		}
 
-		uint32_t imageSectors = (uint32_t)(_image.size() / 0x800);
+		uint32_t imageSectors = (uint32_t)(_image.Size() / 0x800);
 		uint32_t origin = 0;
 		uint32_t agreed = 0, seen = 0;
 
-		const uint8_t* dir = _image.data() + (size_t)segLba * 0x800;
+		const uint8_t* dir = record.data();
 		for(uint32_t pos = 0; pos < segLen; ) {
 			uint8_t len = dir[pos];
 			if(len == 0) {
@@ -474,11 +481,13 @@ public:
 
 	bool ScanIsoPrograms()
 	{
-		if(_image.size() < 17 * 0x800 || memcmp(_image.data() + 16 * 0x800 + 1, "CD001", 5) != 0) {
+		//The primary volume descriptor at sector 16, and the root directory record inside it
+		vector<uint8_t> pvd = _image.ReadRange(16 * 0x800, 0x800);
+		if(pvd.empty() || memcmp(pvd.data() + 1, "CD001", 5) != 0) {
 			return false;
 		}
 
-		const uint8_t* root = _image.data() + 16 * 0x800 + 156;
+		const uint8_t* root = pvd.data() + 156;
 		uint32_t rootLba = 0, rootLen = 0;
 		memcpy(&rootLba, root + 2, 4);
 		memcpy(&rootLen, root + 10, 4);
@@ -575,11 +584,12 @@ public:
 	//Every file in one directory, in the order the disc lists them
 	void CollectIsoFiles(uint32_t dirLba, uint32_t dirLen)
 	{
-		if((uint64_t)dirLba * 0x800 + dirLen > _image.size()) {
+		vector<uint8_t> record = _image.ReadRange((uint64_t)dirLba * 0x800, dirLen);
+		if(record.empty()) {
 			return;
 		}
 
-		const uint8_t* dir = _image.data() + (size_t)dirLba * 0x800;
+		const uint8_t* dir = record.data();
 		uint32_t pos = 0;
 		while(pos < dirLen) {
 			uint8_t recLen = dir[pos];
@@ -605,7 +615,7 @@ public:
 					program.Name = program.Name.substr(0, version);
 				}
 
-				if(program.Size > 0 && (uint64_t)program.Lba * 0x800 + program.Size <= _image.size()) {
+				if(program.Size > 0 && (uint64_t)program.Lba * 0x800 + program.Size <= _image.Size()) {
 					_programs.push_back(program);
 				}
 			}
@@ -658,44 +668,13 @@ public:
 		std::transform(ext.begin(), ext.end(), ext.begin(), [](char c) { return (char)::tolower((uint8_t)c); });
 		string imagePath = ext == ".cue" ? ResolveCueSheet(path) : path;
 
-		ifstream file(imagePath, ios::in | ios::binary);
-		if(!file) {
-			return false;
-		}
-
-		file.seekg(0, ios::end);
-		size_t size = (size_t)file.tellg();
-		file.seekg(0, ios::beg);
-
-		//A whole disc is ~700MB at most; a single program is a few hundred KB
-		if(size == 0 || size > 800 * 1024 * 1024) {
-			return false;
-		}
-
-		vector<uint8_t> raw((size_t)size);
-		file.read((char*)raw.data(), size);
-
-		//A raw dump carries the full 2352-byte sector: 12 sync bytes, a 4-byte header, an
-		//8-byte subheader on Mode 2, then the payload, then EDC/ECC. The drive only ever
-		//serves payload, so flatten it here and everything downstream keeps working on plain
-		//2KB sectors. Anything else (a .iso, or a single extracted program) is already flat.
-		static const uint8_t Sync[12] = { 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00 };
-		_image.clear();
 		_programs.clear();
 		_programIndex = -1;
-
-		if(size >= 2352 && size % 2352 == 0 && memcmp(raw.data(), Sync, sizeof(Sync)) == 0) {
-			size_t sectors = size / 2352;
-			_image.resize(sectors * 0x800);
-			for(size_t i = 0; i < sectors; i++) {
-				//Form 2 carries 2324 bytes and no EDC/ECC, but only its first 2048 are ever
-				//addressed the way this drive addresses data
-				memcpy(_image.data() + i * 0x800, raw.data() + i * 2352 + 24, 0x800);
-			}
-			MessageManager::Log("[YuXing] Disc image: " + std::to_string(sectors) + " raw sectors flattened to 2KB");
-		} else {
-			_image = std::move(raw);
+		if(!_image.Open(imagePath)) {
+			return false;
 		}
+
+		MessageManager::Log("[YuXing] Disc image: " + std::to_string(_image.SectorCount()) + " sectors");
 
 		//A disc holds programs. None is started here - the machine comes up on its own side
 		//and the disc's programs are offered through the media list, which is as close to the
@@ -707,9 +686,9 @@ public:
 			_programIndex = -1;
 			Reset();
 		} else {
-			//Not a disc - a single extracted program, which is already the drive's view
-			_disc = std::move(_image);
-			_image.clear();
+			//Not a disc - a single extracted program, which is the whole of the drive's view
+			_disc = _image.ReadRange(0, _image.Size());
+			_image.Close();
 			Reset();
 		}
 
@@ -722,7 +701,7 @@ public:
 		_segmentOrigin = 0;
 		_playPending = false;
 		_disc.clear();
-		_image.clear();
+		_image.Close();
 		_programs.clear();
 		_programIndex = -1;
 		_discPath.clear();

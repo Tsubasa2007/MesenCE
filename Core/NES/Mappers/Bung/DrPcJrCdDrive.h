@@ -1,8 +1,9 @@
-#pragma once
+﻿#pragma once
 #include "pch.h"
 #include "Shared/MessageManager.h"
 #include "Utilities/FolderUtilities.h"
 #include "Utilities/StringUtilities.h"
+#include "NES/Mappers/CdImageFile.h"
 #include "Utilities/Serializer.h"
 
 //The CD drive the KW machines' player front end talks to, over $41AE/$41AF.
@@ -30,7 +31,10 @@ class DrPcJrCdDrive final : public ISerializable
 {
 private:
 	//Flattened to 2KB user data per sector, the way every caller wants to address it
-	vector<uint8_t> _image;
+	//The disc stays on disk and is read from as the machine asks for it - see CdImageFile.
+	CdImageFile _image;
+	//What a placed transfer hands the mapper a pointer to, held until the next one
+	vector<uint8_t> _placed;
 	bool _present = false;
 	string _discPath;
 
@@ -141,19 +145,25 @@ public:
 		return path;
 	}
 
-	bool IsMounted() { return !_image.empty(); }
+	bool IsMounted() { return _image.IsOpen(); }
 
 	//The drive has a transfer to carry out itself. The mapper owns the memory, so it does
 	//the placing; this only says what and how much.
 	bool TakePlacedTransfer(const uint8_t*& data, uint32_t& len)
 	{
-		if(_placeLen == 0 || _placePos >= _image.size()) {
+		if(_placeLen == 0 || _placePos >= _image.Size()) {
 			_placeLen = 0;
 			return false;
 		}
-		len = std::min(_placeLen, (uint32_t)(_image.size() - _placePos));
-		data = _image.data() + _placePos;
+
+		len = std::min(_placeLen, (uint32_t)(_image.Size() - _placePos));
+		_placed = _image.ReadRange(_placePos, len);
 		_placeLen = 0;
+		if(_placed.empty()) {
+			return false;
+		}
+
+		data = _placed.data();
 		return true;
 	}
 
@@ -163,7 +173,7 @@ public:
 	bool IsPresent() { return _present; }
 	void SetPresent(bool present) { _present = present; }
 	string GetDiscPath() { return _discPath; }
-	uint32_t GetSectorCount() { return (uint32_t)(_image.size() / 0x800); }
+	uint32_t GetSectorCount() { return (uint32_t)_image.SectorCount(); }
 
 	//The sheet's INDEX 01 lines, counted. Only how many there are is wanted here - the
 	//machine asks for a track count and a running time, not for where each one starts.
@@ -185,33 +195,8 @@ public:
 		string ext = path.size() >= 4 ? path.substr(path.size() - 4) : string();
 		std::transform(ext.begin(), ext.end(), ext.begin(), [](char c) { return (char)::tolower((uint8_t)c); });
 		string imagePath = ext == ".cue" ? ResolveCueSheet(path) : path;
-		ifstream file(imagePath, ios::in | ios::binary);
-		if(!file) {
+		if(!_image.Open(imagePath)) {
 			return false;
-		}
-
-		file.seekg(0, ios::end);
-		size_t size = (size_t)file.tellg();
-		file.seekg(0, ios::beg);
-		if(size == 0 || size > 800 * 1024 * 1024) {
-			return false;
-		}
-
-		vector<uint8_t> raw(size);
-		file.read((char*)raw.data(), size);
-
-		//A raw dump carries the whole 2352-byte sector: 12 sync bytes, a 4-byte header, an
-		//8-byte subheader on Mode 2, then the payload. Only the payload is ever addressed,
-		//so flatten it and let everything downstream work in plain 2KB sectors.
-		static const uint8_t Sync[12] = { 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00 };
-		if(size >= 2352 && size % 2352 == 0 && memcmp(raw.data(), Sync, sizeof(Sync)) == 0) {
-			size_t sectors = size / 2352;
-			_image.resize(sectors * 0x800);
-			for(size_t i = 0; i < sectors; i++) {
-				memcpy(_image.data() + i * 0x800, raw.data() + i * 2352 + 24, 0x800);
-			}
-		} else {
-			_image = std::move(raw);
 		}
 
 		_discPath = path;
@@ -233,7 +218,8 @@ public:
 
 	void EjectDisc()
 	{
-		_image.clear();
+		_image.Close();
+		_placed.clear();
 		_discPath.clear();
 		Reset();
 	}
@@ -269,7 +255,15 @@ public:
 		if(_replyLen == 0) {
 			if(_streamLeft > 0) {
 				_streamLeft--;
-				return _streamPos < _image.size() ? _image[_streamPos++] : 0x00;
+				uint8_t data = 0;
+				//A byte at a time out of the disc, which is where the machine reads a
+				//program from. CdImageFile keeps the sector it last touched, so only a
+				//sector boundary costs a read.
+				if(!_image.Read(_streamPos, 1, &data)) {
+					data = 0x00;
+				}
+				_streamPos++;
+				return data;
 			}
 			return 0;
 		}
