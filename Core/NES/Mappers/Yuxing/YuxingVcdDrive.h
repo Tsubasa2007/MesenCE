@@ -36,9 +36,40 @@ class YuxingVcdDrive
 {
 private:
 	//Commands the drive answers, as {command, byte count, status byte}
-	static constexpr uint8_t CommandTable[6][3] = {
+	static constexpr uint8_t CommandTable[11][3] = {
 		{ 0x00, 1, 0x01 }, { 0x96, 1, 0x69 }, { 0xAA, 1, 0x06 },
-		{ 0x06, 1, 0x00 }, { 0x15, 1, 0x00 }, { 0xA5, 6, 0x06 }
+		{ 0x06, 1, 0x00 }, { 0x15, 1, 0x00 }, { 0xA5, 6, 0x06 },
+
+		//The set above is everything the BIOS asks for, which is all a program that only
+		//wants its own bytes off the disc ever needs. A program that drives the disc as a
+		//player - telling it what to put on screen and where to put the pointer over it -
+		//speaks a wider vocabulary, and a command missing from this table is not merely
+		//ignored: the status byte keeps whatever the previous command left, so the answer
+		//the program reads back is a stale one from a question it did not ask. It retries
+		//forever.
+		//
+		//Every length here is the packet the program itself assembles, counted from the
+		//code that builds it: a command byte, its parameters, and a checksum that is the
+		//sum of everything before it. Each is acknowledged with $06, which is the value
+		//the program compares against in each case.
+		//
+		//Answering them is not the same as showing anything. A program written this way
+		//draws nothing of its own - no pattern-table writes, no sprites, rendering left on
+		//over an empty name table - because every pixel it means the machine to show is a
+		//still or a sequence off the disc, composited by the drive. Until that is decoded
+		//the screen stays the colour of the backdrop, which is what the hardware itself
+		//would show with the video switched off - not a fault in the link below.
+		{ 0xA6, 6, 0x06 },  //place the pointer: a shape number, then its two coordinates -
+		                    //one byte for the short axis, a 16-bit pair for the long one.
+		                    //The program keeps all three in zero page and steps them by a
+		                    //fixed amount per key press, which is its whole response to
+		                    //input: it hit-tests the pointer against a table of rectangles
+		                    //and never puts it on screen itself.
+		{ 0xAC, 6, 0x06 },  //show something: a type in the low bits of the first parameter,
+		                    //then a 16-bit number naming what
+		{ 0xA8, 3, 0x06 },  //one parameter byte
+		{ 0xAD, 2, 0x06 },  //report status - answered again below
+		{ 0xAF, 2, 0x06 }
 	};
 
 	//What the drive serves: one program's bytes. A whole-disc image is kept beside it in
@@ -57,6 +88,12 @@ private:
 	uint8_t _cmdSel = 0;
 	uint8_t _keyByteIndex = 0;
 	uint8_t _shiftIn = 0;
+
+	//A second answer, for the one command that is asked a question rather than told to do
+	//something. See UpdateStatus.
+	uint8_t _followUp = 0;
+	bool _hasFollowUp = false;
+	int32_t _shiftCount = 0;
 	uint8_t _status = 0;
 	int32_t _cmdIndex = 0;
 
@@ -105,6 +142,18 @@ private:
 		_cmdIndex = 0;
 
 		switch(pCmd[0]) {
+			case 0xAD:
+				//The only command that answers twice: the acknowledgement, and then a
+				//byte the program reads straight afterwards. It keeps the low seven bits
+				//and requires the top nibble to be $A, so the shape of the answer is
+				//fixed even though what the drive would put in the rest of it is not.
+				//The two bits it then tests are the ones that would say the drive is
+				//busy; nothing here is, so they stay clear.
+				_followUp = 0xA0;
+				_hasFollowUp = true;
+				_shiftCount = 0;
+				break;
+
 			case 0x06:
 				if(_baseSector[2] == 0xFE) {
 					memcpy(_baseSector, &_cmd[1], 3);
@@ -173,7 +222,9 @@ public:
 		_cmdSel = _keyByteIndex = _shiftIn = _status = 0;
 		_keySend = 0;
 		_keySelect = 0;
-		_pos = _basePos = _seekPos = _cmdIndex = _keySendBit = 0;
+		_pos = _basePos = _seekPos = _cmdIndex = _keySendBit = _shiftCount = 0;
+		_followUp = 0;
+		_hasFollowUp = false;
 		_move = _shifting = _canReadData = _seekOk = _readComplete = _keyboardSelected = false;
 		_driveSelected = true;
 		_baseSector[2] = 0xFF;
@@ -630,7 +681,18 @@ public:
 				bool used = true;
 				switch(value) {
 					case 2: _move = true; _shifting = false; break;
-					case 4: _status >>= 1; _shifting = true; break;
+					case 4:
+						_status >>= 1; _shifting = true;
+						//The status byte leaves one bit at a time, so the eighth shift is
+						//the end of it and where a second answer has to be waiting.
+						if(++_shiftCount >= 8) {
+							_shiftCount = 0;
+							if(_hasFollowUp) {
+								_status = _followUp;
+								_hasFollowUp = false;
+							}
+						}
+						break;
 					case 6: if(!_shifting) { UpdateStatus(); } break;
 					default: used = false; break;
 				}
@@ -673,6 +735,7 @@ public:
 		SV(_cmdSel); SV(_keyByteIndex); SV(_shiftIn); SV(_status); SV(_cmdIndex);
 		SV(_pos); SV(_basePos); SV(_seekPos);
 		SV(_keySend); SV(_keySendBit); SV(_keySelect);
+		SV(_followUp); SV(_hasFollowUp); SV(_shiftCount);
 		SV(_move); SV(_shifting); SV(_canReadData); SV(_seekOk);
 		SV(_driveSelected); SV(_keyboardSelected); SV(_readComplete);
 		SV(_programIndex);
