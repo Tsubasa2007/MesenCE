@@ -4,6 +4,7 @@
 #include "Utilities/FolderUtilities.h"
 #include "Utilities/StringUtilities.h"
 #include "NES/Mappers/CdImageFile.h"
+#include "NES/Mappers/CdSegmentIndex.h"
 #include "Utilities/Serializer.h"
 
 //The CD drive the KW machines' player front end talks to, over $41AE/$41AF.
@@ -174,6 +175,9 @@ public:
 	void SetPresent(bool present) { _present = present; }
 	string GetDiscPath() { return _discPath; }
 	uint32_t GetSectorCount() { return (uint32_t)_image.SectorCount(); }
+
+	//The stretches of the segment area that hold video, for a front end to offer
+	vector<CdVideoReel> GetVideoReels() { return CdSegmentIndex::FindVideoReels(_image); }
 
 	//The sheet's INDEX 01 lines, counted. Only how many there are is wanted here - the
 	//machine asks for a track count and a running time, not for where each one starts.

@@ -119,6 +119,29 @@ namespace Mesen.Interop
 			}, 2000);
 		}
 
+		[DllImport(DllPath, EntryPoint = "GetNesVideoReels")] private static extern void GetNesVideoReelsWrapper(IntPtr outList, Int32 maxLength);
+		//Where the video on the mounted disc is. These discs keep nearly all of it as segment
+		//items rather than as tracks, and only the core knows how those are addressed - see
+		//CdSegmentIndex. Empty when there is no disc, or nothing on it that plays.
+		public static List<VideoCdReel> GetNesVideoReels()
+		{
+			string raw = Utf8Utilities.CallStringApi((IntPtr outList, Int32 maxLength) => {
+				GetNesVideoReelsWrapper(outList, maxLength);
+			}, 100000);
+
+			List<VideoCdReel> reels = new();
+			foreach(string entry in raw.Split(new string[] { "[!|!]" }, StringSplitOptions.RemoveEmptyEntries)) {
+				string[] parts = entry.Split(',');
+				if(parts.Length == 5 &&
+					uint.TryParse(parts[0], out uint lba) && uint.TryParse(parts[1], out uint sectors) &&
+					uint.TryParse(parts[2], out uint content) && uint.TryParse(parts[3], out uint first) &&
+					uint.TryParse(parts[4], out uint count)) {
+					reels.Add(new VideoCdReel(lba, sectors, content, first, count));
+				}
+			}
+			return reels;
+		}
+
 		//The video the running machine has asked to play, if any. True once per request - the
 		//machine's program is stopped until NesVideoPlaybackEnded() answers it.
 		[DllImport(DllPath)][return: MarshalAs(UnmanagedType.I1)] public static extern bool GetNesVideoPlayRequest(out byte track, out UInt32 startMsf, out UInt32 endMsf);

@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "NES/NesConsole.h"
 #include "NES/NesControlManager.h"
 #include "NES/MapperFactory.h"
@@ -497,6 +497,20 @@ string NesConsole::GetVideoDiscPath()
 		return yuxing->GetVcdDiscPath();
 	}
 	return "";
+}
+
+//Where the video on the mounted disc is. These discs keep nearly all of it as segment items
+//rather than as tracks, and the addressing that reaches those is the drive's own - so it is
+//answered here rather than worked out again by whoever is asking.
+vector<CdVideoReel> NesConsole::GetVideoReels()
+{
+	if(DrPcJrMapper* pcjr = dynamic_cast<DrPcJrMapper*>(_mapper.get())) {
+		return pcjr->GetVideoReels();
+	}
+	if(YuxingMapper* yuxing = dynamic_cast<YuxingMapper*>(_mapper.get())) {
+		return yuxing->GetVideoReels();
+	}
+	return {};
 }
 
 //A video the machine has asked to play. It is waiting on the answer, so whoever takes the

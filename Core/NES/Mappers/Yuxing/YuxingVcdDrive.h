@@ -5,6 +5,7 @@
 #include "Utilities/StringUtilities.h"
 #include "Utilities/Serializer.h"
 #include "NES/Mappers/CdImageFile.h"
+#include "NES/Mappers/CdSegmentIndex.h"
 
 //YuXing VCD drive - the CD-ROM the V9.2 models boot their software from, emulated at the
 //command level rather than the disc level. Ported from the VirtuaNES-BBK fork
@@ -114,12 +115,12 @@ private:
 	bool _keyboardSelected = false;
 	bool _readComplete = false;
 
-	//Segment items are allocated a fixed 150 sectors each, so item N lives at a constant
-	//stride from the first one. The directory is not a reliable way in: one disc lists 1081
-	//items of which 801 are placeholders with no extent at all, while the streams they name
-	//are present and readable at exactly the address this gives. Discovered from the lowest
-	//item the directory does describe, and confirmed against every other one it describes.
-	static constexpr uint32_t SegmentStride = 150;
+	//Segment items are allocated a fixed stride each, so item N lives at a constant distance
+	//from the first one. The directory is not a reliable way in: one disc lists 1081 items of
+	//which 801 are placeholders with no extent at all, while the streams they name are
+	//present and readable at exactly the address this gives. Where the first one is comes
+	//from CdSegmentIndex, which works it out from the records that do describe one.
+	static constexpr uint32_t SegmentStride = CdSegmentIndex::SegmentStride;
 	uint32_t _segmentOrigin = 0;
 
 	//A video the machine has asked to show, waiting for the front end to take it
@@ -407,76 +408,18 @@ public:
 	//the way the arithmetic assumes, and nothing is claimed for it.
 	void ScanSegmentOrigin()
 	{
-		_segmentOrigin = 0;
-
-		vector<uint8_t> rootRecord = _image.ReadRange(16 * 0x800 + 156, 34);
-		if(rootRecord.empty()) {
-			return;
+		uint32_t confirming = 0;
+		_segmentOrigin = CdSegmentIndex::FindOrigin(_image, confirming);
+		if(_segmentOrigin > 0) {
+			MessageManager::Log("[YuXing] Segment items begin at sector " + std::to_string(_segmentOrigin) +
+				" (" + std::to_string(confirming) + " confirming)");
 		}
+	}
 
-		uint32_t rootLba = 0, rootLen = 0;
-		memcpy(&rootLba, rootRecord.data() + 2, 4);
-		memcpy(&rootLen, rootRecord.data() + 10, 4);
-
-		uint32_t segLba = 0, segLen = 0;
-		if(!FindIsoEntry(rootLba, rootLen, "SEGMENT", true, segLba, segLen)) {
-			return;
-		}
-
-		vector<uint8_t> record = _image.ReadRange((uint64_t)segLba * 0x800, segLen);
-		if(record.empty()) {
-			return;
-		}
-
-		uint32_t imageSectors = (uint32_t)(_image.Size() / 0x800);
-		uint32_t origin = 0;
-		uint32_t agreed = 0, seen = 0;
-
-		const uint8_t* dir = record.data();
-		for(uint32_t pos = 0; pos < segLen; ) {
-			uint8_t len = dir[pos];
-			if(len == 0) {
-				pos = (pos / 0x800 + 1) * 0x800;
-				continue;
-			}
-			if(pos + len > segLen) {
-				break;
-			}
-
-			uint8_t nameLen = dir[pos + 32];
-			const char* name = (const char*)(dir + pos + 33);
-			//ITEMnnnn.DAT - the number is what the machine asks for
-			if(nameLen >= 12 && memcmp(name, "ITEM", 4) == 0) {
-				uint32_t item = 0;
-				bool digits = true;
-				for(int i = 4; i < 8; i++) {
-					if(name[i] < '0' || name[i] > '9') { digits = false; break; }
-					item = item * 10 + (uint32_t)(name[i] - '0');
-				}
-
-				uint32_t lba = 0;
-				memcpy(&lba, dir + pos + 2, 4);
-				if(digits && item > 0 && lba > 0 && lba < imageSectors) {
-					uint32_t candidate = lba - (item - 1) * SegmentStride;
-					seen++;
-					if(origin == 0) {
-						origin = candidate;
-						agreed = 1;
-					} else if(candidate == origin) {
-						agreed++;
-					}
-				}
-			}
-			pos += len;
-		}
-
-		//One disagreement is enough to drop it: the address would be a guess everywhere else
-		//as well, and a guess here reads a stream out of the middle of another item.
-		if(seen > 0 && agreed == seen) {
-			_segmentOrigin = origin;
-			MessageManager::Log("[YuXing] Segment items begin at sector " + std::to_string(origin) +
-				" (" + std::to_string(seen) + " confirming)");
-		}
+	//The stretches of the segment area that hold video, for a front end to offer
+	vector<CdVideoReel> GetVideoReels()
+	{
+		return CdSegmentIndex::FindVideoReels(_image);
 	}
 
 	bool ScanIsoPrograms()

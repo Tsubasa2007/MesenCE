@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "pch.h"
 #include "NES/BaseMapper.h"
 #include "NES/BaseNesPpu.h"
@@ -1296,6 +1296,9 @@ public:
 	//The image in the disc drive, for a front end that wants to look inside it - see
 	//NesConsole::GetVideoDiscPath.
 	string GetVcdDiscPath() { return _vcd.GetDiscFilename(); }
+
+	//Where the video on the mounted disc is - see CdSegmentIndex
+	vector<CdVideoReel> GetVideoReels() { return _vcd.GetVideoReels(); }
 
 	//A video the disc's own program has asked to show. The drive decides what is worth
 	//handing over; this is only the way out to the front end - see NesConsole.

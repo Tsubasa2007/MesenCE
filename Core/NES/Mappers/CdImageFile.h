@@ -146,6 +146,17 @@ public:
 		return true;
 	}
 
+	//The subheader's submode byte, which says what a sector carries: bits 1 to 3 are video,
+	//audio and data, and a sector with none of them is the padding an item's allocation is
+	//made up to. A flat image has no subheader, so everything on one counts as data.
+	uint8_t SubmodeAt(uint64_t sector)
+	{
+		if(!_raw) {
+			return sector < _sectorCount ? 0x08 : 0x00;
+		}
+		return LoadSector(sector) ? _cache[18] : 0x00;
+	}
+
 	//The same, as a buffer. Empty when the range does not fit on the disc.
 	vector<uint8_t> ReadRange(uint64_t offset, uint64_t length)
 	{

@@ -1,5 +1,6 @@
-#pragma once
+﻿#pragma once
 #include "pch.h"
+#include "NES/Mappers/CdSegmentIndex.h"
 
 #include "Shared/SettingTypes.h"
 #include "Shared/Interfaces/IConsole.h"
@@ -84,6 +85,7 @@ public:
 	vector<string> GetBbkDiskList(int32_t& currentIndex);
 	bool IsBbkGame();
 	string GetVideoDiscPath();
+	vector<CdVideoReel> GetVideoReels();
 	bool TakeVideoPlayRequest(uint8_t& track, uint32_t& startMsf, uint32_t& endMsf);
 	void EndVideoPlayback(bool completed);
 	NesSoundMixer* GetSoundMixer() { return _mixer.get(); }

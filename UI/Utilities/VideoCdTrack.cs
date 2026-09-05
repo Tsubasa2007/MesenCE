@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Mesen.Interop;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -13,6 +14,10 @@ namespace Mesen.Utilities
 	//draws 8x8 tiles out of a 64-colour palette - the picture on a real machine comes from a
 	//separate decoder chip which is not emulated. Opening the track outside the emulator is
 	//not that feature; it is a way to see what is on the disc.
+	//One stretch of a disc's segment area that holds video, as the core reports it - see
+	//CdSegmentIndex on the other side of the interop boundary.
+	public readonly record struct VideoCdReel(uint Lba, uint Sectors, uint ContentSectors, uint FirstItem, uint ItemCount);
+
 	public class VideoCdTrack
 	{
 		//Track 1 is the filesystem and is not offered, so numbering starts at 2
@@ -138,200 +143,33 @@ namespace Mesen.Utilities
 			return items;
 		}
 
-		//The fixed allocation one segment play item gets, whatever it holds. The same stride
-		//the core addresses them by - see YuxingVcdDrive::SegmentStride.
-		private const uint SegmentStride = 150;
-
-		//How much of an item is read to say what it carries. An item holding video holds it
-		//in every sector of its allocation, so the front of one settles it: against a full
-		//read of every disc here, four sectors already give the same answer as all hundred
-		//and fifty, and this leaves margin.
-		private const uint ClassifyDepth = 8;
-
-		private enum ItemContent
-		{
-			Empty,
-			Still,
-			Audio,
-			Video
-		}
-
 		//The video on one of these discs, as something that can go in a menu.
 		//
-		//An item is two seconds long, so a lesson is hundreds of them in a row and listing
-		//them one at a time gives a menu of a thousand entries. What a disc actually holds is
-		//a handful of stretches of video with gaps between them, and those are what this
-		//returns: consecutive items carrying video, joined into one entry each. The discs
-		//here come to between three and twenty-nine of them, of one to fifteen minutes.
+		//An item is two seconds long, so a lesson is hundreds of them in a row and listing them
+		//one at a time gives a menu of a thousand entries. What a disc holds is a handful of
+		//stretches of video with gaps between them, and those are what this offers.
 		//
-		//Where the items are is not asked of the directory. Three quarters of its records are
-		//placeholders naming sector zero on some of these discs, so the items are addressed
-		//the way the machine addresses them - the Nth begins at origin + (N-1) * 150 - and
-		//the directory is used only to find where the first one is.
-		public static List<VideoCdTrack> ReadVideoReels(string binPath)
+		//Where they are is the core's answer, not one worked out again here: the items are
+		//addressed the way the machine addresses them rather than through the disc's directory,
+		//which on some of these is three quarters placeholders. See CdSegmentIndex.
+		public static List<VideoCdTrack> ReadVideoReels()
 		{
 			List<VideoCdTrack> reels = new();
-			try {
-				using FileStream src = File.OpenRead(binPath);
-				uint origin = FindSegmentOrigin(src);
-				if(origin == 0) {
-					return reels;
-				}
-
-				uint end = FindSegmentEnd(src, origin);
-				uint slots = end > origin ? (end - origin) / SegmentStride : 0;
-				uint runStart = 0;
-				uint runLength = 0;
-				uint runContent = 0;
-				//One past the last, so a run reaching the end of the area is closed too
-				for(uint i = 0; i <= slots; i++) {
-					if(i < slots && ClassifyItem(src, origin + i * SegmentStride) == ItemContent.Video) {
-						if(runLength == 0) {
-							runStart = i;
-						}
-						runLength++;
-						runContent += ItemFill(src, origin + i * SegmentStride);
-						continue;
-					}
-
-					if(runLength > 0) {
-						reels.Add(new VideoCdTrack() {
-							Number = reels.Count + 1,
-							Lba = origin + runStart * SegmentStride,
-							Sectors = runLength * SegmentStride,
-							ContentSectors = runContent,
-							IsReel = true,
-							//Numbered the way the disc numbers its items, which is also what
-							//the machine names in a play command
-							SegmentName = runLength > 1
-								? $"Items {runStart + 1}-{runStart + runLength}"
-								: $"Item {runStart + 1}"
-						});
-						runLength = 0;
-						runContent = 0;
-					}
-				}
-			} catch(Exception) {
-				//Not an ISO at all, or the disc went away while it was being read
+			foreach(VideoCdReel reel in EmuApi.GetNesVideoReels()) {
+				reels.Add(new VideoCdTrack() {
+					Number = reels.Count + 1,
+					Lba = reel.Lba,
+					Sectors = reel.Sectors,
+					ContentSectors = reel.ContentSectors,
+					//Numbered the way the disc numbers its items, which is also what the machine
+					//names in a play command
+					SegmentName = reel.ItemCount > 1
+						? $"Items {reel.FirstItem}-{reel.FirstItem + reel.ItemCount - 1}"
+						: $"Item {reel.FirstItem}",
+					IsReel = true
+				});
 			}
 			return reels;
-		}
-
-		//Where item 1 begins. Every record naming a real sector has to agree on it: the
-		//layout is arithmetic, so a record that does not fit it means this is not that
-		//layout and nothing here can be trusted to address the rest.
-		private static uint FindSegmentOrigin(FileStream src)
-		{
-			uint imageSectors = (uint)(src.Length / RawSectorSize);
-			uint origin = 0;
-			foreach((string Name, uint Lba, uint Size) item in ReadIsoDirectory(src, "SEGMENT")) {
-				//A placeholder record, which most of them are on some of these discs
-				if(item.Lba == 0 || item.Lba >= imageSectors) {
-					continue;
-				}
-
-				Match number = Regex.Match(item.Name, @"^ITEM(\d+)", RegexOptions.IgnoreCase);
-				if(!number.Success || !uint.TryParse(number.Groups[1].Value, out uint index) || index == 0) {
-					continue;
-				}
-
-				uint before = (index - 1) * SegmentStride;
-				if(item.Lba < before) {
-					return 0;
-				}
-
-				uint candidate = item.Lba - before;
-				if(origin == 0) {
-					origin = candidate;
-				} else if(origin != candidate) {
-					return 0;
-				}
-			}
-			return origin;
-		}
-
-		//The items run up to the first video track, or to the end of the image on a disc
-		//that has none - most of these carry their video as items and no tracks at all.
-		private static uint FindSegmentEnd(FileStream src, uint origin)
-		{
-			uint end = (uint)(src.Length / RawSectorSize);
-			foreach((string Name, uint Lba, uint Size) track in ReadIsoDirectory(src, "MPEGAV")) {
-				if(track.Name.StartsWith("AVSEQ", StringComparison.OrdinalIgnoreCase) && track.Lba > origin && track.Lba < end) {
-					end = track.Lba;
-				}
-			}
-			return end;
-		}
-
-		//How many of an item's 150 sectors carry anything. The used ones sit at the front of
-		//the allocation and the padding behind them - checked across nine hundred items on
-		//these discs, without exception - so the boundary is found by halving rather than by
-		//reading all of it. Subheader bits 1 to 3 say video, audio and data; a sector with
-		//none of them is padding, and is what ExtractToFile drops.
-		private static uint ItemFill(FileStream src, uint lba)
-		{
-			byte[] sector = new byte[RawSectorSize];
-			uint low = 0;
-			uint high = SegmentStride;
-			while(low < high) {
-				uint middle = (low + high) / 2;
-				long at = (long)(lba + middle) * RawSectorSize;
-				if(at + RawSectorSize > src.Length) {
-					high = middle;
-					continue;
-				}
-				src.Seek(at, SeekOrigin.Begin);
-				if(src.Read(sector, 0, RawSectorSize) != RawSectorSize || (sector[18] & 0x0E) == 0) {
-					high = middle;
-				} else {
-					low = middle + 1;
-				}
-			}
-			return low;
-		}
-
-		//What an item carries, from the stream ids in the front of it. 0xE0 is the video a
-		//lesson is made of, 0xE1 the single-frame pages its menus are drawn from, and 0xC0
-		//the narration that plays over one of those. Only the first is worth an entry: a
-		//page wants drawing where the machine would have drawn it, and two seconds of
-		//narration on its own is not something to pick out of a list.
-		private static ItemContent ClassifyItem(FileStream src, uint lba)
-		{
-			byte[] sector = new byte[RawSectorSize];
-			bool still = false;
-			bool audio = false;
-			for(uint i = 0; i < ClassifyDepth; i++) {
-				long at = (long)(lba + i) * RawSectorSize;
-				if(at + RawSectorSize > src.Length) {
-					break;
-				}
-				src.Seek(at, SeekOrigin.Begin);
-				if(src.Read(sector, 0, RawSectorSize) != RawSectorSize) {
-					break;
-				}
-				if(PackClock(sector) == null) {
-					//Blank padding, or the tail of the allocation
-					continue;
-				}
-
-				//Mode 2 form 2 carries 2324 bytes and form 1 the usual 2048, and the packets
-				//begin after the twelve-byte pack header
-				int limit = PayloadOffset + ((sector[18] & 0x20) != 0 ? PayloadSize : 2048);
-				int pos = PayloadOffset + 12;
-				while(pos + 6 <= limit && sector[pos] == 0x00 && sector[pos + 1] == 0x00 && sector[pos + 2] == 0x01) {
-					byte id = sector[pos + 3];
-					if(id == 0xB9) {
-						break;
-					}
-					if(id == 0xE0) {
-						return ItemContent.Video;
-					}
-					still |= id == 0xE1;
-					audio |= id == 0xC0;
-					pos += 6 + ((sector[pos + 4] << 8) | sector[pos + 5]);
-				}
-			}
-			return still ? ItemContent.Still : audio ? ItemContent.Audio : ItemContent.Empty;
 		}
 
 		//The pack clock at one sector, or the nearest one either side of it, so an item's

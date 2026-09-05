@@ -1,4 +1,4 @@
-#include "Common.h"
+﻿#include "Common.h"
 #include "Core/Shared/Emulator.h"
 #include "Core/Shared/EmuSettings.h"
 #include "Core/Shared/Video/VideoDecoder.h"
@@ -234,6 +234,29 @@ extern "C"
 
 	//True while a BBK learning machine game/BIOS is running, regardless of how many disk images
 	//are available - lets the UI show the disk menu (and its Change Folder option) on an empty folder.
+	//Where the video on the mounted disc is, for the UI's "play from the disc" menu. Format:
+	//"<lba>,<sectors>,<contentSectors>,<firstItem>,<itemCount>[!|!]..." - see CdSegmentIndex
+	//for what one of these is and why the disc's own directory is not what says so.
+	DllExport void __stdcall GetNesVideoReels(char* outBuffer, uint32_t maxLength)
+	{
+		std::ostringstream out;
+		//Reading a disc meets whatever is on it, and anything thrown here crosses the interop
+		//boundary as the useless "external component has thrown an exception"
+		try {
+			if(NesConsole* nes = dynamic_cast<NesConsole*>(_emu->GetConsole().get())) {
+				for(CdVideoReel& reel : nes->GetVideoReels()) {
+					out << reel.Lba << "," << reel.Sectors << "," << reel.ContentSectors << ","
+						<< reel.FirstItem << "," << reel.ItemCount << "[!|!]";
+				}
+			}
+		} catch(std::exception& ex) {
+			MessageManager::Log(string("[Video CD] Could not read the disc's items: ") + ex.what());
+			out.str("");
+		}
+
+		StringUtilities::CopyToBuffer(out.str(), outBuffer, maxLength);
+	}
+
 	//The path of the disc the running machine has mounted, so the UI can offer its video
 	//tracks to an external player. Empty when there is no disc, or no drive to hold one.
 	DllExport void __stdcall GetNesVideoDiscPath(char* outBuffer, uint32_t maxLength)

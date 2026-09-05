@@ -397,7 +397,7 @@ namespace Mesen.ViewModels
 					if(_videoBinPath.Length > 0) {
 						//The stretches of video held as segment items, which on these discs is
 						//where nearly all of it is - see ReadVideoReels.
-						List<VideoCdTrack> reels = VideoCdTrack.ReadVideoReels(_videoBinPath);
+						List<VideoCdTrack> reels = VideoCdTrack.ReadVideoReels();
 						_videoTracks.AddRange(reels);
 						if(reels.Count == 0) {
 							//Nothing but single frames on this one, so its pages are the whole of
