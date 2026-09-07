@@ -760,6 +760,15 @@ private:
 	uint8_t _kbdCtrl = 0x03;
 	bool _kbdClock = false;
 	bool _kbdData = true;
+	//How long the keyboard holds each half of its clock, in processor cycles. The line
+	//is bit banged at both ends: the keyboard drives the clock and the machine watches
+	//it in a loop, so a keyboard that clocks faster than that loop can follow simply
+	//loses bits. 64 cycles is inside what a PS/2 keyboard is allowed to do and the two
+	//32KB machines keep up with it, but the KW3000 does not - its text mode dropped
+	//every keystroke, for ever, while its handler ran and threw the byte away. Twice
+	//that is the shortest clean period it reads reliably.
+	static constexpr int32_t KbdClockHalfPeriod = 128;
+
 	int32_t _kbdClockCount = 0;
 	int32_t _kbdLatch = 0;
 	int32_t _kbdParity = 0;
@@ -1042,7 +1051,7 @@ private:
 			//last byte left it reads as a start bit that never ends, and software that waits
 			//for the line to go quiet before talking to the keyboard waits forever.
 			_kbdData = true;
-			if(!_kbdClock && !(_kbdClockCount++ & 0x3F)) {
+			if(!_kbdClock && !(_kbdClockCount++ % KbdClockHalfPeriod)) {
 				_kbdClock = true;
 			}
 			if((_kbdCtrl & 0x01) && !(_kbdCtrl & 0x02)) {
@@ -1068,7 +1077,7 @@ private:
 		}
 
 		if(_kbdState >= KbdStateRecvStartBit) {
-			if((_kbdClockCount++ & 0x3F) != 0) {
+			if((_kbdClockCount++ % KbdClockHalfPeriod) != 0) {
 				return;
 			}
 			_kbdClock = !_kbdClock;
@@ -1776,6 +1785,22 @@ protected:
 				return InternalReadVram(addr);
 			}
 		} else {
+			//Nothing keys this substitution when the machine came up off a disc. The type is
+			//sniffed out of the floppy's system area, so with no floppy in the drive it is
+			//simply unknown, and the bank built here is the one a floppy-loaded program would
+			//have wanted. The machine's own text mode is the case that reaches this: it draws
+			//from the ordinary CHR banking, and substituting a bank under it left every cell
+			//pointing at blank memory - a DOS screen that had its font loaded, its palette set
+			//and its text on the nametable, and still came out black.
+			if(_cd.IsPresent() && _diskType == 0) {
+				//The glyph is the second half of the pair and it is the only plane the
+				//screen has: the first half is filler, all ones. Read as an ordinary two
+				//plane tile it comes out inverted - every cell at least colour 1, so the
+				//page is white and the text is the darker entry, and the black the palette
+				//keeps in entry 0 is never reached at all.
+				return (addr & 0x08) ? 0x00 : InternalReadVram((uint16_t)(addr | 0x08));
+			}
+
 			bank = (uint32_t)((_regs[0x18] << 1) | autoBank);
 			if(_logoMode || (_romType == 0 && _diskType == 1) ||
 				((_romType == 1 || _romType == 2) && _diskType == 3) || IsBwinBanner(ntOffset)) {
@@ -2135,11 +2160,17 @@ protected:
 				//Answering zero left the browser unable to move its cursor or start
 				//anything, which reads from the outside as a machine that has hung.
 				//
-				//The KW pair do not do this - they read their keyboard over $418E instead -
-				//and their BIOS polls $4017 looking for a serial mouse the hardware reports
-				//as absent, where it wants a clean zero rather than the open bus a
-				//controller would leave there, or the poll sees phantom data.
-				if(_romType == 0 && addr == 0x4016) {
+				//The KW pair do not drive a browser that way - they read their keyboard over
+				//$418E instead - but $4016 is a real port on them all the same, and a program
+				//holding the machine without the window polls it exactly as a cartridge does:
+				//strobe, then eight reads. Their own disc menu is one of those, strobing and
+				//reading it about a hundred times a frame, and the fixed zero this answered
+				//with left the pad dead there and in anything else that runs in that mode.
+				//
+				//$4017 stays at zero: their BIOS polls it looking for a serial mouse the
+				//hardware reports as absent, where it wants a clean zero rather than the open
+				//bus a controller would leave there, or the poll sees phantom data.
+				if(addr == 0x4016) {
 					return NesControls()->ReadRam(addr);
 				}
 				return 0;
@@ -2356,6 +2387,22 @@ protected:
 					_lastIrqScanline = _console->GetPpu()->GetCurrentScanline();
 				}
 				_console->GetCpu()->ClearIrqSource(IRQSource::External);
+				break;
+
+			case 0x41A4:
+				//The arrangement, written by the program that is running rather than by
+				//whoever launched it. It is the same two-bit field $42FC-$42FF carries,
+				//and the modes that defer to that field read it from here just the same.
+				//
+				//A converted cartridge drives this the way the cartridge drove its own,
+				//which is twice a frame: the arrangement above the split and the one
+				//below it differ, and a title screen that draws itself once and a scene
+				//that scrolls past the height of the display both depend on it. Dropped,
+				//as this did, the arrangement stayed at whatever the launcher left and a
+				//page that should have been the one below turned out to be the one
+				//already on screen.
+				_mirroring = value & 0x03;
+				MirrorSync();
 				break;
 
 			case 0x41A5:
