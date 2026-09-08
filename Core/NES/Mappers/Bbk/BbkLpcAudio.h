@@ -303,6 +303,11 @@ private:
 	bool IsPlainStream() { return _variant == LpcVariant::Yuxing || _variant == LpcVariant::DrPcJr; }
 
 	//Byte FIFO fed by $FF18 writes
+	//Where the block being decoded ends, for the boundary above
+	uint32_t _phraseEnd = 0;
+	bool _phraseEndValid = false;
+	bool _blockUnderrun = false;
+
 	uint8_t _fifo[FifoSize] = {};
 	uint32_t _fifoReadPos = 0;
 	uint32_t _fifoWritePos = 0;
@@ -365,6 +370,14 @@ private:
 		}
 
 		if(_bitsLeft < bits) {
+			//The block this frame belongs to has no bytes left, so the bits still cached are
+			//the padding its last byte was filled out with. Taking the next block's first
+			//byte here would splice the two together and shift everything after it; the
+			//caller throws the half-read frame away instead.
+			if(_phraseEndValid && _fifoReadPos == _phraseEnd) {
+				_blockUnderrun = true;
+				return 0;
+			}
 			_dataCache <<= 8;
 			if(GetFifoCount() > 0) {
 				_dataCache |= ByteRev(_fifo[_fifoReadPos]);
@@ -664,6 +677,17 @@ private:
 		if(_state == LpcState::Run) {
 			if(count >= FrameBytesNeeded) {
 				SynthesizeFrame();
+				if(_blockUnderrun) {
+					//That frame ran off the end of the block. Drop it and the padding behind
+					//it, and open the next block on a byte boundary with a clean synth.
+					_blockUnderrun = false;
+					_phraseEndValid = false;
+					_bitsLeft = 0;
+					_dataCache = 0;
+					ResetSynth();
+					_pcmPos = SamplesPerFrame;
+					return;
+				}
 				_pcmPos = 0;
 			}
 		}
@@ -718,6 +742,7 @@ protected:
 	{
 		SVArray(_fifo, FifoSize);
 		SV(_fifoReadPos); SV(_fifoWritePos);
+		SV(_phraseEnd); SV(_phraseEndValid); SV(_blockUnderrun);
 
 		SV(_framePrev.Energy); SV(_framePrev.Pitch);
 		SV(_frameCurr.Energy); SV(_frameCurr.Pitch);
@@ -772,9 +797,23 @@ public:
 	void WriteControl(uint8_t value)
 	{
 		if(_regFF10 == 0 && (value & 0x01)) {
-			ResetSynth();
-			_pcmPos = SamplesPerFrame;
-			_fifoReadPos = _fifoWritePos = 0;
+			//The Dr. PC Jr. machines end every block of a phrase with a control write, and
+			//they send it the moment the chip reports ready - which is up to BusyThreshold
+			//bytes before it has spoken what it holds. Flushing there threw away 16% of one
+			//lesson disc's speech and cut the end off its words. Remember where the block
+			//ends instead: the tail is still decoded, and the reset happens when the decoder
+			//reaches the boundary. The other machines reset between phrases with a drained
+			//buffer, so nothing changes for them.
+			if(_variant == LpcVariant::DrPcJr && GetFifoCount() > 0) {
+				if(!_phraseEndValid) {
+					_phraseEnd = _fifoWritePos;
+					_phraseEndValid = true;
+				}
+			} else {
+				ResetSynth();
+				_pcmPos = SamplesPerFrame;
+				_fifoReadPos = _fifoWritePos = 0;
+			}
 		}
 		_regFF10 = value & 0x01;
 	}
