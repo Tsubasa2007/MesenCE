@@ -126,8 +126,9 @@ private:
 	static constexpr uint8_t MachineMmc1 = 2;
 	static constexpr uint8_t MachineMmc3 = 3;
 
-	//The 32KB SRAM lives at the top of the work RAM allocation
-	static constexpr uint32_t SramBase = 0x80000;
+	//The 32KB SRAM lives at the top of the work RAM allocation, above a megabyte of
+	//program RAM - see WideBanking for when the window reaches past its first half
+	static constexpr uint32_t SramBase = 0x100000;
 
 	uint8_t _regs[0x40] = {};
 
@@ -1272,24 +1273,35 @@ private:
 	//$4183: bits 4-7 mask the PRG bank number, bits 0-3 the CHR one
 	uint8_t PrgMask() { return (_regs[0x03] >> 4) & 0x0F; }
 
+	//$41B5 bit 6 widens that field by one bit, so the program window reaches the whole
+	//megabyte of program RAM rather than its low half. A game handed the machine over
+	//leaves the bit clear; the machine's own windowed software sets it, a disc sets it, and
+	//so does a program that unpacks a megabyte of itself into RAM and runs from there. This
+	//follows what the guest asked for rather than which machine is running, so a program
+	//that stays inside 512KB banks exactly as it did before on either of them.
+	bool WideBanking() { return (_regs[0x35] & 0x40) != 0; }
+
 	//Where a CPU address reads from once the BIOS has left load mode and is running out of
 	//PRG-RAM. Returns the offset into work RAM, so the write path can use it too.
 	uint32_t SystemBankOffset(uint16_t addr)
 	{
 		switch(NewPrgSize()) {
 			case 0: {
-				//Four 8KB banks, $4190-$4193
-				uint32_t bank = _regs[0x10 + (((addr >> 12) >> 1) & 3)] & ((PrgMask() << 2) | 3);
+				//Four 8KB banks, $4190-$4193 - six bits of bank number, seven when wide
+				uint32_t mask = WideBanking() ? ((PrgMask() << 3) | 7) : ((PrgMask() << 2) | 3);
+				uint32_t bank = _regs[0x10 + (((addr >> 12) >> 1) & 3)] & mask;
 				return bank * 0x2000 + (addr & 0x1FFF);
 			}
 			case 1: {
 				//Two 16KB banks, $4190 and $4192
-				uint32_t bank = _regs[0x10 + (((addr >> 12) >> 1) & 2)] & ((PrgMask() << 1) | 1);
+				uint32_t mask = WideBanking() ? ((PrgMask() << 2) | 3) : ((PrgMask() << 1) | 1);
+				uint32_t bank = _regs[0x10 + (((addr >> 12) >> 1) & 2)] & mask;
 				return bank * 0x4000 + (addr & 0x3FFF);
 			}
 			default: {
 				//One 32KB bank, $4190 - note it covers $8000-$FFFF here, where the same
-				//register in load mode covers $6000-$DFFF instead
+				//register in load mode covers $6000-$DFFF instead. Nothing seen here runs
+				//in this shape with the wide field set, so it is left as it was.
 				uint32_t bank = _regs[0x10] & PrgMask();
 				return bank * 0x8000 + (addr & 0x7FFF);
 			}
@@ -1497,7 +1509,16 @@ private:
 		switch((_regs[0x02] >> 4) & 0x07) {
 			case 0: SetMirroringType(MirroringType::ScreenAOnly); break;
 			case 1: SetMirroringType(MirroringType::ScreenBOnly); break;
-			case 2: SetMirroringType(MirroringType::Vertical); break;
+			//Case 2 names one of the two-screen arrangements, and which one is in bit 0 of
+			//the register itself. Two floppy programs settle it. One draws its title into
+			//$2000 and then clears $2800, so those have to be separate pages - held to
+			//vertical the clear wiped the title and the screen came up black but for a band
+			//drawn afterwards; it writes $A0. The other writes mode 2 for its overworld and
+			//needs them the other way round - held to horizontal its bottom two thirds
+			//stayed black; it writes $A1. The mode is bits 4-6, so bit 0 is free to carry
+			//the choice, and it is the only thing that separates the two: both hand over at
+			//$42FF with $00, so the field there cannot tell them apart.
+			case 2: SetMirroringType((_regs[0x02] & 1) ? MirroringType::Vertical : MirroringType::Horizontal); break;
 			case 3: SetMirroringType(MirroringType::Horizontal); break;
 
 			case 4:
@@ -2642,7 +2663,13 @@ protected:
 				break;
 
 			case 0x42FC: case 0x42FD: case 0x42FE: case 0x42FF:
-				//Enter game mode and set the mirroring $4182 can defer to
+				//Enter game mode and set the arrangement the deferring $4182 modes read.
+				//Leave this decode alone: mode 2 answers from its own bit 0 rather than from
+				//here, and modes 4-7 do read this field. A disc game that ends on mode 5 with
+				//nothing but what the loader handed over - it never writes $41A4 to replace
+				//it - takes its arrangement from these two bits, and reading them any wider
+				//turned that game's screen into one page tiled. Most disc games overwrite the
+				//field before they draw, so a sweep of them says nothing about this.
 				_mirroring = (uint8_t)((addr & 1 ? 2 : 0) | (value & 0x10 ? 1 : 0));
 				//A game off a disc hands over here, and from this point the machine is a
 				//cartridge rather than a learning machine
