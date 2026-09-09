@@ -189,7 +189,14 @@ private:
 		//CPY #$80 / NOP #$71 / ASL $C9 / LDY #$90 and running the processor into the $02 two
 		//bytes later, which jams it. The machine is a cartridge now; its own mouse is not
 		//part of that.
-		if(!_mouseEnabled || _loadMode || GameWindow()) {
+		//A disc game owns $8000-$FFFF as its own PRG-RAM, so the report has nowhere to go:
+		//depositing it writes three bytes of the running program. GameWindow() alone does not
+		//cover it - a game that asked for the MachineNew personality leaves the window shape to
+		//the machine, so that test reads false while the game is very much in charge. One of
+		//them keeps a text-copy loop's DEX/BNE at $FFAB and had it replaced by the packet on
+		//every poll, which left the loop copying one byte instead of the whole string: its
+		//results screen showed the first letter of every line and nothing else.
+		if(!_mouseEnabled || _loadMode || GameWindow() || (IsDiscGame() && !MouseSlotIsOurs())) {
 			return;
 		}
 
@@ -256,6 +263,50 @@ private:
 		}
 	}
 
+	//Whether $FFAB-$FFAD is still the machine's to write. Asked only of a disc game: nothing
+	//else takes that memory over, and a floppy program that scribbles across it would other-
+	//wise lock itself out of the mouse for good, with no way back.
+	//
+	//A program launched off a disc owns the system page as its own PRG-RAM, and one of them
+	//keeps a text-copy loop's DEX/BNE at exactly $FFAB - the packet replaced it on every poll
+	//and its strings reached the screen as their first letter alone. But holding the deposit
+	//back for every disc program is too broad the other way: a disc's own menu is driven with
+	//the mouse, reads the report once a frame, and clears the first byte to acknowledge it.
+	//
+	//So ask the memory rather than the media. What sits there is either zero, because a report
+	//was just taken, or the report last left untaken. Anything else belongs to whoever owns
+	//that memory now. Refusing leaves those bytes alone, so once a program has put its own
+	//code there the answer stays refused for as long as it is running.
+	//
+	//All three bytes are compared. The last two of a report are always $80-$BF, which the
+	//loop's $D0/$F7 can never be, so a game's code cannot pass as a report - which it would
+	//under a test on the first byte alone, since that loop begins with $CA.
+	//
+	//None of this would be needed if the mouse were read where the hardware reads it. The
+	//machine asks for one by writing $4016 and then polls the port, but nothing answers, so
+	//the packet is written into the BIOS's own variable instead of being decoded out of the
+	//port by the BIOS itself. Serving those reads would retire this test and the media one
+	//beside it, and with them the question of who owns the memory.
+	bool MouseSlotIsOurs()
+	{
+		if(!_gameLaunched) {
+			return true;
+		}
+
+		uint32_t offset = SystemBankOffset(0xFFAB);
+		if(offset + 2 >= _workRamSize) {
+			return false;
+		}
+
+		if(_workRam[offset] == 0) {
+			return true;
+		}
+
+		return _workRam[offset] == _mouseReport[0] &&
+			_workRam[offset + 1] == _mouseReport[1] &&
+			_workRam[offset + 2] == _mouseReport[2];
+	}
+
 	//The last report built, kept so an untaken one can be re-armed without drawing fresh
 	//movement out of the device. See MousePoll.
 	uint8_t _mouseReport[3] = { 0xC0, 0x80, 0x80 };
@@ -274,6 +325,7 @@ private:
 	bool _autoBank = false;
 	//Set by a write to $42FC-$42FF: a disc game has taken the machine over
 	bool _gameLaunched = false;
+	bool _bungDiskGame = false;
 	//What a write to $8000-$FFFF means once a game has taken the machine over. The game is
 	//a converted cartridge and still banks itself the way its own board did, and the
 	//hand-over value at $42FC-$42FF says which board that was: 0 and 7 do not bank at all,
@@ -289,6 +341,7 @@ private:
 	uint8_t _gameChip = 0;
 	DrPcJrMmc1 _mmc1;
 	DrPcJrMmc3 _mmc3;
+	DrPcJrMmc2 _mmc2;
 	//The game's eight 1KB CHR pages. A board that moves a whole 8KB at a time fills
 	//these from _gameChrBank; the two controllers name them one by one.
 	uint16_t _gameChrPages[8] = { 0, 1, 2, 3, 4, 5, 6, 7 };
@@ -1214,6 +1267,8 @@ private:
 	//$4181: bits 4-5 machine mode, bits 2-3 PRG bank size, bits 0-1 CHR bank size
 	uint8_t MachineMode() { return (_regs[0x01] >> 4) & 0x03; }
 	uint8_t NewPrgSize() { return (_regs[0x01] >> 2) & 0x03; }
+	//$4181 bit 7: the CHR registers become an MMC2, see DrPcJrMmc2
+	bool Mmc2Mode() { return (_regs[0x01] & 0x80) != 0; }
 	//$4183: bits 4-7 mask the PRG bank number, bits 0-3 the CHR one
 	uint8_t PrgMask() { return (_regs[0x03] >> 4) & 0x0F; }
 
@@ -1371,6 +1426,18 @@ private:
 			return;
 		}
 		uint8_t chrMask = _regs[0x03] & 0x0F;
+
+		//One 4KB bank per pattern table, each picked by its own latch rather than named
+		//outright. The width field still masks it, so a game asking for more banks than its
+		//CHR holds folds the same way it would in the plain forms.
+		if(Mmc2Mode()) {
+			uint8_t mask = (uint8_t)((chrMask << 3) | 7);
+			for(int i = 0; i < 8; i++) {
+				SelectChrPage(i, (uint16_t)((_mmc2.Bank((uint8_t)(i >> 2)) & mask) * 4 + (i & 3)));
+			}
+			return;
+		}
+
 		switch(_regs[0x01] & 0x03) {
 			case 0: {
 				uint8_t mask = (uint8_t)((chrMask << 5) | 31);
@@ -1495,14 +1562,49 @@ private:
 	//two shapes that ask about CHR have to look for it.
 	uint8_t GameChrBankCount()
 	{
+		if(!HasLoaderSignature()) {
+			return 0;
+		}
+		return _console->GetMemoryManager()->GetInternalRam()[0x609];
+	}
+
+	//The disc loader stamps its name into the machine's RAM at $600 as it hands over. The
+	//reference looks for exactly this to decide a disk carries one of the disc games.
+	bool HasLoaderSignature()
+	{
 		uint8_t* ram = _console->GetMemoryManager()->GetInternalRam();
 		static const char* Magic = "FC GAMES";
 		for(int i = 0; i < 8; i++) {
 			if(ram[0x600 + i] != (uint8_t)Magic[i]) {
-				return 0;
+				return false;
 			}
 		}
-		return ram[0x609];
+		return true;
+	}
+
+	//A game that banks its nametables out of CHR RAM. Two things qualify, and neither of
+	//them is "a program started": the machine must be running a disc image, or be one of
+	//the two 32KB machines that has seen the disc loader's signature go into RAM. Bit 6 of
+	//$4181 then excludes the machine's own games, which keep the ordinary nametables.
+	//
+	//Keying this on _gameLaunched instead - any program at all - is what destroyed the
+	//floppy desktop: JR_WINFD/BUNGWINS launches a program with bit 6 clear, so every
+	//nametable fetch was redirected into CHR RAM and the screen came out as a grid of
+	//repeated glyphs. A learning machine has no way to reach the signature branch, so
+	//there the disc image is the only thing that qualifies.
+	//
+	//Any change here needs a disc AND a floppy in the machine at once to be worth anything.
+	//Every version of this test that came out too wide had passed a sweep that used one
+	//medium at a time.
+	bool IsDiscGame()
+	{
+		//A floppy the drive recognised is what the program came off, whatever is sitting in
+		//the disc drive alongside it. Without that test, putting a disc in while the floppy
+		//desktop was up made the desktop a disc game - it launches a program like anything
+		//else - so its nametables went to CHR RAM and it drew nothing at all. The floppy
+		//takes priority for booting, and it takes priority here.
+		bool viaDisc = _gameLaunched && _cd.IsMounted() && _diskType == 0;
+		return (IsCdv() || viaDisc || (_romType == 0 && _bungDiskGame)) && !(_regs[0x01] & 0x40);
 	}
 
 	//A write into the game's own window. The byte is masked with the size the game's header
@@ -1681,15 +1783,42 @@ protected:
 			_mmc3.ClockA12(addr, _console->GetMasterClock());
 		}
 
+		//A tile fetch is what moves the MMC2's latches, so the window has to be remapped
+		//the moment one of them flips rather than at the next register write
+		if(Mmc2Mode() && _mmc2.ChrLatch(addr)) {
+			UpdateChrMapping();
+		}
+
 		if((addr >> 12) != 2) {
 			return;
 		}
 		_ntData = (uint8_t)((addr >> 8) & 0x03);
-		if(_regs[0x14] >= 0x40 && _regs[0x14] <= 0x43) {
+		if(_regs[0x14] >= 0x40 && _regs[0x14] <= 0x43 && !IsDiscGame()) {
 			uint32_t bank = (uint32_t)(_regs[0x14] + _ntData - 2);
 			SetPpuMemoryMapping(0x1000, 0x1FFF, ChrMemoryType::ChrRam,
 				(bank * 0x1000) & (_chrRamSize - 1), MemoryAccessType::ReadWrite);
 			_logoMode = true;
+		}
+	}
+
+	//The nametables do not have to come from the console's own two pages: this machine can
+	//point each of the four at a 1KB bank of its CHR RAM, named by $4194 and $4195. The low
+	//two bits of the request say how the pair is arranged across the four, the same four
+	//arrangements the mirroring field names, and bit 4 lifts the pair a further 128 banks up.
+	//A program that draws by swapping these rewrites them many times a frame.
+	void SetGameNtRam(uint8_t data)
+	{
+		uint32_t off = (data & 0x10) ? 0x80u : 0x00u;
+		uint8_t sel = (uint8_t)(data & 0x03);
+		const uint32_t banks[4] = {
+			(uint32_t)_regs[sel == 1 ? 0x15 : 0x14] + off,
+			(uint32_t)_regs[(sel % 3) ? 0x15 : 0x14] + off,
+			(uint32_t)_regs[(sel & 1) ? 0x15 : 0x14] + off,
+			(uint32_t)_regs[(sel & 3) ? 0x15 : 0x14] + off
+		};
+		for(uint16_t i = 0; i < 4; i++) {
+			SetPpuMemoryMapping((uint16_t)(0x2000 + i * 0x400), (uint16_t)(0x23FF + i * 0x400),
+				ChrMemoryType::ChrRam, (banks[i] * 0x400) & (_chrRamSize - 1), MemoryAccessType::ReadWrite);
 		}
 	}
 
@@ -1946,7 +2075,7 @@ protected:
 	}
 
 	uint16_t RegisterStartAddress() override { return 0x4020; }
-	uint16_t RegisterEndAddress() override { return 0x5FFF; }
+	uint16_t RegisterEndAddress() override { return 0x43FF; }
 	bool AllowRegisterRead() override { return true; }
 
 	void InitMapper(RomData& romData) override
@@ -1982,6 +2111,17 @@ protected:
 			_regs[i] = _cdvHeader[0x10 + i];
 		}
 		_loadMode = false;
+
+		//The loader leaves the game's own header in the machine's RAM at $600 as it hands over,
+		//and the machine reads it back from there - the CHR bank count comes from $609, and the
+		//name at the front is what marks a disc game at all. Measured at the hand-over of a game
+		//booted off its disc: every register matches what this reconstruction already sets, and
+		//this block is the only thing that differed. Without it the signature check fails and
+		//the count reads zero.
+		uint8_t* ram = _console->GetMemoryManager()->GetInternalRam();
+		for(int i = 0; i < 0x10; i++) {
+			ram[0x600 + i] = _cdvHeader[i];
+		}
 
 		memcpy(_workRam, _cdvPrg.data(), std::min((size_t)_workRamSize, _cdvPrg.size()));
 
@@ -2026,6 +2166,40 @@ protected:
 			StartGameMode(_cdvHeader[0x0E], GamePrgBankCount(), _cdvHeader[0x09]);
 		}
 
+		//Some games are started with a run-up rather than straight through their reset
+		//vector: byte $0F of the header asks for the game's own set-up routine (its address
+		//is at $0B/$0C) and/or the entry at $7003 of the block placed in the save-RAM
+		//window, and only then for the game proper. The tables those build are what a disc
+		//launch leaves behind - without the run-up the game reads zeroes where it expects
+		//them, and one of them picks a blank CHR bank and sits on an empty screen for ever.
+		//
+		//The machine does this by starting the processor on a stub instead of the vector.
+		//Nothing here can move the reset vector's destination, so the stub is reached the
+		//other way round: the vector is pointed at it and the stub puts the game's own back
+		//before jumping through it, which leaves memory exactly as the game expects.
+		if(_cdvHeader.size() > 0x10 && (_cdvHeader[0x0F] & 0x81) && _mapperRamSize >= 0x1000) {
+			uint32_t vec = SystemBankOffset(0xFFFC);
+			if(vec + 1 < _workRamSize) {
+				uint8_t lo = _workRam[vec];
+				uint8_t hi = _workRam[vec + 1];
+				uint8_t* stub = _mapperRam + (0x4802 - 0x4020);
+				uint32_t n = 0;
+				if(_cdvHeader[0x0F] & 0x80) {
+					stub[n++] = 0x20; stub[n++] = _cdvHeader[0x0B]; stub[n++] = _cdvHeader[0x0C];
+				}
+				if(_cdvHeader[0x0F] & 0x01) {
+					stub[n++] = 0x20; stub[n++] = 0x03; stub[n++] = 0x70;
+				}
+				stub[n++] = 0xA9; stub[n++] = lo;
+				stub[n++] = 0x8D; stub[n++] = 0xFC; stub[n++] = 0xFF;
+				stub[n++] = 0xA9; stub[n++] = hi;
+				stub[n++] = 0x8D; stub[n++] = 0xFD; stub[n++] = 0xFF;
+				stub[n++] = 0x6C; stub[n++] = 0xFC; stub[n++] = 0xFF;
+				_workRam[vec] = 0x02;
+				_workRam[vec + 1] = 0x48;
+			}
+		}
+
 		//$4194 bit 6 says the game is one of the machine's own rather than a plain cartridge
 		//conversion. Those keep the machine's tile latch and its screen arrangement, and are
 		//treated as though its own operating system were in the drive - which is what decides
@@ -2044,6 +2218,15 @@ protected:
 
 		memset(_regs, 0, sizeof(_regs));
 		memset(_mapperRam, 0, _mapperRamSize);
+
+		//$4400-$5FFF is memory, not IO - the machine keeps BIOS variables there and runs
+		//code out of it. Only $4180-$41BF and $42FC-$42FF decode as registers, so the
+		//register window stops at $43FF and the rest is mapped as ordinary pages. Claiming
+		//the whole 8KB left the debugger showing it as open bus - every byte reading back
+		//as its own address high byte - because a debug read deliberately skips
+		//ReadRegister. $4020-$43FF stays a register range: $4000-$40FF cannot be split off
+		//the APU/controller ports at 256-byte page granularity.
+		SetCpuMemoryMapping(0x4400, 0x5FFF, PrgMemoryType::MapperRam, 0x4400 - 0x4020, MemoryAccessType::ReadWrite);
 		_regs[0x03] = 0xFF;
 		_loadMode = true;
 		_irqCounter = 0;
@@ -2073,6 +2256,7 @@ protected:
 		_logoMode = false;
 		_autoBank = false;
 		_gameLaunched = false;
+		_bungDiskGame = false;
 		_gameMode = 0;
 		_gamePrgBanks[0] = 0;
 		_gamePrgBanks[1] = 1;
@@ -2083,6 +2267,7 @@ protected:
 		_gameChip = 0;
 		_mmc1.Reset();
 		_mmc3.Reset();
+		_mmc2.Reset();
 		for(int i = 0; i < 8; i++) {
 			_gameChrPages[i] = (uint16_t)i;
 		}
@@ -2328,6 +2513,10 @@ protected:
 		}
 
 		switch(addr) {
+			case 0x4194: case 0x4195:
+				if(IsDiscGame()) { SetGameNtRam(2); }
+				break;
+
 			case 0x41A9: _placeUseB = false; break;
 			case 0x41B9: _placeUseB = true; break;
 
@@ -2364,6 +2553,10 @@ protected:
 
 			case 0x4198: case 0x4199: case 0x419A: case 0x419B:
 			case 0x419C: case 0x419D: case 0x419E: case 0x419F:
+				//In MMC2 mode the first four are the chip's two pairs; the rest are unused
+				if(Mmc2Mode() && addr <= 0x419B) {
+					_mmc2.WriteBank((uint8_t)(addr & 3), value);
+				}
 				UpdateChrMapping();
 				break;
 
@@ -2401,8 +2594,13 @@ protected:
 				//as this did, the arrangement stayed at whatever the launcher left and a
 				//page that should have been the one below turned out to be the one
 				//already on screen.
-				_mirroring = value & 0x03;
-				MirrorSync();
+				//Bit 4 asks for the nametables to be banked out of CHR RAM instead
+				if((value & 0x10) && IsDiscGame()) {
+					SetGameNtRam(value);
+				} else {
+					_mirroring = value & 0x03;
+					MirrorSync();
+				}
 				break;
 
 			case 0x41A5:
@@ -2449,6 +2647,11 @@ protected:
 				//A game off a disc hands over here, and from this point the machine is a
 				//cartridge rather than a learning machine
 				_gameLaunched = true;
+				//Latched at the hand-over, the moment the reference looks: the loader has
+				//just written its signature and the program is free to overwrite $600 after.
+				if(!_bungDiskGame && HasLoaderSignature()) {
+					_bungDiskGame = true;
+				}
 				//Which shape of cartridge it is, and the window it starts in. Only a hand-over
 				//that leaves the machine a cartridge starts a game: the one the disc menu makes
 				//on its own way out still has the machine in system mode, and the sizes it would
@@ -2501,9 +2704,9 @@ protected:
 		SV(_fdc);
 		SV(_cd);
 		SVArray(_exRamNt, 0x800); SV(_extNtAddr); SV(_extFetchCounter); SV(_diskType);
-		SV(_ntData); SV(_logoMode); SV(_autoBank); SV(_gameLaunched); SV(_mirroring);
+		SV(_ntData); SV(_logoMode); SV(_autoBank); SV(_gameLaunched); SV(_bungDiskGame); SV(_mirroring);
 		SV(_gameMode); SVArray(_gamePrgBanks, 4); SV(_gameChrBank); SV(_gameReset);
-		SV(_gameChip); SVArray(_gameChrPages, 8); SV(_mmc1); SV(_mmc3);
+		SV(_gameChip); SVArray(_gameChrPages, 8); SV(_mmc1); SV(_mmc3); SV(_mmc2);
 		SV(_lptData); SV(_lptCtrl); SV(_printer);
 		SV(_speechByte); SV(_speechNibbleCount); SV(_speech);
 		SV(_mouseEnabled); SV(_mouseFrame); SV(_cdvApuReady);

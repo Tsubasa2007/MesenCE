@@ -291,3 +291,62 @@ public:
 		SV(_a12LowClock);
 	}
 };
+
+//$4181 bit 7 turns the CHR registers into an MMC2. The four that name banks stop being plain
+//bank numbers and become the chip's two pairs - one pair per pattern table - with the picture
+//itself choosing which of each pair is live: a fetch of tile $FD or $FE out of a table latches
+//that table onto the matching bank. Conversions of the two Nintendo titles that shipped on this
+//chip need it; both name their banks here and neither can be drawn from one bank per table.
+//
+//The machine routes $4198-$419B to $B000/$C000/$D000/$E000 in that order, so the register's low
+//bit picks the latch value and the next bit picks the table.
+class DrPcJrMmc2 final : public ISerializable
+{
+private:
+	uint8_t _latch[2] = { 1, 1 };
+	uint8_t _chrPage[2][2] = {};
+	uint8_t _mirror = 0;
+
+public:
+	void Reset()
+	{
+		_latch[0] = 1;
+		_latch[1] = 1;
+		memset(_chrPage, 0, sizeof(_chrPage));
+		_mirror = 0;
+	}
+
+	//$4198-$419B, as the index 0-3 the machine hands over
+	void WriteBank(uint8_t index, uint8_t value) { _chrPage[(index >> 1) & 1][index & 1] = value; }
+
+	//$41A4 in this mode is the chip's $F000
+	void WriteMirroring(uint8_t value) { _mirror = value & 0x01; }
+	uint8_t Mirroring() const { return (uint8_t)(_mirror ? 3 : 2); }
+
+	//Returns true when the live pair changed and the pattern window has to be remapped
+	bool ChrLatch(uint16_t addr)
+	{
+		uint8_t before0 = _latch[0];
+		uint8_t before1 = _latch[1];
+		if(addr == 0x0FD8) {
+			_latch[0] = 0;
+		} else if(addr == 0x0FE8) {
+			_latch[0] = 1;
+		} else if(addr >= 0x1FD8 && addr <= 0x1FDF) {
+			_latch[1] = 0;
+		} else if(addr >= 0x1FE8 && addr <= 0x1FEF) {
+			_latch[1] = 1;
+		}
+		return _latch[0] != before0 || _latch[1] != before1;
+	}
+
+	//The 4KB bank live in one of the two pattern tables
+	uint8_t Bank(uint8_t table) const { return _chrPage[table & 1][_latch[table & 1]]; }
+
+	void Serialize(Serializer& s) override
+	{
+		SVArray(_latch, 2);
+		SV(_chrPage[0][0]); SV(_chrPage[0][1]); SV(_chrPage[1][0]); SV(_chrPage[1][1]);
+		SV(_mirror);
+	}
+};
