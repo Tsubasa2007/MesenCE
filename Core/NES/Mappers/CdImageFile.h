@@ -117,6 +117,10 @@ public:
 	}
 
 	bool IsOpen() { return _sectorCount > 0; }
+
+	//Whether the sectors are on the disc as they lie, subheaders and all. A flat image is the
+	//2048-byte view a filesystem sees, which says nothing about what a sector holds.
+	bool IsRaw() { return _raw; }
 	uint64_t SectorCount() { return _sectorCount; }
 
 	//The size of the disc as the drives address it, which is user data only
@@ -155,6 +159,27 @@ public:
 			return sector < _sectorCount ? 0x08 : 0x00;
 		}
 		return LoadSector(sector) ? _cache[18] : 0x00;
+	}
+
+	//One sector's payload as it lies, without the 2048-byte view the drives address the disc
+	//through. Form 2 carries 2324 bytes and none of the error correction that follows Form 1,
+	//and the extra bytes are stream: reading such a sector through Read() drops an eighth of
+	//every one of them, which is fine for a filesystem and useless for a video.
+	vector<uint8_t> ReadRawPayload(uint64_t sector, uint32_t length)
+	{
+		vector<uint8_t> data;
+		if(!_raw || !LoadSector(sector)) {
+			//A flat image has no subheader and no Form 2 - its sectors are what Read() gives
+			return ReadRange(sector * UserSectorSize, std::min(length, UserSectorSize));
+		}
+
+		uint32_t at = PayloadOffset();
+		if(at + length > RawSectorSize) {
+			return data;
+		}
+
+		data.assign(_cache + at, _cache + at + length);
+		return data;
 	}
 
 	//The same, as a buffer. Empty when the range does not fit on the disc.

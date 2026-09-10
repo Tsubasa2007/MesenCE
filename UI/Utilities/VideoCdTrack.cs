@@ -60,19 +60,8 @@ namespace Mesen.Utilities
 				: $@"Video {VideoNumber} ({Duration:mm\:ss})";
 
 		private const int RawSectorSize = 2352;
-		//Mode 2 form 2: 12 sync + 4 header + 8 subheader, then the payload
-		private const int PayloadOffset = 24;
+		//Mode 2 form 2: 12 sync + 4 header + 8 subheader, then 2324 bytes of payload
 		public const int PayloadSize = 2324;
-
-		//A VCD track opens with a run of empty sectors before the stream itself - 30 by the
-		//standard, but it is read rather than assumed, by looking for the first pack header.
-		private static readonly byte[] PackHeader = { 0x00, 0x00, 0x01, 0xBA };
-
-		//How far into a stream a track may open and still be taken as opening at its start.
-		//The first pack of a properly cut track reads a hundredth of a second, or four tenths
-		//on the discs that were ripped rather than rebuilt; anything past this is the tail of
-		//the video before it.
-		private const double TailThreshold = 1.0;
 
 		//A disc whose video is not in tracks of its own.
 		//
@@ -119,8 +108,8 @@ namespace Mesen.Utilities
 					if(sectors == 0 || lba >= imageSectors || sectors > imageSectors - lba) {
 						continue;
 					}
-					double? first = SegmentClock(src, lba, false);
-					double? last = SegmentClock(src, lba + sectors - 1, true);
+					double? first = SegmentClock(binPath, lba, false);
+					double? last = SegmentClock(binPath, lba + sectors - 1, true);
 					//A still is simply anything with no running time, which includes the ones
 					//that answer with no clock at all: the allocation for one is 150 sectors
 					//and the picture only fills the front of it, so reading the clock at the
@@ -172,41 +161,13 @@ namespace Mesen.Utilities
 			return reels;
 		}
 
-		//The pack clock at one sector, or the nearest one either side of it, so an item's
-		//running time can be had without walking all of it
-		//How long the item at an address runs for, or 0 if its clock never moves - which is
-		//what a still is. Used when the machine names an item directly rather than the disc
-		//offering one from its directory.
-		public static double SegmentRunningTime(string binPath, uint lba, uint sectors)
+		//How long the item at an address runs for, taken from the pack clock at its first
+		//sector and at its last - or nothing when the clock never moves, which is what a still
+		//is. Used when the machine names an item directly rather than the disc offering one
+		//from its directory. The core's reading of the clock, so there is one of those too.
+		private static double? SegmentClock(string binPath, uint lba, bool searchBack)
 		{
-			try {
-				using FileStream src = File.OpenRead(binPath);
-				double? first = SegmentClock(src, lba, false);
-				double? last = SegmentClock(src, lba + sectors - 1, true);
-				return first.HasValue && last.HasValue ? Math.Max(0, last.Value - first.Value) : 0;
-			} catch {
-				return 0;
-			}
-		}
-
-		private static double? SegmentClock(FileStream src, uint lba, bool searchBack)
-		{
-			byte[] sector = new byte[RawSectorSize];
-			for(uint step = 0; step < 16; step++) {
-				long at = (long)(searchBack ? lba - step : lba + step) * RawSectorSize;
-				if(at < 0 || at + RawSectorSize > src.Length) {
-					return null;
-				}
-				src.Seek(at, SeekOrigin.Begin);
-				if(src.Read(sector, 0, RawSectorSize) != RawSectorSize) {
-					return null;
-				}
-				double? clock = PackClock(sector);
-				if(clock != null) {
-					return clock;
-				}
-			}
-			return null;
+			return EmuApi.GetNesDiscPackClock(binPath, lba, searchBack, out double clock) ? clock : null;
 		}
 
 		//One directory of an ISO9660 filesystem inside a raw 2352-byte image. A record is:
@@ -350,207 +311,19 @@ namespace Mesen.Utilities
 		//Strip the sector framing and write the stream out where a player can open it. The
 		//result is an ordinary MPEG-1 file; nothing here is specific to this machine.
 		//
-		//firstSector and lastSector bound the part of the track that is wanted, counted from
-		//the track's own start the way the machine addresses it - a play names a start and an
-		//end position, and a game disc uses that to take a few seconds out of the middle of a
-		//track. Passing 0 for lastSector means the whole of the rest of the track.
+		//firstSector and lastSector bound the part of the item that is wanted, counted the way
+		//the machine addresses it - in the sectors that carry the stream, from the item's own
+		//start. Passing 0 for lastSector means the whole of the rest of the item.
+		//
+		//The walk is the core's, and it is the same one the decoder inside this emulator is
+		//fed by - see CdSegmentIndex::ForEachStreamSector and CdStreamFile. There was a second
+		//one here, which meant that a correction to what an item's stream is made of had to be
+		//made twice, in two languages, to be made at all. It was, twice, and only after being
+		//made once and found wanting.
 		public string ExtractToFile(string binPath, string outPath, uint firstSector = 0, uint lastSector = 0)
 		{
-			using FileStream src = File.OpenRead(binPath);
-			using FileStream dst = File.Create(outPath);
-			byte[] sector = new byte[RawSectorSize];
-			bool started = false;
-
-			uint from = firstSector;
-			//A play names where to stop, and that is not the same as where the track stops: a
-			//stretch can run past the boundary, and on a disc whose videos do not line up with
-			//its tracks it usually does. Counting sectors from the start position rather than
-			//stopping at the end of the track is what the machine itself does.
-			uint count = lastSector > firstSector ? lastSector - firstSector : (Sectors > from ? Sectors - from : 0);
-			//A segment item is a stream of its own, whole and starting at its own beginning,
-			//so nothing below has a tail to drop.
-			bool mayOpenWithATail = !IsSegment;
-			bool dropTail = false;
-			//However much of the front turned out to belong to the video before this one. The
-			//play asked for a length, so the read runs on by the same amount rather than
-			//coming up short by it.
-			uint discarded = 0;
-			//The clock as the disc last read it, and as it was last written out. A reel whose
-			//items already run on from one another is written unchanged; see Retime.
-			long clockRead = 0;
-			long clockWritten = -1;
-
-			src.Seek((long)(Lba + from) * RawSectorSize, SeekOrigin.Begin);
-			for(uint i = 0; i < count + discarded; i++) {
-				if(src.Read(sector, 0, RawSectorSize) != RawSectorSize) {
-					break;
-				}
-				//The subheader says what a sector carries: bits 1-3 are video, audio and data,
-				//and a sector with none of them is a gap. The drive plays straight through one,
-				//counting the time, so this does too. Stopping at the first gap returns
-				//whatever fragment came before it, and on the disc here that is the tail of
-				//the previous video: its tracks are out of step with their contents by a
-				//second more each time, so from the fourth on, a gap-stopped play gave 0.4,
-				//1.4, 2.4 seconds and so on of the wrong video instead of the whole of the
-				//right one.
-				if((sector[18] & 0x0E) == 0) {
-					continue;
-				}
-
-				double? clock = PackClock(sector);
-				if(!started) {
-					if(clock == null) {
-						continue;
-					}
-					started = true;
-
-					//A track that opens part way through a stream is opening with the tail of
-					//the video before it - the drift on the disc here, which grows by a second
-					//a track until the last video is nothing else. Whatever a player makes of
-					//the length is then wrong: it reads a clock of eighty seconds at the front
-					//and one of seventy at the back, so the position sits at the end from the
-					//moment it opens.
-					//
-					//Only when the play starts where the track does. One that names a position
-					//part way in was meant to start there, and its own start is not a tail.
-					dropTail = mayOpenWithATail && from == 0 && clock.Value >= TailThreshold;
-				} else if(dropTail && clock.HasValue && clock.Value < TailThreshold) {
-					//The clock has gone back to the beginning, so everything so far belonged
-					//to the video before this one
-					discarded = i;
-					dst.SetLength(0);
-					dst.Position = 0;
-					dropTail = false;
-				}
-				if(IsReel && clock != null) {
-					Retime(sector, ref clockRead, ref clockWritten);
-				}
-				dst.Write(sector, PayloadOffset, PayloadSize);
-			}
+			EmuApi.ExtractNesDiscItem(binPath, Lba, Sectors, firstSector, lastSector, IsReel, outPath);
 			return outPath;
-		}
-
-		//The clock a pack header carries, in seconds. It is what a player measures a stream's
-		//length with, and it is the only thing that says where one video ends and the next
-		//begins: 00 00 01 BA, then 33 bits of 90kHz clock spread across five bytes around two
-		//marker bits. Null when the sector does not begin a pack.
-		private static double? PackClock(byte[] sector)
-		{
-			for(int b = 0; b < PackHeader.Length; b++) {
-				if(sector[PayloadOffset + b] != PackHeader[b]) {
-					return null;
-				}
-			}
-
-			int o = PayloadOffset + PackHeader.Length;
-			long high = (sector[o] >> 1) & 0x07;
-			long mid = (((sector[o + 1] << 8) | sector[o + 2]) >> 1) & 0x7FFF;
-			long low = (((sector[o + 3] << 8) | sector[o + 4]) >> 1) & 0x7FFF;
-			return ((high << 30) | (mid << 15) | low) / 90000.0;
-		}
-
-		//Move one pack's clocks onto the end of the pack before it.
-		//
-		//A reel is several of the disc's items end to end, and on some discs each of those is
-		//a stream of its own that starts its clocks again from nothing. A player reading that
-		//finds the clock at the back of the file lower than the one at the front and has
-		//nothing to size its progress bar with.
-		//
-		//So the step between one pack and the next is what is kept, not the readings
-		//themselves. A step the disc could have meant is used as it stands - that leaves a
-		//reel whose items already run on written exactly as it was found. Anything else is a
-		//join, and one CD frame is left across it. The last packs of an item on these discs
-		//read three hours and more, so a join is not only a step backwards.
-		//
-		//Both clocks have to move together. The pack header carries the one the drive is fed
-		//by, and the packets inside it carry the ones the picture and sound are shown on -
-		//and a player asked how long a file is may answer from either. Moving only the first
-		//left one player still calling a twelve minute reel three seconds long.
-		private const long ClockRate = 90000;
-		private const long ClockStep = ClockRate / 75;
-		private const long MaxClockStep = ClockRate;
-		private const long ClockMask = 0x1FFFFFFFFL;
-
-		private static void Retime(byte[] sector, ref long read, ref long written)
-		{
-			int pack = PayloadOffset + PackHeader.Length;
-			long scr = ReadClock(sector, pack);
-			long step = scr - read;
-			long now = written < 0 ? scr : written + (step > 0 && step <= MaxClockStep ? step : ClockStep);
-			read = scr;
-			written = now & ClockMask;
-			WriteClock(sector, pack, written);
-
-			//What the pack header moved by, which is what everything inside it moves by too
-			long shift = written - scr;
-			if(shift == 0) {
-				return;
-			}
-
-			int limit = PayloadOffset + ((sector[18] & 0x20) != 0 ? PayloadSize : 2048);
-			int pos = PayloadOffset + 12;
-			while(pos + 6 <= limit && sector[pos] == 0x00 && sector[pos + 1] == 0x00 && sector[pos + 2] == 0x01) {
-				byte id = sector[pos + 3];
-				if(id == 0xB9) {
-					break;
-				}
-
-				int length = (sector[pos + 4] << 8) | sector[pos + 5];
-				if(id == 0xE0 || id == 0xE1 || id == 0xC0) {
-					ShiftPacketClocks(sector, pos + 6, Math.Min(pos + 6 + length, limit), shift, written);
-				}
-				pos += 6 + length;
-			}
-		}
-
-		//The head of one packet: any number of stuffing bytes, then the buffer size if it is
-		//given, then either nothing, a presentation time, or a presentation and a decode time.
-		private static void ShiftPacketClocks(byte[] sector, int from, int limit, long shift, long floor)
-		{
-			int at = from;
-			while(at < limit && sector[at] == 0xFF) {
-				at++;
-			}
-			if(at + 1 < limit && (sector[at] & 0xC0) == 0x40) {
-				at += 2;
-			}
-			if(at >= limit) {
-				return;
-			}
-
-			//0x20 is a presentation time on its own, 0x30 that and a decode time behind it
-			int marker = sector[at] & 0xF0;
-			int count = marker == 0x20 ? 1 : marker == 0x30 ? 2 : 0;
-			for(int i = 0; i < count; i++) {
-				int on = at + i * 5;
-				if(on + 5 > limit) {
-					return;
-				}
-				//A pack whose own reading was thrown away leaves a shift these cannot follow, so
-				//they are put where the pack now is rather than somewhere before the start
-				long moved = ReadClock(sector, on) + shift;
-				WriteClock(sector, on, (moved < 0 ? floor : moved) & ClockMask);
-			}
-		}
-
-		//33 bits of clock spread across five bytes around two marker bits, in the pack header
-		//and in a packet's times alike - the four bits above them differ and are left alone.
-		private static long ReadClock(byte[] sector, int at)
-		{
-			long high = (sector[at] >> 1) & 0x07;
-			long mid = (((sector[at + 1] << 8) | sector[at + 2]) >> 1) & 0x7FFF;
-			long low = (((sector[at + 3] << 8) | sector[at + 4]) >> 1) & 0x7FFF;
-			return (high << 30) | (mid << 15) | low;
-		}
-
-		private static void WriteClock(byte[] sector, int at, long value)
-		{
-			byte above = (byte)(sector[at] & 0xF0);
-			sector[at] = (byte)(above | (((value >> 30) & 0x07) << 1) | 0x01);
-			sector[at + 1] = (byte)((value >> 22) & 0xFF);
-			sector[at + 2] = (byte)((((value >> 15) & 0x7F) << 1) | 0x01);
-			sector[at + 3] = (byte)((value >> 7) & 0xFF);
-			sector[at + 4] = (byte)(((value & 0x7F) << 1) | 0x01);
 		}
 
 		//Where everything extracted from a disc goes. Nothing here outlives the run that

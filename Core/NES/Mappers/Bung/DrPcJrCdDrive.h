@@ -38,6 +38,8 @@ private:
 	vector<uint8_t> _placed;
 	bool _present = false;
 	string _discPath;
+	//Built once from whichever of the two sources the disc has - see CdSegmentIndex::ReadTracks
+	vector<CdTrack> _tracks;
 
 	//What the machine sends, kept flat rather than split into packets - the packet length
 	//was one of the first things to get wrong, so imposing one here would only hide it.
@@ -176,24 +178,24 @@ public:
 	string GetDiscPath() { return _discPath; }
 	uint32_t GetSectorCount() { return (uint32_t)_image.SectorCount(); }
 
+	//The disc itself, for whoever needs to measure or read what is on it
+	CdImageFile& GetImage() { return _image; }
+
 	//The stretches of the segment area that hold video, for a front end to offer
 	vector<CdVideoReel> GetVideoReels() { return CdSegmentIndex::FindVideoReels(_image); }
 
-	//The sheet's INDEX 01 lines, counted. Only how many there are is wanted here - the
-	//machine asks for a track count and a running time, not for where each one starts.
-	uint32_t CountCueTracks(string path)
+	//The disc's video tracks. Read on first asking rather than only at mount, so a machine
+	//brought back from a save state has them too.
+	const vector<CdTrack>& GetTracks()
 	{
-		ifstream cue(path, ios::in);
-		uint32_t count = 0;
-		string line;
-		while(cue && std::getline(cue, line)) {
-			if(line.find("INDEX 01") != string::npos) {
-				count++;
-			}
+		if(_tracks.empty() && IsMounted()) {
+			_tracks = CdSegmentIndex::ReadTracks(_image, _discPath);
 		}
-		return count;
+		return _tracks;
 	}
 
+	//The sheet's INDEX 01 lines, counted. Only how many there are is wanted here - the
+	//machine asks for a track count and a running time, not for where each one starts.
 	bool LoadDisc(string path)
 	{
 		string ext = path.size() >= 4 ? path.substr(path.size() - 4) : string();
@@ -204,10 +206,14 @@ public:
 		}
 
 		_discPath = path;
+		_tracks.clear();
 		//Only now: the mount loop tries a list of candidate names across more than one folder
 		//and its break leaves the outer loop running, so several loads of paths that do not
 		//exist happen after the real disc is already in.
-		_trackCount = ext == ".cue" ? CountCueTracks(path) : 1;
+		//The filesystem is track 1 and the videos follow it, which is what the machine is
+		//told when it asks. Counted from the same table everything else reads, so a disc
+		//with no sheet beside it is no longer reported as having nothing to play.
+		_trackCount = (uint32_t)GetTracks().size() + 1;
 
 		//Deliberately NOT Reset(): a disc can go in while the machine is part way through an
 		//exchange, and clearing the link state there loses reply bytes it is already waiting
@@ -217,6 +223,7 @@ public:
 		_streamLeft = 0;
 		MessageManager::Log("[Dr. PC Jr.] Disc mounted: " + FolderUtilities::GetFilename(path, true) +
 			" (" + std::to_string(GetSectorCount()) + " sectors)");
+
 		return true;
 	}
 
@@ -225,6 +232,7 @@ public:
 		_image.Close();
 		_placed.clear();
 		_discPath.clear();
+		_tracks.clear();
 		Reset();
 	}
 

@@ -1299,6 +1299,8 @@ public:
 
 	//Where the video on the mounted disc is - see CdSegmentIndex
 	vector<CdVideoReel> GetVideoReels() { return _vcd.GetVideoReels(); }
+	const vector<CdTrack>& GetDiscTracks() { return _vcd.GetTracks(); }
+	CdImageFile& GetDiscImage() { return _vcd.GetImage(); }
 
 	//A video the disc's own program has asked to show. The drive decides what is worth
 	//handing over; this is only the way out to the front end - see NesConsole.

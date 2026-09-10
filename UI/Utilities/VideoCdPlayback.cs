@@ -38,6 +38,16 @@ namespace Mesen.Utilities
 		//not waiting on the answer, so the request outlives the window that blocked it.
 		private static (uint Lba, uint Sectors)? _queued;
 
+		//Where the video just asked for lives, taken by the core while we are still on the
+		//thread the machine runs on. The work of playing it happens on a thread of its own,
+		//and the mounted image cannot be read from there.
+		private static (uint Lba, uint Sectors)? _takenItem;
+
+		//How long the segment just taken really runs, measured by the core while we are still
+		//on the thread the machine runs on. Playing it happens on a thread of its own, and the
+		//mounted image must not be read from there.
+		private static double _takenStreamSeconds;
+
 		//Opening a player takes a moment, and the clock here starts before it appears. Rather
 		//than cut the end off every video, give it a little longer than the machine asked for.
 		//Matches YuxingVcdDrive::SegmentTrack - "this is not a track number, it is an address"
@@ -92,6 +102,7 @@ namespace Mesen.Utilities
 					_completed = false;
 				}
 				(uint lba, uint sectors) = queued.Value;
+				_takenStreamSeconds = MeasureSegment(lba, sectors);
 				Task.Run(() => {
 					try {
 						if(!Start(SegmentTrack, lba, sectors)) {
@@ -118,6 +129,18 @@ namespace Mesen.Utilities
 				return;
 			}
 
+			if(track == SegmentTrack) {
+				_takenStreamSeconds = MeasureSegment(startMsf, endMsf);
+			} else {
+				//Where the video is comes from the core, which reads the sheet beside the
+				//disc and the disc's own table as one, and then finds the item inside the
+				//track it names. Working it out again here is what let the two ways of playing
+				//a video disagree about which video they were on.
+				_takenItem = EmuApi.GetNesDiscTrackExtent(track, out uint itemLba, out uint itemSectors)
+					? (itemLba, itemSectors)
+					: null;
+			}
+
 			lock(_lock) {
 				_playing = true;
 				_completed = false;
@@ -133,6 +156,16 @@ namespace Mesen.Utilities
 					Finish(false);
 				}
 			});
+		}
+
+		//The one measurement, made by the core - see CdSegmentIndex::MeasureItem. This was
+		//worked out here as well, from the same pack headers, which left two copies of it
+		//that could drift apart.
+		private static double MeasureSegment(uint lba, uint sectors)
+		{
+			return EmuApi.GetNesDiscItemSeconds(lba, sectors, out _, out double streamSeconds)
+				? streamSeconds
+				: 0;
 		}
 
 		//A position in the packet is minutes, seconds and frames, 75 frames to the second,
@@ -165,7 +198,7 @@ namespace Mesen.Utilities
 				//per page turn, which is worse to use than the blank screen it replaces. It
 				//was tried. Those pages want drawing where the machine would have drawn
 				//them, not showing somewhere else, so they wait for that.
-				double running = VideoCdTrack.SegmentRunningTime(binPath, startMsf, endMsf);
+				double running = _takenStreamSeconds;
 				if(running < 1.0) {
 					EmuApi.WriteLogEntry($"[Video CD] segment at {startMsf} is a still - nothing here can show one");
 					return false;
@@ -184,14 +217,17 @@ namespace Mesen.Utilities
 				return started;
 			}
 
-			VideoCdTrack? wanted = tracks.Find(t => t.Number == track + 1);
-			if(wanted == null) {
-				//The scripts number the videos from one and the sheet counts the filesystem
-				//as track 1, so a video's own number is one less than its track. A disc that
-				//does not line up that way is not one to guess about.
+			if(_takenItem == null) {
+				//A disc that does not name that video is not one to guess about
 				EmuApi.WriteLogEntry($"[Video CD] no track for video {track} on {Path.GetFileName(discPath)}");
 				return false;
 			}
+
+			VideoCdTrack wanted = new() {
+				Number = track + 1,
+				Lba = _takenItem.Value.Lba,
+				Sectors = _takenItem.Value.Sectors
+			};
 
 			uint from = ToSectors(startMsf);
 			uint to = ToSectors(endMsf);
@@ -219,8 +255,8 @@ namespace Mesen.Utilities
 			}
 
 			//75 sectors to the second, and the length is taken from what came out rather than
-			//from what was asked for: the gaps between the parts of a track are dropped on the
-			//way, so the file is shorter than the positions that named it.
+			//from what was asked for: a stretch that ran off the end of its item is shorter
+			//than the positions that named it.
 			long sectors = new FileInfo(outPath).Length / VideoCdTrack.PayloadSize;
 			CancellationTokenSource cts = new();
 			lock(_lock) {

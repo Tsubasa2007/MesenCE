@@ -643,6 +643,8 @@ public:
 
 	//Where the video on the mounted disc is - see CdSegmentIndex
 	vector<CdVideoReel> GetVideoReels() { return _cd.GetVideoReels(); }
+	const vector<CdTrack>& GetDiscTracks() { return _cd.GetTracks(); }
+	CdImageFile& GetDiscImage() { return _cd.GetImage(); }
 
 	//The video the machine has asked for, and the answer that its wait loop is holding out
 	//for. Both belong to the drive; this is only the way out to the front end.

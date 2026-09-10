@@ -81,6 +81,7 @@ private:
 	vector<DiscProgram> _programs;
 	int32_t _programIndex = -1;
 	string _discPath;
+	vector<CdTrack> _tracks;
 
 	uint8_t _cmd[20] = {};
 	uint8_t _baseSector[3] = {};
@@ -343,6 +344,16 @@ public:
 		return true;
 	}
 	string GetDiscFilename() { return _discPath; }
+
+	//The disc's video tracks - see CdSegmentIndex::ReadTracks. These machines keep their
+	//video as segment items rather than tracks, but the discs they read still have them.
+	const vector<CdTrack>& GetTracks()
+	{
+		if(_tracks.empty() && _image.IsOpen()) {
+			_tracks = CdSegmentIndex::ReadTracks(_image, _discPath);
+		}
+		return _tracks;
+	}
 	bool IsReadComplete() { return _readComplete; }
 
 	//The video the machine asked to show. A segment item is not a track of its own - it
@@ -415,6 +426,9 @@ public:
 				" (" + std::to_string(confirming) + " confirming)");
 		}
 	}
+
+	//The disc itself, for whoever needs to measure or read what is on it
+	CdImageFile& GetImage() { return _image; }
 
 	//The stretches of the segment area that hold video, for a front end to offer
 	vector<CdVideoReel> GetVideoReels()
@@ -636,6 +650,7 @@ public:
 		}
 
 		_discPath = path;
+		_tracks.clear();
 		return true;
 	}
 
@@ -648,6 +663,7 @@ public:
 		_programs.clear();
 		_programIndex = -1;
 		_discPath.clear();
+		_tracks.clear();
 		Reset();
 	}
 
