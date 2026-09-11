@@ -39,6 +39,21 @@
 		
 		<ContentControl Name="AudioPlayer" DockPanel.Dock="Bottom" Content="{Binding AudioPlayer}" />
 
+		<!-- Under the picture rather than over it: the renderer is a native child window and
+		     draws on top of anything Avalonia puts in the same space. -->
+		<ContentControl
+			Name="DiscVideoTransport"
+			DockPanel.Dock="Bottom"
+			IsVisible="{Binding DiscVideoTransport.Visible}"
+			Content="{Binding DiscVideoTransport}"
+		>
+			<ContentControl.ContentTemplate>
+				<DataTemplate DataType="vm:DiscVideoTransportViewModel">
+					<v:DiscVideoTransportView />
+				</DataTemplate>
+			</ContentControl.ContentTemplate>
+		</ContentControl>
+
 		<Panel Name="RendererPanel" Background="Black" Focusable="True">
 			<ContentControl Background="#181818" Content="{Binding RecentGames}" IsVisible="{Binding RecentGames.Visible}" />
 

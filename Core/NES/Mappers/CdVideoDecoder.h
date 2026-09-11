@@ -149,8 +149,23 @@ public:
 	double GetFrameRate() { return _plm ? plm_get_framerate(_plm) : 0; }
 	uint32_t GetStreamSize() { return (uint32_t)_stream.size(); }
 
-
 	int GetSampleRate() { return _plm ? plm_get_samplerate(_plm) : 0; }
+
+	//Where the stream has reached, in its own seconds
+	double GetTime() { return _plm ? plm_get_time(_plm) : 0; }
+
+	//Move to a position and pick up from there. The library finds the nearest picture it can
+	//start from and re-syncs the sound to it, so what comes back afterwards belongs together;
+	//what the caller was still holding from before does not, and has to go.
+	bool Seek(double seconds)
+	{
+		if(!_plm) {
+			return false;
+		}
+		_samples.clear();
+		_hasPicture = false;
+		return plm_seek(_plm, seconds, 1) != 0;
+	}
 	bool HasEnded() { return !_plm || plm_has_ended(_plm); }
 	bool HasPicture() { return _hasPicture; }
 	const vector<uint32_t>& GetPicture() { return _picture; }

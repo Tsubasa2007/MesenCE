@@ -165,6 +165,12 @@ namespace Mesen.Interop
 		//The pack clock at a sector of a named image, or at the nearest one either side of it.
 		//Reads the named image itself, so this too may be called from any thread.
 		[DllImport(DllPath)][return: MarshalAs(UnmanagedType.I1)] public static extern bool GetNesDiscPackClock([MarshalAs(UnmanagedType.LPUTF8Str)] string binPath, UInt32 lba, [MarshalAs(UnmanagedType.I1)] bool searchBack, out double clock);
+		//The transport for a video the core is showing itself. False when none is on screen,
+		//which is what hides the controls.
+		[DllImport(DllPath)][return: MarshalAs(UnmanagedType.I1)] public static extern bool GetNesDiscVideoStatus([MarshalAs(UnmanagedType.I1)] out bool paused, out double position, out double duration);
+		[DllImport(DllPath)] public static extern void SetNesDiscVideoPaused([MarshalAs(UnmanagedType.I1)] bool paused);
+		[DllImport(DllPath)] public static extern void SeekNesDiscVideo(double seconds);
+		[DllImport(DllPath)] public static extern void SkipNesDiscVideo();
 
 		[DllImport(DllPath, EntryPoint = "GetNesDiskList")] private static extern void GetNesDiskListWrapper(IntPtr outList, Int32 maxLength);
 		//Returns the swappable BBK floppy disk names and the index of the inserted disk (-1 if none).

@@ -405,6 +405,10 @@ namespace Mesen.Windows
 					//A machine with a video disc can ask for a track to be played; nothing
 					//else reaches this. See VideoCdPlayback.
 					VideoCdPlayback.Poll();
+					//The transport over a video the core is showing itself. Posted rather than
+					//read here: this runs on the thread the machine runs on, and the bar is a
+					//control.
+					Dispatcher.UIThread.Post(() => _model.DiscVideoTransport.Poll());
 					break;
 
 				case ConsoleNotificationType.ResolutionChanged:

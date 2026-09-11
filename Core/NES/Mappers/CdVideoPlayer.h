@@ -1,7 +1,9 @@
 #pragma once
 #include "pch.h"
+#include <atomic>
 #include "NES/Mappers/CdImageFile.h"
 #include "NES/Mappers/CdVideoDecoder.h"
+#include "NES/Mappers/CdSegmentIndex.h"
 
 //A video off the disc, on the screen.
 //
@@ -41,7 +43,27 @@ private:
 	//each one leaves behind is not lost
 	double _owed = 0;
 
-	bool _playing = false;
+	//A front end reads these from its own thread while the machine's thread is decoding, so
+	//what it can see is published rather than asked for. Nothing outside may touch the decoder
+	//itself: plm_get_duration seeks the demuxer to the end of the stream and back to find the
+	//last timestamp, so calling it while a frame is being decoded moves the read position out
+	//from under the decode - which cut videos short, stopped later ones playing at all, and
+	//brought the emulator down when the bar was dragged.
+	std::atomic<bool> _playing{ false };
+	//Held rather than stopped: the machine stays in its wait loop, which is what it would be
+	//doing anyway, and the stream simply is not carried forward. Its own sound is silent
+	//meanwhile, so silence is handed over at the video's rate rather than letting the mixer
+	//fall back to the machine's - changing rate mid-play resets the filter that resamples it.
+	std::atomic<bool> _paused{ false };
+	//Asked to end early, or to move. Both are answered on the machine's own thread at the top
+	//of the next frame, so the decoder is only ever touched from the one thread that decodes.
+	std::atomic<bool> _skipRequested{ false };
+	std::atomic<bool> _seekRequested{ false };
+	std::atomic<double> _seekTarget{ 0 };
+	//Where the stream has reached and how long it is, as last published by ClockFrame. The
+	//length is measured once when the video is opened, because measuring it is a seek.
+	std::atomic<double> _position{ 0 };
+	std::atomic<double> _duration{ 0 };
 	vector<uint32_t> _shown;
 	vector<uint32_t> _spare;
 
@@ -55,7 +77,19 @@ public:
 		}
 
 		_decoder.SetAudioLead(LeadSeconds);
+		//How long the video runs, taken from how much disc it occupies: a sector is a
+		//seventy-fifth of a second on these discs, which is the same arithmetic the drive
+		//does. The stream's own timestamps are not usable here - plm_get_duration hunts for
+		//the last timestamp near the end of the data and subtracts the first, and on these
+		//reels that gave 5.5s for a 7s item, 4.4s for an 85s one, and -74.2s for another.
+		//It is also a seek, which is not something to do to a stream that is being decoded.
+		double discSeconds = 0;
+		double streamSeconds = 0;
+		CdSegmentIndex::MeasureItem(image, lba, sectors, discSeconds, streamSeconds);
+		_duration = discSeconds;
+		_position = 0;
 		_playing = true;
+
 		return true;
 	}
 
@@ -69,9 +103,31 @@ public:
 		_shown.clear();
 		_spare.clear();
 		_playing = false;
+		_paused = false;
+		_skipRequested = false;
+		_seekRequested = false;
+		_position = 0;
+		_duration = 0;
 	}
 
 	bool IsPlaying() { return _playing; }
+
+	//The transport. A video is the machine's, not ours, so none of this tells the machine
+	//anything: it waits either way, and hears about the end once, from ClockFrame.
+	bool IsPaused() { return _playing && _paused; }
+	void SetPaused(bool paused) { _paused = paused; }
+	void RequestSkip() { _skipRequested = true; }
+	double GetPosition() { return _playing ? _position.load() : 0; }
+	double GetDuration() { return _playing ? _duration.load() : 0; }
+
+	//Asks to move; the move itself happens on the machine's thread at the top of the next
+	//frame. Only the request crosses threads.
+	void RequestSeek(double seconds)
+	{
+		_seekTarget = seconds;
+		_seekRequested = true;
+	}
+
 	uint32_t GetWidth() { return _decoder.GetWidth(); }
 	uint32_t GetHeight() { return _decoder.GetHeight(); }
 
@@ -113,6 +169,18 @@ public:
 			return false;
 		}
 
+		//Held: the stream has not moved, so nothing is owed against it. Silence at its own
+		//rate keeps the mixer on one rate across the pause.
+		if(_paused) {
+			_owed = 0;
+			size_t want = (size_t)((double)elapsedSamples * rate / elapsedRate);
+			_block.assign(want * 2, 0);
+			samples = _block.data();
+			sampleCount = (uint32_t)want;
+			sampleRate = (uint32_t)rate;
+			return sampleCount > 0;
+		}
+
 		_owed += (double)elapsedSamples * rate / elapsedRate;
 
 		size_t want = (size_t)_owed;
@@ -141,7 +209,31 @@ public:
 			return false;
 		}
 
+		if(_skipRequested.exchange(false)) {
+			//Told to end early. The machine is let out the same way it would have been by the
+			//stream running out, so what it does next is what it would have done anyway.
+			Stop();
+			return false;
+		}
+
+		if(_seekRequested.exchange(false)) {
+			//Everything already decoded belongs to where the stream used to be: the queued
+			//sound would play a quarter second of the old place over the new picture, and the
+			//sound owed for time already run is owed against a stream that has moved.
+			_decoder.Seek(_seekTarget.load());
+			_fifo.clear();
+			_fifoPos = 0;
+			_block.clear();
+			_owed = 0;
+			_position = _decoder.GetTime();
+		}
+
+		if(_paused) {
+			return true;
+		}
+
 		_decoder.Advance(consoleFps > 1 ? 1.0 / consoleFps : 1.0 / 50.0);
+		_position = _decoder.GetTime();
 
 		if(_decoder.HasPicture()) {
 			//Into the buffer nothing is reading, then swapped in

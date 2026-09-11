@@ -35,6 +35,9 @@ namespace Mesen.ViewModels
 
 		public SoftwareRendererViewModel SoftwareRenderer { get; } = new();
 
+		//The transport for a video the core is showing. It hides itself when none is playing.
+		public DiscVideoTransportViewModel DiscVideoTransport { get; } = new();
+
 		public Configuration Config { get; }
 		public NativeRenderer? Renderer { get; internal set; }
 
