@@ -1,6 +1,7 @@
 ﻿#pragma once
 #include "pch.h"
 #include "NES/Mappers/CdSegmentIndex.h"
+#include "NES/Mappers/CdVideoPlayer.h"
 
 #include "Shared/SettingTypes.h"
 #include "Shared/Interfaces/IConsole.h"
@@ -45,6 +46,7 @@ private:
 	unique_ptr<BaseMapper> _mapper;
 	unique_ptr<NesControlManager> _controlManager;
 	unique_ptr<NesSoundMixer> _mixer;
+	unique_ptr<CdVideoPlayer> _discVideo;
 
 	safe_ptr<HdPackData> _hdData;
 	unique_ptr<HdAudioDevice> _hdAudioDevice;
@@ -86,6 +88,18 @@ public:
 	bool IsBbkGame();
 	string GetVideoDiscPath();
 	vector<CdVideoReel> GetVideoReels();
+
+	//The disc's own video, decoded here rather than handed to a player outside. Clocked once
+	//a frame; returns the picture to show in place of the machine's own, or null when the
+	//machine has its screen.
+	void ClockDiscVideo();
+	//The picture as it stands, without moving the stream on - the PPU asks while building a
+	//frame, which is not the same clock as the one the stream runs on
+	uint32_t* GetDiscVideoFrame();
+	CdVideoPlayer* GetDiscVideoPlayer() { return _discVideo.get(); }
+
+	//The sound belonging to a video that is on screen, if one is - see NesSoundMixer
+	bool TakeDiscAudio(int16_t*& samples, uint32_t& sampleCount, uint32_t& sampleRate, uint32_t elapsedSamples, uint32_t elapsedRate);
 	bool TakeVideoPlayRequest(uint8_t& track, uint32_t& startMsf, uint32_t& endMsf);
 	void EndVideoPlayback(bool completed);
 	NesSoundMixer* GetSoundMixer() { return _mixer.get(); }

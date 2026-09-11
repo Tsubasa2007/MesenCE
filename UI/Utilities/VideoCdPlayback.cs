@@ -64,6 +64,14 @@ namespace Mesen.Utilities
 		//the work goes to a thread of its own.
 		public static void Poll()
 		{
+			//The core shows the disc's video itself unless it has been told not to, and the
+			//request is only there to be taken once - whoever asks first gets it. Taking it
+			//here as well would mean the picture went to whichever of the two happened to
+			//look first, which in practice was always this one.
+			if(ConfigManager.Config.Nes.DecodeDiscVideo) {
+				return;
+			}
+
 			bool busy;
 			lock(_lock) {
 				busy = _playing;

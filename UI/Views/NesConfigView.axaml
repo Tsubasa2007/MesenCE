@@ -88,6 +88,7 @@
 					</c:OptionSection>
 
 					<c:OptionSection Header="{l:Translate lblKewangSettings}">
+						<CheckBox IsChecked="{Binding Config.DecodeDiscVideo}" Content="{l:Translate chkDecodeDiscVideo}" />
 						<CheckBox IsChecked="{Binding Config.KewangDisableVideoPlayback}" Content="{l:Translate chkKewangDisableVideoPlayback}" />
 					</c:OptionSection>
 

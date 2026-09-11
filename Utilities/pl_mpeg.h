@@ -4039,13 +4039,22 @@ int plm_audio_decode_header(plm_audio_t *self) {
 	plm_buffer_skip(self->buffer, 1); // f_private
 	int mode = plm_buffer_read(self->buffer, 2);
 
-	// If we already have a header, make sure the samplerate, bitrate and mode
-	// are still the same, otherwise we might have missed sync.
+	// If we already have a header, make sure the samplerate and bitrate are still
+	// the same, otherwise we might have missed sync.
+	//
+	// LOCAL CHANGE from upstream: the mode is deliberately NOT part of this test.
+	// A Layer II encoder may pick stereo or joint stereo per frame, and one of the
+	// discs here does: 1899 of its 5593 frames are stereo and 3694 joint, switching
+	// first at frame ten. Treating that as a missed sync threw away every joint
+	// frame - a third of the sound came out, the rest of the stream ran dry, and
+	// the audio stopped for good less than half way in. The bound is recomputed
+	// from the mode a few lines below, so a switch is handled correctly once the
+	// header is accepted. Bitrate and samplerate are genuinely invariant and still
+	// guard against a false sync.
 	if (
 		self->has_header && (
 			self->bitrate_index != bitrate_index ||
-			self->samplerate_index != samplerate_index ||
-			self->mode != mode
+			self->samplerate_index != samplerate_index
 		)
 	) {
 		return 0;

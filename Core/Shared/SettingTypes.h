@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "pch.h"
 #include <algorithm>
 
@@ -683,6 +683,7 @@ struct NesConfig
 	//The YuXing VCD models power on showing the player's own screen, which is left behind
 	//by ejecting the disc. Skipping it boots straight to the computer side instead.
 	bool YuxingSkipVcdScreen = true;
+	bool DecodeDiscVideo = true;
 	//The D-type machines had no mouse of their own - theirs came on an add-on cartridge and
 	//is a plain free-running serial mouse, nothing like the later models' built-in one. The
 	//two are wire-level opposites, so which one is plugged in has to be said out loud.

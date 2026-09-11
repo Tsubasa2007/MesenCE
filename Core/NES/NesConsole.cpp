@@ -1,5 +1,7 @@
 ﻿#include "pch.h"
 #include "NES/NesConsole.h"
+#include "Shared/Video/VideoDecoder.h"
+#include "NES/CdVideoFilter.h"
 #include "NES/NesControlManager.h"
 #include "NES/MapperFactory.h"
 #include "NES/APU/NesApu.h"
@@ -328,6 +330,7 @@ void NesConsole::InternalRunFrame()
 	}
 
 	_mapper->EndFrame();
+	ClockDiscVideo();
 	_apu->EndFrame();
 
 	if(!_nextFrameOverclockDisabled) {
@@ -513,6 +516,112 @@ vector<CdVideoReel> NesConsole::GetVideoReels()
 	return {};
 }
 
+//One emulated frame of whatever the disc is showing.
+//
+//The machine hands its screen to the decoder while a video runs and draws nothing itself, so
+//what comes back here is shown in place of its picture rather than over it. When the stream
+//ends the machine is told the video is over and takes its screen back.
+//
+//A request is only taken here when the disc's video is being decoded in the emulator; with
+//that off it is left for the front end, which hands it to a player outside instead.
+//A position in minutes, seconds and frames, 75 to the second, as the machines count it
+static uint32_t MsfToSectors(uint32_t msf)
+{
+	return ((msf >> 16) * 60 + ((msf >> 8) & 0xFF)) * 75 + (msf & 0xFF);
+}
+
+uint32_t* NesConsole::GetDiscVideoFrame()
+{
+	return _discVideo && _discVideo->IsPlaying() ? _discVideo->GetFrameBuffer() : nullptr;
+}
+
+//Moved on once per emulated frame, beside the sound it belongs to. Driving it from the frame
+//the PPU sends instead looked equivalent and was not: that runs on its own schedule, and the
+//stream then advanced fewer times than the sound was drawn from it, so every frame's worth
+//of sound came up short and the whole thing played fast.
+void NesConsole::ClockDiscVideo()
+{
+	if(!GetNesConfig().DecodeDiscVideo) {
+		return;
+	}
+
+	if(!_discVideo) {
+		_discVideo.reset(new CdVideoPlayer());
+	}
+
+	if(!_discVideo->IsPlaying()) {
+		uint8_t track = 0;
+		uint32_t start = 0;
+		uint32_t end = 0;
+		if(TakeVideoPlayRequest(track, start, end)) {
+			//Which drive holds the disc, and what it says is on it. Both belong to the
+			//mapper rather than to the console, so they are asked for together here.
+			CdImageFile* image = nullptr;
+			const vector<CdTrack>* tracks = nullptr;
+			if(DrPcJrMapper* pcjr = dynamic_cast<DrPcJrMapper*>(_mapper.get())) {
+				image = &pcjr->GetDiscImage();
+				tracks = &pcjr->GetDiscTracks();
+			} else if(YuxingMapper* yuxing = dynamic_cast<YuxingMapper*>(_mapper.get())) {
+				image = &yuxing->GetDiscImage();
+				tracks = &yuxing->GetDiscTracks();
+			}
+
+			uint32_t lba = 0;
+			uint32_t sectors = 0;
+			if(image) {
+				if(track == 0xFF) {
+					//The YuXing machines name a segment item outright - an address and a
+					//length, which is all this needs
+					lba = start;
+					sectors = end;
+				} else {
+					//The others name one of the disc's video tracks and a stretch of it, both
+					//counted in minutes, seconds and frames from the track's own start. Where
+					//the track is comes from the one place that reads a disc's tracks - see
+					//CdSegmentIndex::ReadTracks.
+					CdTrack found = {};
+					if(tracks && CdSegmentIndex::FindVideoTrack(*tracks, track, found)) {
+						uint32_t from = MsfToSectors(start);
+						uint32_t to = MsfToSectors(end);
+						lba = found.Lba + from;
+						//A play that names no end runs to the end of its own track
+						uint32_t until = to > from ? found.Lba + to : found.Lba + found.Sectors;
+						uint32_t trackEnd = found.Lba + found.Sectors;
+						until = until < trackEnd ? until : trackEnd;
+						sectors = until > lba ? until - lba : 0;
+					}
+				}
+			}
+
+			if(sectors > 0 && _discVideo->Start(*image, lba, sectors)) {
+				MessageManager::Log("[Video CD] Playing " + std::to_string(sectors) + " sectors from " + std::to_string(lba));
+				_emu->GetVideoDecoder()->ForceFilterUpdate();
+			} else {
+				//Nothing here can show it, so let the machine carry on rather than wait
+				EndVideoPlayback(false);
+			}
+		}
+		return;
+	}
+
+	if(!_discVideo->ClockFrame(GetFps())) {
+		//Ran to the end, so the machine has its screen back and knows the video finished
+		_emu->GetVideoDecoder()->ForceFilterUpdate();
+		EndVideoPlayback(true);
+	}
+}
+
+//The sound of a video that is on screen. The machine is stopped in its wait loop while one
+//plays and has nothing of its own to say, so this stands in for the APU's output for those
+//frames rather than being mixed with it - the same way the picture stands in for the PPU's.
+bool NesConsole::TakeDiscAudio(int16_t*& samples, uint32_t& sampleCount, uint32_t& sampleRate, uint32_t elapsedSamples, uint32_t elapsedRate)
+{
+	if(!_discVideo || !_discVideo->IsPlaying()) {
+		return false;
+	}
+	return _discVideo->TakeAudio(samples, sampleCount, sampleRate, elapsedSamples, elapsedRate);
+}
+
 //A video the machine has asked to play. It is waiting on the answer, so whoever takes the
 //request has to call EndVideoPlayback when the video is over - see DrPcJrCdDrive.
 bool NesConsole::TakeVideoPlayRequest(uint8_t& track, uint32_t& startMsf, uint32_t& endMsf)
@@ -599,6 +708,12 @@ ShortcutState NesConsole::IsShortcutAllowed(EmulatorShortcut shortcut, uint32_t 
 
 BaseVideoFilter* NesConsole::GetVideoFilter(bool getDefaultFilter)
 {
+	//A disc's video is already colour and is not the machine's size, so while one is on
+	//screen it needs a filter of its own rather than the palette one - see CdVideoFilter.
+	if(!getDefaultFilter && _discVideo && _discVideo->IsPlaying()) {
+		return new CdVideoFilter(_emu, _discVideo.get());
+	}
+
 	if(getDefaultFilter || GetRomFormat() == RomFormat::Nsf) {
 		return new NesDefaultVideoFilter(_emu);
 	} else if(_hdData && !_hdPackBuilder) {

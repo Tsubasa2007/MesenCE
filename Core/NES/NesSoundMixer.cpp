@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "NES/NesSoundMixer.h"
 #include "NES/NesConsole.h"
 #include "NES/NesConstants.h"
@@ -101,7 +101,17 @@ void NesSoundMixer::PlayAudioBuffer(uint32_t time)
 		case StereoFilterType::CombFilter: _stereoCombFilter.ApplyFilter(_outputBuffer, _sampleCount, _sampleRate, cfg.StereoCombFilterDelay, cfg.StereoCombFilterStrength); break;
 	}
 
-	_mixer->PlayAudioBuffer(_outputBuffer, (uint32_t)_sampleCount, 96000);
+	//A video off the disc brings its own sound, and the machine is silent while one plays. How
+	//much of the machine's own sound this block holds is what says how much time it covers,
+	//and the same amount of the video's is asked for.
+	int16_t* discSamples = nullptr;
+	uint32_t discCount = 0;
+	uint32_t discRate = 0;
+	if(_console->TakeDiscAudio(discSamples, discCount, discRate, (uint32_t)_sampleCount, _sampleRate)) {
+		_mixer->PlayAudioBuffer(discSamples, discCount, discRate);
+	} else {
+		_mixer->PlayAudioBuffer(_outputBuffer, (uint32_t)_sampleCount, 96000);
+	}
 	_sampleCount = 0;
 
 	UpdateRates(false);
