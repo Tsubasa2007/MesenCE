@@ -139,6 +139,9 @@ protected:
 		return "ABCDEFGHIJKLMNOPQRSTUVWXYZ01234567891234567890120123456789edpmdmncdsasbemglrcpcsasbteeehidududlrwwmps";
 	}
 
+public:
+	//Named here rather than kept to this class: the disc's own menu is walked outside the
+	//guest, by code that has to ask for a key by name - see YuxingVcdMenu.
 	enum Buttons
 	{
 		A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
@@ -162,6 +165,8 @@ protected:
 		ScrollLock,
 		None
 	};
+
+protected:
 
 	//Row-major key matrix: [row][column]. None marks a matrix position with no key on it.
 	Buttons _keyboardMatrix[RowCount][8] = {

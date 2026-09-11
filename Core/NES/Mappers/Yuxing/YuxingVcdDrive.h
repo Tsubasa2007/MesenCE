@@ -6,6 +6,7 @@
 #include "Utilities/Serializer.h"
 #include "NES/Mappers/CdImageFile.h"
 #include "NES/Mappers/CdSegmentIndex.h"
+#include "NES/Mappers/Yuxing/YuxingVcdMenu.h"
 
 //YuXing VCD drive - the CD-ROM the V9.2 models boot their software from, emulated at the
 //command level rather than the disc level. Ported from the VirtuaNES-BBK fork
@@ -74,6 +75,22 @@ private:
 		{ 0xAF, 2, 0x06 }
 	};
 
+	//Where the machine last said to put the pointer, and which shape to put there
+	static constexpr uint32_t PointerLeft = 32;
+	static constexpr uint32_t PointerRight = 642;
+	static constexpr uint32_t PointerTop = 20;
+	static constexpr uint32_t PointerBottom = 254;
+	//Which channels the machine last asked to hear - see the $AC handler
+	uint8_t _audioChannels = 3;
+	bool _pointerShown = false;
+	uint8_t _pointerShape = 0;
+	uint32_t _pointerX = PointerLeft;
+	uint32_t _pointerY = PointerTop;
+
+	//The menu the disc itself carries, for a disc that holds a library of programs - see
+	//YuxingVcdMenu. A disc with one program has nothing to choose and never opens one.
+	YuxingVcdMenu _menu;
+
 	//What the drive serves: one program's bytes. The disc it came off stays on disk and is
 	//read from as programs are picked, rather than being held here - see CdImageFile.
 	vector<uint8_t> _disc;
@@ -124,8 +141,48 @@ private:
 	static constexpr uint32_t SegmentStride = CdSegmentIndex::SegmentStride;
 	uint32_t _segmentOrigin = 0;
 
+	//Where each of the disc's segment items really is, taken from the directory that lists
+	//them rather than worked out from a stride.
+	//
+	//Most of them are one fixed allocation each and the two ways of counting agree, which is
+	//why a stride carried this far. They part company at the first item longer than one: it
+	//takes as many allocations as it needs, the numbering of the files carries on past them,
+	//and from there a stride is short by the difference. On one disc it is the 181st item that
+	//is long, and every menu page after it came out as the middle of that item instead - one
+	//of them a stretch with no picture in it at all.
+	struct DiscSegmentItem
+	{
+		uint32_t Lba;
+		uint32_t Sectors;
+	};
+	vector<DiscSegmentItem> _segmentItems;
+
+	//And the same files in the order the directory lists them. A disc whose items are all one
+	//allocation each numbers them the same way twice over; one that has a long item does not,
+	//because a long item takes several numbers' worth of room and the files carry on past
+	//them - so ITEM0181 is followed by ITEM0196, and the item numbered 182 is the one after
+	//the long one rather than a file of that name.
+	vector<DiscSegmentItem> _segmentOrder;
+
+	//The shape of the disc's own layout, worked out from the records that DID read back
+	//cleanly rather than assumed. Where every one of them sits at base + (n-1)*step the
+	//disc lays its items out evenly, and that arithmetic answers for the numbers whose
+	//own record is unreadable - which counting cannot, because dropping a bad record
+	//moves every item after it up a place. Zero when the records do not agree on a
+	//single stride, which is what a disc with a long item looks like.
+	uint32_t _segmentEvenBase = 0;
+	uint32_t _segmentEvenStep = 0;
+
+	//Whether the records that read back cleanly are listed in ascending order of their own
+	//numbers. When they are, counting down the list is meaningful and a number with no file
+	//of its own is a disc whose numbering has run ahead of its names. When they are NOT -
+	//one disc lists ITEM1083 seventh - the ordering carries no information at all, and only
+	//the arithmetic can be trusted.
+	bool _segmentNamesInOrder = true;
+
 	//A video the machine has asked to show, waiting for the front end to take it
 	bool _playPending = false;
+	uint8_t _playTrack = 0xFF;
 	uint32_t _playLba = 0;
 	uint32_t _playSectors = 0;
 
@@ -189,13 +246,31 @@ private:
 				_pos = _seekPos;
 				break;
 
+			case 0xA6:
+				//"Put the pointer here": a shape, then where. The machine keeps the position
+				//itself and only ever tells the drive about it, because the drive is what
+				//draws it - nothing on this side of the link puts a single pixel on screen
+				//while a disc program is running.
+				//
+				//The travel is what says how far it can go: driven into each corner it runs
+				//32..642 across and 20..254 down, those being the limits the BIOS clamps to
+				//so that the pointer stays on the picture. Taking them as the edges is what
+				//turns them into somewhere on a 352x288 frame.
+				_pointerShape = _cmd[1];
+				_pointerX = ((uint32_t)_cmd[3] << 8) | _cmd[4];
+				_pointerY = _cmd[2];
+				_pointerShown = true;
+				break;
+
 			case 0xAC: {
-				//"Show this": the item number is the two bytes after the type. Nothing else
-				//on the disc is numbered anywhere near far enough for it to mean anything
-				//else - eleven entries in ENTRIES.VCD, twelve tracks, no play lists declared
-				//at all, against nearly two thousand segment items.
-				uint32_t item = ((uint32_t)_cmd[2] << 8) | _cmd[3];
-				RequestSegmentItem(item);
+				//"Show this", and what to show is named by the two bytes after the type. The
+				//type's low two bits say which audio channels to play, bit 0 left and bit 1
+				//right: a dictionary page carries its two words spoken at the same time, one
+				//in each channel, and the program asks for the same item again with 1 or 2 to
+				//say the word on that side. 3 is both, which is what a video or a menu page
+				//asks for, and 0 is silence - a page turned without saying anything.
+				_audioChannels = _cmd[1] & 0x03;
+				RequestShow(((uint32_t)_cmd[2] << 8) | _cmd[3]);
 				break;
 			}
 
@@ -227,32 +302,100 @@ private:
 		}
 	}
 
-	//Where a segment item's stream begins, or 0 if this disc has none
-	uint32_t SegmentItemLba(uint32_t item)
+	//A disc numbers everything it can be told to show in one series: 1 to 99 are the
+	//sequence items, which are its video tracks, and 1000 upwards are the segment items -
+	//the stills and short pieces kept in /SEGMENT. So a number says which of the two kinds
+	//it is as well as which one, and the segment items count from 1000 rather than from 1.
+	//
+	//Read as plain segment numbers instead, everything is off by the best part of a
+	//thousand: a menu asked for by number 1002 came out as whatever lies 999 items further
+	//along, which on one disc is a page from the middle of its dictionary and on the same
+	//disc's game screens is past the end of the disc altogether.
+	static constexpr uint32_t FirstSegmentNumber = 1000;
+	static constexpr uint32_t FirstSequenceNumber = 2;
+	static constexpr uint32_t LastSequenceNumber = 99;
+
+	//Where a segment item's stream begins and how far it runs, or nothing if this disc has
+	//none. The directory is the answer where there is one; the stride is what is left when a
+	//disc keeps its items somewhere this cannot read.
+	bool SegmentItem(uint32_t item, uint32_t& lba, uint32_t& sectors)
 	{
-		if(_segmentOrigin == 0 || item == 0) {
-			return 0;
+		if(item == 0) {
+			return false;
 		}
-		return _segmentOrigin + (item - 1) * SegmentStride;
+		//The file of that number if the disc has one - which is the answer that survives a
+		//directory this cannot read cleanly all the way through
+		if(item <= _segmentItems.size() && _segmentItems[item - 1].Sectors > 0) {
+			lba = _segmentItems[item - 1].Lba;
+			sectors = _segmentItems[item - 1].Sectors;
+			return true;
+		}
+
+		//Otherwise the disc's own spacing, where its readable records all agree on one. This
+		//has to come before counting: on a disc whose directory does not read cleanly the
+		//n'th SURVIVING record is not the n'th item, and counting quietly answers with a
+		//neighbour - asked for the letter A it handed back the page for G, several hundred
+		//items away, because 801 of that disc's 1081 records carry an impossible address.
+		if(_segmentEvenStep > 0) {
+			lba = _segmentEvenBase + (item - 1) * _segmentEvenStep;
+			sectors = _segmentEvenStep;
+			return true;
+		}
+
+		//Otherwise the n'th file there is. A number with no file of its own belongs to a disc
+		//whose numbering has run ahead of its names, and counting is what catches up - and a
+		//disc like that is exactly the one whose records do not agree on a single stride.
+		if(item <= _segmentOrder.size()) {
+			lba = _segmentOrder[item - 1].Lba;
+			sectors = _segmentOrder[item - 1].Sectors;
+			return true;
+		}
+		if(_segmentOrigin == 0) {
+			return false;
+		}
+		lba = _segmentOrigin + (item - 1) * SegmentStride;
+		sectors = SegmentStride;
+		return true;
 	}
 
 	//What the machine asked to show. Whether it is worth opening a player for is the front
 	//end's judgement, not the drive's: most of what these discs carry is a single frame, and
 	//it is the front end that knows what it can do with one.
-	void RequestSegmentItem(uint32_t item)
+	void RequestShow(uint32_t number)
 	{
-		uint32_t lba = SegmentItemLba(item);
-		if(lba == 0) {
-			MessageManager::Log("[YuXing] Segment item " + std::to_string(item) +
-				" asked for, but this disc's item layout was not recognised");
+		if(number >= FirstSegmentNumber) {
+			uint32_t item = number - FirstSegmentNumber + 1;
+			uint32_t lba = 0, sectors = 0;
+			if(!SegmentItem(item, lba, sectors)) {
+				MessageManager::Log("[YuXing] Segment item " + std::to_string(item) +
+					" asked for, but this disc's item layout was not recognised");
+				return;
+			}
+
+			_playTrack = SegmentTrack;
+			_playLba = lba;
+			_playSectors = sectors;
+			_playPending = true;
+			MessageManager::Log("[YuXing] Program asked for segment item " + std::to_string(item) +
+				" (number " + std::to_string(number) + ", sector " + std::to_string(lba) + ")");
 			return;
 		}
 
-		_playLba = lba;
-		_playSectors = SegmentStride;
+		if(number < FirstSequenceNumber || number > LastSequenceNumber) {
+			MessageManager::Log("[YuXing] Program asked to show " + std::to_string(number) +
+				", which is neither a track nor a segment item");
+			return;
+		}
+
+		//A sequence item is one of the disc's own tracks, played through from its beginning,
+		//and its number is that track's number. They start at two because the first track is
+		//where the disc keeps its files rather than any video - which is also why the front
+		//end counts videos from the second track, so what it wants is one less.
+		_playTrack = (uint8_t)(number - 1);
+		_playLba = 0;
+		_playSectors = 0;
 		_playPending = true;
-		MessageManager::Log("[YuXing] Program asked for segment item " + std::to_string(item) +
-			" (sector " + std::to_string(lba) + ")");
+		MessageManager::Log("[YuXing] Program asked for track " + std::to_string(number));
 	}
 
 	uint8_t KeyRead()
@@ -280,6 +423,11 @@ public:
 		_followUp = 0;
 		_hasFollowUp = false;
 		_move = _shifting = _canReadData = _seekOk = _readComplete = _keyboardSelected = false;
+		_audioChannels = 3;
+		_pointerShown = false;
+		_pointerShape = 0;
+		_pointerX = PointerLeft;
+		_pointerY = PointerTop;
 		_driveSelected = true;
 		_baseSector[2] = 0xFF;
 		_statusByCmd[2] = _statusByCmd[6] = 0x0F;
@@ -293,6 +441,50 @@ public:
 	//True once a program is being served. A disc can be mounted with none chosen yet, so
 	//this is NOT the test for "is there a disc" - see HasDisc().
 	bool IsDiscInserted() { return !_disc.empty(); }
+
+	//Where the pointer belongs on the picture, in the picture's own pixels. The machine has
+	//to have placed it at least once - before that there is no pointer to draw.
+	//
+	//The long axis is counted in half pixels: the program doubles every step it takes before
+	//adding it, so its 32..642 is the picture's 16..321, while the short axis is already in
+	//lines. Stretching the ends of that travel to the edges of the picture instead - which is
+	//what this did - put the arrow up to thirty pixels away from the place the program was
+	//really pointing at, worst at the edges, so it never quite clicked what it pointed to.
+	//The travel stops inside the picture, not at its border: on a 352x288 disc it stays
+	//within the white panel the menu draws, rows 20..258 and columns 14..333.
+	uint8_t GetAudioChannels() { return _audioChannels; }
+	uint8_t GetPointerShape() { return _pointerShape; }
+
+	bool GetPointer(double& x, double& y)
+	{
+		if(!_pointerShown) {
+			return false;
+		}
+		//No clamping here: the machine has already stopped the pointer at the edge of its
+		//own travel, and what draws it bounds-checks every pixel. A clamp to 1.0 belonged
+		//to the old reading of these as fractions, and left behind it pinned the arrow to
+		//the corner - the position was right all the way down and thrown away at the end.
+		x = _pointerX / 2.0;
+		y = _pointerY;
+		return true;
+	}
+
+	//A menu is only worth walking when there is more than one program to reach through it,
+	//and only while none has been picked - once one is running it owns the screen.
+	bool HasMenu() { return _menu.IsOpen() && _programs.size() > 1 && _disc.empty(); }
+	YuxingVcdMenu& GetMenu() { return _menu; }
+
+	//The picture the menu wants up, put through the same path as a program's own request.
+	//Answers with how long the disc gives it, in sectors, or nought if it wanted nothing.
+	uint32_t ShowMenuStill()
+	{
+		uint32_t item = 0;
+		if(!_menu.TakeShow(item)) {
+			return 0;
+		}
+		RequestShow(item);
+		return _playPending ? _playSectors : 0;
+	}
 
 	//True while any disc is mounted, chosen program or not
 	bool HasDisc() { return !_disc.empty() || !_programs.empty(); }
@@ -366,7 +558,7 @@ public:
 			return false;
 		}
 		_playPending = false;
-		track = SegmentTrack;
+		track = _playTrack;
 		lba = _playLba;
 		sectors = _playSectors;
 		return true;
@@ -448,6 +640,22 @@ public:
 		uint32_t rootLba = 0, rootLen = 0;
 		memcpy(&rootLba, root + 2, 4);
 		memcpy(&rootLen, root + 10, 4);
+
+		//The disc's own menu, which is what the machine browses a library of programs with.
+		//It is looked for whatever the programs turn out to be: whether there is a menu at
+		//all is the descriptor's own answer, not something to guess from the file layout.
+		uint32_t psdLba = 0, psdLen = 0;
+		if(FindIsoEntry(rootLba, rootLen, "EXT", true, psdLba, psdLen)) {
+			uint32_t fileLba = 0, fileLen = 0;
+			if(FindIsoEntry(psdLba, psdLen, "PSD_X.VCD", false, fileLba, fileLen)) {
+				_menu.Open(_image, fileLba, fileLen);
+			}
+		}
+
+		uint32_t segLba = 0, segLen = 0;
+		if(FindIsoEntry(rootLba, rootLen, "SEGMENT", true, segLba, segLen)) {
+			CollectSegmentItems(segLba, segLen);
+		}
 
 		uint32_t dirLba = 0, dirLen = 0;
 		if(FindIsoEntry(rootLba, rootLen, "PROGRAMS", true, dirLba, dirLen)) {
@@ -539,6 +747,152 @@ public:
 	}
 
 	//Every file in one directory, in the order the disc lists them
+	//An item's own number, from a name shaped like ITEM0028.DAT. Nought if it is not one.
+	static uint32_t ItemNumber(const uint8_t* name, uint8_t length)
+	{
+		if(length < 8 || memcmp(name, "ITEM", 4) != 0) {
+			return 0;
+		}
+		uint32_t number = 0;
+		for(uint8_t i = 4; i < 8; i++) {
+			if(name[i] < '0' || name[i] > '9') {
+				return 0;
+			}
+			number = number * 10 + (uint32_t)(name[i] - '0');
+		}
+		return number;
+	}
+
+	//Where the disc's segment items are, kept at their own numbers. Only where they are and
+	//how far they run; what is in them is the decoder's business.
+	//Does this disc space its items evenly? Answered from the records that read back
+	//cleanly, and only accepted when EVERY one of them fits - two agreeing records prove
+	//nothing, and a disc with one long item in it has to fall through to counting.
+	void FindEvenSpacing()
+	{
+		_segmentEvenBase = 0;
+		_segmentEvenStep = 0;
+
+		//A directory that lists its items in order is trustworthy enough to count down, and
+		//counting is what a disc whose numbering has run ahead of its names needs: there the
+		//slot arithmetic lands in the middle of a long item, a stretch with no picture in it.
+		//So this is only for the disc whose ordering is scrambled.
+		if(_segmentNamesInOrder) {
+			return;
+		}
+
+		uint32_t firstNumber = 0, lastNumber = 0;
+		for(uint32_t i = 0; i < _segmentItems.size(); i++) {
+			if(_segmentItems[i].Sectors == 0) {
+				continue;
+			}
+			if(firstNumber == 0) {
+				firstNumber = i + 1;
+			}
+			lastNumber = i + 1;
+		}
+		if(firstNumber == 0 || lastNumber <= firstNumber) {
+			return;
+		}
+
+		uint32_t firstLba = _segmentItems[firstNumber - 1].Lba;
+		uint32_t lastLba = _segmentItems[lastNumber - 1].Lba;
+		uint32_t span = lastNumber - firstNumber;
+		if(lastLba <= firstLba || (lastLba - firstLba) % span != 0) {
+			return;
+		}
+		uint32_t step = (lastLba - firstLba) / span;
+		if(step == 0 || firstLba < (firstNumber - 1) * step) {
+			return;
+		}
+		uint32_t base = firstLba - (firstNumber - 1) * step;
+
+		uint32_t fitted = 0;
+		for(uint32_t i = 0; i < _segmentItems.size(); i++) {
+			if(_segmentItems[i].Sectors == 0) {
+				continue;
+			}
+			if(_segmentItems[i].Lba != base + i * step) {
+				return;
+			}
+			fitted++;
+		}
+
+		_segmentEvenBase = base;
+		_segmentEvenStep = step;
+		MessageManager::Log("[YuXing] Disc spaces its items evenly: " + std::to_string(fitted) +
+			" records agree on " + std::to_string(step) + " sectors from " + std::to_string(base));
+	}
+
+	void CollectSegmentItems(uint32_t dirLba, uint32_t dirLen)
+	{
+		_segmentItems.clear();
+		_segmentOrder.clear();
+		_segmentNamesInOrder = true;
+		uint32_t highestSoFar = 0;
+		vector<uint8_t> record = _image.ReadRange((uint64_t)dirLba * 0x800, dirLen);
+		if(record.empty()) {
+			return;
+		}
+
+		const uint8_t* dir = record.data();
+		uint32_t pos = 0;
+		while(pos < dirLen) {
+			uint8_t recLen = dir[pos];
+			if(recLen == 0) {
+				pos = (pos / 0x800 + 1) * 0x800;
+				continue;
+			}
+			if(pos + recLen > dirLen || recLen < 34) {
+				break;
+			}
+
+			uint8_t nameLen = dir[pos + 32];
+			bool isDir = (dir[pos + 25] & 0x02) != 0;
+			//The two entries every directory begins with name themselves and their parent
+			bool isSelfOrParent = nameLen == 1 && (dir[pos + 33] == 0 || dir[pos + 33] == 1);
+			if(!isDir && !isSelfOrParent && nameLen > 0 && pos + 33 + nameLen <= dirLen) {
+				//Which item this is, taken from its own name rather than from where it sits in
+				//the list. One disc's directory does not read cleanly all the way through -
+				//some records come out with an impossible address and a size larger than the
+				//disc - and dropping those silently moves every item after them up a place.
+				//Asked for the twenty-eighth, the drive then answers with some other item, or
+				//with one of the unreadable ones, whose address is nothing at all: a black
+				//screen where a menu page should be.
+				uint32_t number = ItemNumber(dir + pos + 33, nameLen);
+				uint32_t lba = 0, size = 0;
+				memcpy(&lba, dir + pos + 2, 4);
+				memcpy(&size, dir + pos + 10, 4);
+				if(lba > 0 && size >= 0x800 && (uint64_t)lba * 0x800 + size <= _image.Size()) {
+					DiscSegmentItem item = { lba, size / 0x800 };
+					_segmentOrder.push_back(item);
+					if(number > 0) {
+						if(number <= highestSoFar) {
+							_segmentNamesInOrder = false;
+						}
+						highestSoFar = number;
+						if(_segmentItems.size() < number) {
+							_segmentItems.resize(number);
+						}
+						_segmentItems[number - 1] = item;
+					}
+				}
+			}
+			pos += recLen;
+		}
+
+		_segmentOrder.shrink_to_fit();
+		FindEvenSpacing();
+		uint32_t known = 0;
+		for(DiscSegmentItem& item : _segmentItems) {
+			known += item.Sectors > 0 ? 1 : 0;
+		}
+		if(known > 0) {
+			MessageManager::Log("[YuXing] Disc lists " + std::to_string(known) + " of " +
+				std::to_string(_segmentItems.size()) + " segment items");
+		}
+	}
+
 	void CollectIsoFiles(uint32_t dirLba, uint32_t dirLen)
 	{
 		vector<uint8_t> record = _image.ReadRange((uint64_t)dirLba * 0x800, dirLen);
@@ -656,6 +1010,12 @@ public:
 
 	void EjectDisc()
 	{
+		_menu.Close();
+		_segmentItems.clear();
+		_segmentOrder.clear();
+		_segmentEvenBase = 0;
+		_segmentEvenStep = 0;
+		_segmentNamesInOrder = true;
 		_segmentOrigin = 0;
 		_playPending = false;
 		_disc.clear();
@@ -814,7 +1174,7 @@ public:
 	void Serialize(Serializer& s)
 	{
 		SVArray(_cmd, 20); SVArray(_baseSector, 3); SVArray(_statusByCmd, 0x100);
-		SV(_cmdSel); SV(_keyByteIndex); SV(_shiftIn); SV(_status); SV(_cmdIndex);
+		SV(_cmdSel); SV(_keyByteIndex); SV(_shiftIn); SV(_status); SV(_cmdIndex); SV(_audioChannels);
 		SV(_pos); SV(_basePos); SV(_seekPos);
 		SV(_keySend); SV(_keySendBit); SV(_keySelect);
 		SV(_followUp); SV(_hasFollowUp); SV(_shiftCount);

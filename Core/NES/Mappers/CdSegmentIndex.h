@@ -47,6 +47,9 @@ public:
 	//The fixed allocation one item gets, whatever it holds
 	static constexpr uint32_t SegmentStride = 150;
 
+	//How fast a disc runs. Everything counted in sectors turns into time through this.
+	static constexpr double SectorsPerSecond = 75.0;
+
 public:
 	//How long an item is, both ways of asking, measured in one place so nothing that plays or
 	//offers a video can disagree about it.
@@ -64,7 +67,7 @@ public:
 	static void MeasureItem(CdImageFile& image, uint32_t lba, uint32_t sectors,
 		double& discSeconds, double& streamSeconds)
 	{
-		discSeconds = ContentSectors(image, lba, sectors) / 75.0;
+		discSeconds = ContentSectors(image, lba, sectors) / SectorsPerSecond;
 		streamSeconds = 0;
 		if(sectors == 0) {
 			return;

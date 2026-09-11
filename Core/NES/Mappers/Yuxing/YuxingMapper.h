@@ -132,6 +132,12 @@ private:
 	//Which program on the disc was picked. Selecting one power-cycles the machine, which
 	//rebuilds the mapper - so like the disc path, this has to outlive it.
 	inline static int32_t _persistedProgramIndex = -1;
+
+	//Which menu keys were down last frame - see MenuKeyPressed
+	bool _menuKeyHeld[(int)YuxingKeyboard::None + 1] = {};
+
+	//How much of the menu picture's turn on the screen is left to run, in frames
+	uint32_t _menuStillFrames = 0;
 	inline static string _persistedFloppyRom;
 	inline static string _persistedFloppyPath;
 
@@ -1143,26 +1149,23 @@ protected:
 		}
 		_discChecked = true;
 
-		bool mounted = MountPairedMedia();
+		MountPairedMedia();
 
 		//The V9.2 models power on showing the VCD player's screen, which asks for a key the
-		//emulated keyboard cannot reach - it is normally left by ejecting the disc. With
-		//nothing for the drive to serve there is nothing on that screen, so drop straight to
-		//the computer side: it is the useful state, and the only one a recording can start
-		//from. Note what MountPairedMedia answers: a whole-disc image with no program picked
-		//yet does not count as mounted, so a disc like that starts on the computer side too -
-		//which is where its programs are picked from. Once one is picked the player stays,
-		//otherwise the drive could never be read.
-		if(_vcdMode && !mounted && _console->GetNesConfig().YuxingSkipVcdScreen) {
+		//emulated keyboard cannot reach - it is normally left by ejecting the disc. An empty
+		//drive puts nothing on that screen and offers no way off it, so drop straight to the
+		//computer side: it is the useful state, and the only one a recording can start from.
+		//
+		//An empty drive and nothing else. Whatever is in the drive belongs on the player's
+		//side, in every state it can be in: a disc carrying one program has had it picked
+		//already, a disc carrying a library draws its own menu, and one whose program has not
+		//been chosen yet is chosen from the disk list, which starts the machine again on it.
+		//Skipping for any of those is what made a disc reachable only through that list.
+		if(_vcdMode && !_vcd.HasDisc() && _console->GetNesConfig().YuxingSkipVcdScreen) {
 			_vcdMode = false;
 			_reg5002 = 2;
 			UpdateMouseMode();
-			//Which of the two it was matters to anyone reading the log: a disc that is in the
-			//drive and simply has nothing picked off it yet looks exactly like an empty drive
-			//from here, and saying "no disc" for it reads as a disc that failed to mount.
-			MessageManager::Log(_vcd.HasDisc()
-				? "[YuXing] Disc mounted, no program picked yet - starting on the computer side"
-				: "[YuXing] No disc - starting on the computer side");
+			MessageManager::Log("[YuXing] No disc - starting on the computer side");
 		}
 	}
 
@@ -1172,6 +1175,20 @@ protected:
 	{
 		if(_persistedProgramIndex >= 0 && _vcd.GetProgramCount() > 0) {
 			_vcd.SelectProgram((uint32_t)_persistedProgramIndex);
+			return;
+		}
+
+		//A disc carrying a single program has already made the choice, and that program is
+		//what the machine would find and start by itself. Leaving it unpicked is what sent
+		//these discs to the computer side at power-on: an unpicked disc answers exactly like
+		//an empty drive, so the player's own screen had nothing on it and was skipped, and
+		//the only way back was to pick the program out of the disk list by hand.
+		//
+		//A disc that carries a library of them is a different thing - there is no one program
+		//to start, the machine's way of choosing is a menu it reads off the disc itself, and
+		//guessing at the first one would start something arbitrary. Those are left alone.
+		if(_vcd.GetProgramCount() == 1) {
+			_vcd.SelectProgram(0);
 		}
 	}
 
@@ -1301,6 +1318,147 @@ public:
 	vector<CdVideoReel> GetVideoReels() { return _vcd.GetVideoReels(); }
 	const vector<CdTrack>& GetDiscTracks() { return _vcd.GetTracks(); }
 	CdImageFile& GetDiscImage() { return _vcd.GetImage(); }
+
+	//Walking the disc's own menu, once a frame. Nothing in the machine does this - on the
+	//hardware it is the drive's player that reads the descriptor, shows each still and takes
+	//the keys - so it is driven from outside the guest, like the picture itself.
+	void ClockDiscMenu()
+	{
+		//Only while the machine is on the player's side. The disc paired with the ROM is
+		//found again every time the machine is reset - which is what leaving the player does -
+		//so without this the menu would come back up over the computer's own screen, having
+		//been ejected a moment earlier.
+		if(!_discChecked || !_vcdMode || !_vcd.HasMenu()) {
+			return;
+		}
+
+		YuxingVcdMenu& menu = _vcd.GetMenu();
+		ReadMenuKeys(menu);
+
+		//An opening screen has had its turn once its picture has been up for as long as the
+		//disc gives it, which is when the disc means the machine to move on to what it is
+		//really offering.
+		//
+		//How long that is comes from the item itself - its allocation, at the disc's 75
+		//sectors a second - rather than from whoever happens to be showing it. Asking the
+		//decoder in here would have answered exactly, and asking a player outside this
+		//process cannot answer at all; taking it from the disc answers the same for both, and
+		//is the same measurement the decoder would be timing against anyway.
+		//A picture the menu has just asked for starts its turn; one that is part way through
+		//has its turn counted down; one whose turn is over lets the list move on if it is a
+		//screen that moves on by itself. Asking for the picture first is what gives an opening
+		//screen its turn at all - counted the other way round, its time was up before it had
+		//been asked for, and it never appeared.
+		uint32_t sectors = _vcd.ShowMenuStill();
+		if(sectors > 0) {
+			double fps = _console->GetFps();
+			_menuStillFrames = (uint32_t)(sectors / CdSegmentIndex::SectorsPerSecond * (fps > 1 ? fps : 50.0));
+		} else if(_menuStillFrames > 0) {
+			_menuStillFrames--;
+		} else {
+			menu.TimeOut();
+		}
+	}
+
+	//The keys the menu answers to. The numbers are the ones printed beside each entry on the
+	//still, which is how these menus are meant to be used and the only part of it that can be
+	//seen: there is no pointer on the screen yet, so moving a hidden selection about with the
+	//arrows shows nothing until one is drawn. A list too long for one screen draws a button
+	//for the page after it, which is the list's own way out rather than an entry on it, so it
+	//is taken by a page key instead of by a number.
+	void ReadMenuKeys(YuxingVcdMenu& menu)
+	{
+		shared_ptr<YuxingKeyboard> keyboard = _console->GetControlManager()->GetControlDevice<YuxingKeyboard>();
+		if(!keyboard) {
+			return;
+		}
+
+		static constexpr YuxingKeyboard::Buttons digits[9] = {
+			YuxingKeyboard::Num1, YuxingKeyboard::Num2, YuxingKeyboard::Num3,
+			YuxingKeyboard::Num4, YuxingKeyboard::Num5, YuxingKeyboard::Num6,
+			YuxingKeyboard::Num7, YuxingKeyboard::Num8, YuxingKeyboard::Num9
+		};
+		static constexpr YuxingKeyboard::Buttons pad[9] = {
+			YuxingKeyboard::Numpad1, YuxingKeyboard::Numpad2, YuxingKeyboard::Numpad3,
+			YuxingKeyboard::Numpad4, YuxingKeyboard::Numpad5, YuxingKeyboard::Numpad6,
+			YuxingKeyboard::Numpad7, YuxingKeyboard::Numpad8, YuxingKeyboard::Numpad9
+		};
+
+		bool chosen = false;
+		for(uint32_t i = 0; i < 9; i++) {
+			if(MenuKeyPressed(keyboard, digits[i]) || MenuKeyPressed(keyboard, pad[i])) {
+				chosen = menu.Number(i + 1);
+				break;
+			}
+		}
+
+		if(MenuKeyPressed(keyboard, YuxingKeyboard::Up) || MenuKeyPressed(keyboard, YuxingKeyboard::Left)) {
+			menu.Move(-1);
+		}
+		if(MenuKeyPressed(keyboard, YuxingKeyboard::Down) || MenuKeyPressed(keyboard, YuxingKeyboard::Right)) {
+			menu.Move(1);
+		}
+		if(MenuKeyPressed(keyboard, YuxingKeyboard::PageDown)) {
+			menu.NextPage();
+		}
+		if(MenuKeyPressed(keyboard, YuxingKeyboard::PageUp)) {
+			menu.PrevPage();
+		}
+		if(MenuKeyPressed(keyboard, YuxingKeyboard::Esc) || MenuKeyPressed(keyboard, YuxingKeyboard::Backspace)) {
+			menu.Leave();
+		}
+
+		if(chosen || MenuKeyPressed(keyboard, YuxingKeyboard::Enter) ||
+			MenuKeyPressed(keyboard, YuxingKeyboard::NumpadEnter) ||
+			MenuKeyPressed(keyboard, YuxingKeyboard::Space)) {
+			uint32_t program = menu.Enter();
+			if(program != YuxingVcdMenu::Nowhere) {
+				StartMenuProgram(program);
+			}
+		}
+	}
+
+	//Held keys are not repeats: a menu key counts once, where it goes down. Without this a
+	//key held for the tenth of a second a person holds one for walks the whole way down a
+	//menu tree.
+	bool MenuKeyPressed(shared_ptr<YuxingKeyboard>& keyboard, YuxingKeyboard::Buttons key)
+	{
+		bool down = keyboard->IsPressed((uint8_t)key);
+		bool was = _menuKeyHeld[key];
+		_menuKeyHeld[key] = down;
+		return down && !was;
+	}
+
+	//What the menu was for: the program behind the entry that was chosen. The machine is
+	//started again on it, which is what picking one out of the disk list does - so the two
+	//ways in end up in the same place.
+	void StartMenuProgram(uint32_t index)
+	{
+		if(!_vcd.SelectProgram(index)) {
+			return;
+		}
+		_discChecked = true;
+		_persistedProgramIndex = (int32_t)index;
+		_persistedDiscRom = _emu->GetRomInfo().RomFile.GetFilePath();
+		_persistedDiscPath = _vcd.GetDiscFilename();
+		MessageManager::Log("[YuXing] Menu chose entry " + std::to_string(index + 1) + ": " +
+			_vcd.GetProgramName(index));
+		_emu->GetSystemActionManager()->PowerCycle();
+	}
+
+	//Whether the drive is still the thing the screen belongs to. A picture off a disc stays
+	//up until something takes it down, and a still stays up indefinitely, so leaving the
+	//player - by ejecting, or by any other way out of that mode - has to be able to say so.
+	bool IsPlayerShowing() { return _vcdMode && _vcd.HasDisc(); }
+
+	//Where the disc's program has asked for its pointer - see YuxingVcdDrive::GetPointer
+	bool GetDiscPointer(double& x, double& y) { return _vcd.GetPointer(x, y); }
+
+	//Which audio channels the disc's program asked to hear - see YuxingVcdDrive
+	uint8_t GetDiscAudioChannels() { return _vcd.GetAudioChannels(); }
+
+	//Which cursor the disc's program is asking for - see CdVideoPlayer::DrawPointer
+	uint8_t GetDiscPointerShape() { return _vcd.GetPointerShape(); }
 
 	//A video the disc's own program has asked to show. The drive decides what is worth
 	//handing over; this is only the way out to the front end - see NesConsole.
