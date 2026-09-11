@@ -318,9 +318,10 @@ extern "C"
 		return true;
 	}
 
-	//Where one of the mounted disc's videos is - see CdSegmentIndex::ReadTracks. The number
-	//is the one a title names, which is one less than the disc's own numbering. Reads the
-	//mounted image, so from the thread the machine runs on only.
+	//Where one of the mounted disc's videos is - see CdSegmentIndex::ReadTracks for how the
+	//track is found and CdSegmentIndex::FindItem for why the answer is not the track itself.
+	//The number is the one a title names, which is one less than the disc's own numbering.
+	//Reads the mounted image, so from the thread the machine runs on only.
 	DllExport bool __stdcall GetNesDiscTrackExtent(uint32_t video, uint32_t* lba, uint32_t* sectors)
 	{
 		NesConsole* nes = dynamic_cast<NesConsole*>(_emu->GetConsole().get());

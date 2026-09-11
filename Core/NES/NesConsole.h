@@ -100,6 +100,7 @@ public:
 
 	//The sound belonging to a video that is on screen, if one is - see NesSoundMixer
 	bool TakeDiscAudio(int16_t*& samples, uint32_t& sampleCount, uint32_t& sampleRate, uint32_t elapsedSamples, uint32_t elapsedRate);
+	bool HasVideoPlayRequest();
 	bool TakeVideoPlayRequest(uint8_t& track, uint32_t& startMsf, uint32_t& endMsf);
 	void EndVideoPlayback(bool completed);
 	NesSoundMixer* GetSoundMixer() { return _mixer.get(); }

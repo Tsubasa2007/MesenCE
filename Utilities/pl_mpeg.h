@@ -388,6 +388,28 @@ double plm_get_duration(plm_t *self);
 void plm_rewind(plm_t *self);
 
 
+// LOCAL ADDITION, not upstream: move to a byte position instead of to a time.
+//
+// plm_seek finds its target through the stream's own timestamps. Some streams do not keep
+// honest ones - on the Video CDs this build reads, the demuxer's idea of how long an item
+// is comes out at a few seconds for one that runs for a minute and a half, and negative for
+// another - and plm_seek clamps its target to that before searching, so it lands nowhere
+// near or fails outright. Where the stream is handed over at a fixed rate the caller knows
+// the byte position it wants, and this jumps there.
+//
+// The decoders are put back to a clean state and the demuxer moved to that byte, keeping the
+// headers it read at the start of the stream. That is why this works where opening a second
+// demuxer part way in does not: a Video CD carries its system header only at the very
+// beginning, and plm_demux_has_headers will not proceed without one.
+//
+// The clock starts again from zero, as it does for a fresh stream, so a caller that wants to
+// know where it is on the disc must add on where it jumped to. Decoding resumes at the first
+// intra frame at or after the position - these streams repeat the sequence header ahead of
+// every group of pictures, so one is always close behind.
+
+void plm_seek_bytes(plm_t *self, size_t offset);
+
+
 // Get or set looping. Default FALSE.
 
 int plm_get_loop(plm_t *self);
@@ -1270,6 +1292,19 @@ void plm_read_packets(plm_t *self, int requested_type) {
 			plm_buffer_signal_end(self->audio_buffer);
 		}
 	}
+}
+
+// LOCAL ADDITION, not upstream - see the note beside the declaration.
+// The demuxer's own helpers are declared further down, with the rest of its internals.
+void plm_demux_buffer_seek(plm_demux_t *self, size_t pos);
+
+void plm_seek_bytes(plm_t *self, size_t offset) {
+	if (!plm_init_decoders(self)) {
+		return;
+	}
+
+	plm_rewind(self);
+	plm_demux_buffer_seek(self->demux, offset);
 }
 
 plm_frame_t *plm_seek_frame(plm_t *self, double time, int seek_exact) {

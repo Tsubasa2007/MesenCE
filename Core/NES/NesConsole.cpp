@@ -541,15 +541,74 @@ uint32_t* NesConsole::GetDiscVideoFrame()
 //of sound came up short and the whole thing played fast.
 void NesConsole::ClockDiscVideo()
 {
+	//A disc that carries its own menu walks it here, before anything is asked for, so that a
+	//still it wants up this frame is taken this frame rather than the next one.
+	//
+	//Above the question of who shows the picture, on purpose. The menu is how the disc is got
+	//at, not a way of decoding it, and a machine whose video is played outside still has to be
+	//able to reach its own menu - otherwise a disc put in front of it can only sit there.
+	YuxingMapper* yuxing = dynamic_cast<YuxingMapper*>(_mapper.get());
+	if(yuxing) {
+		yuxing->ClockDiscMenu();
+	}
+
 	if(!GetNesConfig().DecodeDiscVideo) {
 		return;
+	}
+
+	//The pointer the machine asked for, onto whatever picture is up. It belongs to the disc's
+	//program rather than to any one picture, so it is set every frame and not at the moment a
+	//picture starts.
+	//
+	//Asked for on a line of its own. Written as one call - passing the answer and the two
+	//values it fills in as three arguments - the arguments may be read in any order the
+	//compiler likes, and this one read the coordinates before making the call that sets them.
+	//The cursor appeared, because the answer was right, and then sat in the corner for ever,
+	//because the coordinates were always the nought they started at.
+	if(yuxing && _discVideo) {
+		double pointerX = 0, pointerY = 0;
+		bool hasPointer = yuxing->GetDiscPointer(pointerX, pointerY);
+		_discVideo->SetPointer(hasPointer, pointerX, pointerY, yuxing->GetDiscPointerShape());
+
+		//And which of the two channels it wants heard, which changes without a new picture
+		//being asked for - the same page is shown again to say the other word.
+		_discVideo->SetAudioChannels(yuxing->GetDiscAudioChannels());
+	}
+
+	//A picture off a disc belongs to the drive it came out of. Nothing here ends of its own
+	//accord once it is being held, so when the disc leaves - or the machine does - the picture
+	//has to be taken down rather than left standing over whatever the machine went on to show.
+	if(yuxing && _discVideo && _discVideo->IsPlaying() && !yuxing->IsPlayerShowing()) {
+		_discVideo->Stop();
+		EndVideoPlayback(false);
+		_emu->GetVideoDecoder()->ForceFilterUpdate();
 	}
 
 	if(!_discVideo) {
 		_discVideo.reset(new CdVideoPlayer());
 	}
 
-	if(!_discVideo->IsPlaying()) {
+	//A picture being shown counts as ready for the next one. It is playing as far as
+	//everything else is concerned - that is what keeps it on screen - so without this the
+	//machine's next request would sit unanswered behind it.
+	//
+	//Not only once it has run its length, but for as long as it is up. What a picture is
+	//allowed to run for is its allocation on the disc, and a menu page can be given a very
+	//long one: on one disc the top menu's picture is fifteen allocations' worth, so waiting
+	//for it to finish meant half a minute in which every key pressed was answered by the
+	//disc and then dropped, the screen never changing.
+	//
+	//And a video being played through is no different on a machine whose program keeps
+	//running underneath one. These discs put their top menu on a track rather than a page,
+	//and the program goes on reading the pointer over it: the person picks a lesson, the
+	//program asks for it, and leaving that request behind the minute of menu still to run
+	//meant the menu stayed up and the lesson never started - with the program already on the
+	//lesson's screen, testing the pointer against buttons that were not the ones being
+	//looked at. A request only exists because the program made one, and a program that made
+	//one is not waiting for what is playing. The machines that do wait cannot ask while they
+	//wait, so they are unaffected - see DrPcJrCdDrive::TakePlayRequest.
+	bool wasShowing = _discVideo->IsShowing();
+	if(!_discVideo->IsPlaying() || wasShowing || HasVideoPlayRequest()) {
 		uint8_t track = 0;
 		uint32_t start = 0;
 		uint32_t end = 0;
@@ -561,47 +620,70 @@ void NesConsole::ClockDiscVideo()
 			if(DrPcJrMapper* pcjr = dynamic_cast<DrPcJrMapper*>(_mapper.get())) {
 				image = &pcjr->GetDiscImage();
 				tracks = &pcjr->GetDiscTracks();
-			} else if(YuxingMapper* yuxing = dynamic_cast<YuxingMapper*>(_mapper.get())) {
+			} else if(yuxing) {
 				image = &yuxing->GetDiscImage();
 				tracks = &yuxing->GetDiscTracks();
 			}
 
+			//Where the video is, and which part of it was asked for. The part is opened
+			//from the start of what holds it rather than on its own - see CdVideoPlayer.
 			uint32_t lba = 0;
-			uint32_t sectors = 0;
+			uint32_t itemSectors = 0;
+			uint32_t fromSector = 0;
+			uint32_t toSector = 0;
 			if(image) {
 				if(track == 0xFF) {
 					//The YuXing machines name a segment item outright - an address and a
 					//length, which is all this needs
 					lba = start;
-					sectors = end;
+					itemSectors = end;
+					toSector = end;
 				} else {
 					//The others name one of the disc's video tracks and a stretch of it, both
-					//counted in minutes, seconds and frames from the track's own start. Where
-					//the track is comes from the one place that reads a disc's tracks - see
-					//CdSegmentIndex::ReadTracks.
+					//counted in minutes, seconds and frames from the item's own start. Which
+					//track holds the video comes from the one place that reads a disc's tracks
+					//- see CdSegmentIndex::ReadTracks - and where the item inside it lies from
+					//CdSegmentIndex::FindItem, since a track is not one item's worth of disc.
 					CdTrack found = {};
-					if(tracks && CdSegmentIndex::FindVideoTrack(*tracks, track, found)) {
+					if(tracks && CdSegmentIndex::FindVideoTrack(*tracks, track, found) &&
+						CdSegmentIndex::FindItem(*image, found.Lba, found.Sectors, lba, itemSectors)) {
+						//A title counts in the sectors that carry the stream, so that is what
+						//its numbers are measured against
+						uint32_t length = CdSegmentIndex::ContentSectors(*image, lba, itemSectors);
 						uint32_t from = MsfToSectors(start);
 						uint32_t to = MsfToSectors(end);
-						lba = found.Lba + from;
-						//A play that names no end runs to the end of its own track
-						uint32_t until = to > from ? found.Lba + to : found.Lba + found.Sectors;
-						uint32_t trackEnd = found.Lba + found.Sectors;
-						until = until < trackEnd ? until : trackEnd;
-						sectors = until > lba ? until - lba : 0;
+						//A play that names no end runs to the end of its own item. Running to
+						//the end of the disc instead would carry straight on through every
+						//video after it.
+						fromSector = from < length ? from : length;
+						toSector = to > from ? (to < length ? to : length) : length;
 					}
 				}
 			}
 
-			if(sectors > 0 && _discVideo->Start(*image, lba, sectors)) {
-				MessageManager::Log("[Video CD] Playing " + std::to_string(sectors) + " sectors from " + std::to_string(lba));
+			//A segment item is a picture the machine puts up and leaves up: it names one,
+			//goes back to reading its keys, and names the next one only when the person at
+			//the machine does something. A track of video is the opposite - it is played
+			//through and the machine is waiting to hear that it finished.
+			bool hold = track == 0xFF;
+			if(toSector > fromSector && _discVideo->Start(*image, lba, itemSectors, fromSector, toSector, hold)) {
+				MessageManager::Log("[Video CD] Playing " + std::to_string(toSector - fromSector) +
+					" sectors from " + std::to_string(lba + fromSector));
 				_emu->GetVideoDecoder()->ForceFilterUpdate();
 			} else {
-				//Nothing here can show it, so let the machine carry on rather than wait
+				//Nothing here can show it, so let the machine carry on rather than wait.
+				//Start has already taken down whatever was up, held or not.
 				EndVideoPlayback(false);
+				_emu->GetVideoDecoder()->ForceFilterUpdate();
 			}
 		}
-		return;
+
+		//A video that has just started gets its first frame on the next pass, as it always
+		//has. Only a picture that was already up carries on to the clock below, so that the
+		//transport still answers while it stands there.
+		if(!wasShowing || !_discVideo->IsPlaying()) {
+			return;
+		}
 	}
 
 	if(!_discVideo->ClockFrame(GetFps())) {
@@ -624,6 +706,14 @@ bool NesConsole::TakeDiscAudio(int16_t*& samples, uint32_t& sampleCount, uint32_
 
 //A video the machine has asked to play. It is waiting on the answer, so whoever takes the
 //request has to call EndVideoPlayback when the video is over - see DrPcJrCdDrive.
+//Whether one is waiting, without taking it - only the machines whose program runs on while
+//a video plays answer this, because only they can ask for something else mid-video.
+bool NesConsole::HasVideoPlayRequest()
+{
+	YuxingMapper* yuxing = dynamic_cast<YuxingMapper*>(_mapper.get());
+	return yuxing && yuxing->HasVideoPlayRequest();
+}
+
 bool NesConsole::TakeVideoPlayRequest(uint8_t& track, uint32_t& startMsf, uint32_t& endMsf)
 {
 	if(DrPcJrMapper* pcjr = dynamic_cast<DrPcJrMapper*>(_mapper.get())) {
