@@ -552,10 +552,6 @@ void NesConsole::ClockDiscVideo()
 		yuxing->ClockDiscMenu();
 	}
 
-	if(!GetNesConfig().DecodeDiscVideo) {
-		return;
-	}
-
 	//The pointer the machine asked for, onto whatever picture is up. It belongs to the disc's
 	//program rather than to any one picture, so it is set every frame and not at the moment a
 	//picture starts.
@@ -617,12 +613,24 @@ void NesConsole::ClockDiscVideo()
 			//mapper rather than to the console, so they are asked for together here.
 			CdImageFile* image = nullptr;
 			const vector<CdTrack>* tracks = nullptr;
-			if(DrPcJrMapper* pcjr = dynamic_cast<DrPcJrMapper*>(_mapper.get())) {
-				image = &pcjr->GetDiscImage();
-				tracks = &pcjr->GetDiscTracks();
-			} else if(yuxing) {
-				image = &yuxing->GetDiscImage();
-				tracks = &yuxing->GetDiscTracks();
+
+			//Unless told not to play the disc's videos, in which case nothing is looked up,
+			//nothing can be started, and the machine is answered below rather than left
+			//waiting - it is stopped in its playback loop until somebody says the video is
+			//over, and leaving it there costs it the seconds the drive waits before giving up
+			//on its own. Not a completion, so a machine running through a disc stops here
+			//rather than stepping to the next video.
+			//
+			//Only the disc's video tracks. The pages a menu is made of are segment items, and
+			//a machine whose pages do not appear cannot be used at all.
+			if(track == 0xFF || !GetNesConfig().DisableDiscVideoPlayback) {
+				if(DrPcJrMapper* pcjr = dynamic_cast<DrPcJrMapper*>(_mapper.get())) {
+					image = &pcjr->GetDiscImage();
+					tracks = &pcjr->GetDiscTracks();
+				} else if(yuxing) {
+					image = &yuxing->GetDiscImage();
+					tracks = &yuxing->GetDiscTracks();
+				}
 			}
 
 			//Where the video is, and which part of it was asked for. The part is opened

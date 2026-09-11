@@ -394,7 +394,6 @@ namespace Mesen.Windows
 					break;
 
 				case ConsoleNotificationType.EmulationStopped:
-					VideoCdPlayback.Reset();
 					Dispatcher.UIThread.Post(() => {
 						_model.RomInfo = new RomInfo();
 						_model.RecentGames.Init(GameScreenMode.RecentGames);
@@ -402,11 +401,8 @@ namespace Mesen.Windows
 					break;
 
 				case ConsoleNotificationType.PpuFrameDone:
-					//A machine with a video disc can ask for a track to be played; nothing
-					//else reaches this. See VideoCdPlayback.
-					VideoCdPlayback.Poll();
-					//The transport over a video the core is showing itself. Posted rather than
-					//read here: this runs on the thread the machine runs on, and the bar is a
+					//The transport over the video the core is showing. Posted rather than read
+					//here: this runs on the thread the machine runs on, and the bar is a
 					//control.
 					Dispatcher.UIThread.Post(() => _model.DiscVideoTransport.Poll());
 					break;

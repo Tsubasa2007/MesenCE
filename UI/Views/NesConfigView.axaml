@@ -87,9 +87,8 @@
 						<CheckBox IsChecked="{Binding Config.YuxingDTypeMouse}" Content="{l:Translate chkYuxingDTypeMouse}" />
 					</c:OptionSection>
 
-					<c:OptionSection Header="{l:Translate lblKewangSettings}">
-						<CheckBox IsChecked="{Binding Config.DecodeDiscVideo}" Content="{l:Translate chkDecodeDiscVideo}" />
-						<CheckBox IsChecked="{Binding Config.KewangDisableVideoPlayback}" Content="{l:Translate chkKewangDisableVideoPlayback}" />
+					<c:OptionSection Header="{l:Translate lblDiscVideoSettings}">
+						<CheckBox IsChecked="{Binding Config.DisableDiscVideoPlayback}" Content="{l:Translate chkDisableDiscVideoPlayback}" />
 					</c:OptionSection>
 
 					<c:OptionSection Header="{l:Translate lblVsDualSystem}">
