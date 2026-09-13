@@ -1328,7 +1328,17 @@ public:
 		//found again every time the machine is reset - which is what leaving the player does -
 		//so without this the menu would come back up over the computer's own screen, having
 		//been ejected a moment earlier.
-		if(!_discChecked || !_vcdMode || !_vcd.HasMenu()) {
+		if(!_discChecked || !_vcdMode) {
+			return;
+		}
+
+		//Time passing for whatever the drive was given, whether or not this disc has a menu -
+		//the program asks the drive how much of it is left. What one frame is worth comes from
+		//the console rather than from a constant, since these machines run at two rates.
+		double fps = _console->GetFps();
+		_vcd.TickPlayback(1.0 / (fps > 1 ? fps : 50.0));
+
+		if(!_vcd.HasMenu()) {
 			return;
 		}
 
@@ -1351,7 +1361,6 @@ public:
 		//been asked for, and it never appeared.
 		uint32_t sectors = _vcd.ShowMenuStill();
 		if(sectors > 0) {
-			double fps = _console->GetFps();
 			_menuStillFrames = (uint32_t)(sectors / CdSegmentIndex::SectorsPerSecond * (fps > 1 ? fps : 50.0));
 		} else if(_menuStillFrames > 0) {
 			_menuStillFrames--;
@@ -1449,7 +1458,7 @@ public:
 	//Whether the drive is still the thing the screen belongs to. A picture off a disc stays
 	//up until something takes it down, and a still stays up indefinitely, so leaving the
 	//player - by ejecting, or by any other way out of that mode - has to be able to say so.
-	bool IsPlayerShowing() { return _vcdMode && _vcd.HasDisc(); }
+	bool IsPlayerShowing() { return _vcdMode && _vcd.HasDisc() && _vcd.IsPictureShown(); }
 
 	//Where the disc's program has asked for its pointer - see YuxingVcdDrive::GetPointer
 	bool GetDiscPointer(double& x, double& y) { return _vcd.GetPointer(x, y); }

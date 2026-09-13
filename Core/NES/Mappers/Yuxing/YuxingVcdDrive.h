@@ -38,8 +38,12 @@ struct DiscProgram
 class YuxingVcdDrive
 {
 private:
+	//What the drive says when it is not in the middle of anything - the answer to the empty
+	//command below, and what the machine's boot loader listens for
+	static constexpr uint8_t ReadyStatus = 0x01;
+
 	//Commands the drive answers, as {command, byte count, status byte}
-	static constexpr uint8_t CommandTable[11][3] = {
+	static constexpr uint8_t CommandTable[12][3] = {
 		{ 0x00, 1, 0x01 }, { 0x96, 1, 0x69 }, { 0xAA, 1, 0x06 },
 		{ 0x06, 1, 0x00 }, { 0x15, 1, 0x00 }, { 0xA5, 6, 0x06 },
 
@@ -72,7 +76,19 @@ private:
 		                    //then a 16-bit number naming what
 		{ 0xA8, 3, 0x06 },  //one parameter byte
 		{ 0xAD, 2, 0x06 },  //report status - answered again below
-		{ 0xAF, 2, 0x06 }
+		{ 0xAF, 2, 0x06 },
+
+		//Asked when a program has drawn its own screen and is taking the machine back from
+		//the player: "are you there" ($96, answered $69) and then this, twice, which the
+		//program reads an $06 for. It does not ask the drive to do anything - what it wants
+		//is the answer.
+		//
+		//Not answering it does not merely lose whatever it means. The program asks inside a
+		//loop it does not leave until the answer comes, having switched its own interrupt off
+		//for the duration and meaning to switch it back on after - so an unanswered $A3 stops
+		//the machine dead with the screen it had just drawn never updated again. That is the
+		//black screen a lesson ends on.
+		{ 0xA3, 2, 0x06 }
 	};
 
 	//Where the machine last said to put the pointer, and which shape to put there
@@ -82,6 +98,29 @@ private:
 	static constexpr uint32_t PointerBottom = 254;
 	//Which channels the machine last asked to hear - see the $AC handler
 	uint8_t _audioChannels = 3;
+
+	//How much of what was last asked for is still to run. The program asks the drive whether
+	//it has finished ($AD, bit 1 of the byte it reads back) and takes a clear bit for "done
+	//with it", so a drive that never says it is playing is one whose videos can be started
+	//again at any moment - which is what every click during a hundred-second lesson did.
+	//
+	//A stretch the machine waits on ends when whatever is showing it says so. A segment item
+	//is not waited on - it is shown and held - so nothing will ever say so, and its own stream
+	//says how long instead: a page is a single frame and is over at once, while a lesson held
+	//in the same kind of item runs for as long as its stream does.
+	double _busySeconds = 0;
+	bool _busyUntilEnd = false;
+
+	//Whether the screen belongs to the drive. It does from the moment the program asks for a
+	//picture until the program takes it back with $AA - a single byte, acknowledged and until
+	//now acted on in no way at all.
+	//
+	//A program that has drawn its own screen and then says so was left underneath the picture
+	//it had asked for earlier, which is held until something replaces it. That is what a disc
+	//of typing lessons looks like when it stops: its menu stays on the screen while the machine
+	//behind it draws a full screen of its own, 960 cells of it, over and over, and everything
+	//the person does reaches a program they cannot see.
+	bool _pictureShown = false;
 	bool _pointerShown = false;
 	uint8_t _pointerShape = 0;
 	uint32_t _pointerX = PointerLeft;
@@ -133,12 +172,25 @@ private:
 	bool _keyboardSelected = false;
 	bool _readComplete = false;
 
+	//Whether a command byte has been shifted in that the drive has not finished with yet, and
+	//how many answers have been clocked out since anything was asked - see the $04 shift
+	bool _commandPending = false;
+	int32_t _idleReads = 0;
+	int32_t _statusBitsRead = 0;
+
 	//Segment items are allocated a fixed stride each, so item N lives at a constant distance
 	//from the first one. The directory is not a reliable way in: one disc lists 1081 items of
 	//which 801 are placeholders with no extent at all, while the streams they name are
 	//present and readable at exactly the address this gives. Where the first one is comes
 	//from CdSegmentIndex, which works it out from the records that do describe one.
 	static constexpr uint32_t SegmentStride = CdSegmentIndex::SegmentStride;
+
+	//How far to look for the end of an item's stream. The longest measured on these discs is
+	//52 allocations - a hundred and three seconds, on a disc whose lessons are demonstrations
+	//rather than pages - so this leaves room above that. Nothing is read past the end of the
+	//item anyway: the walk stops at the first empty sector after the item's own run, so what
+	//this bounds is only how long a stream may be before its length is given up on.
+	static constexpr uint32_t MaxItemAllocations = 128;
 	uint32_t _segmentOrigin = 0;
 
 	//Where each of the disc's segment items really is, taken from the directory that lists
@@ -206,6 +258,7 @@ private:
 			_status = pCmd[2];
 		} else {
 			_cmdIndex = 0;
+			_commandPending = false;
 			return;
 		}
 
@@ -213,16 +266,30 @@ private:
 			return;
 		}
 		_cmdIndex = 0;
+		_commandPending = false;
 
 		switch(pCmd[0]) {
+			case 0xAA:
+				//"The screen is mine again." The program draws its own while the drive's
+				//picture is still up - a whole screen of tiles, written and rewritten every
+				//frame - and then says this, which is the moment the two swap over.
+				if(_pictureShown) {
+					_pictureShown = false;
+					MessageManager::Log("[YuXing] Program took the screen back");
+				}
+				break;
+
 			case 0xAD:
 				//The only command that answers twice: the acknowledgement, and then a
 				//byte the program reads straight afterwards. It keeps the low seven bits
 				//and requires the top nibble to be $A, so the shape of the answer is
 				//fixed even though what the drive would put in the rest of it is not.
-				//The two bits it then tests are the ones that would say the drive is
-				//busy; nothing here is, so they stay clear.
-				_followUp = 0xA0;
+				//Bit 1 of it says the drive is still playing what it was given. Answering
+				//with it always clear is what let a click restart a lesson that was already
+				//running, over and over; answering with it always set stops the program
+				//asking for anything at all, so it is a real question and this is a real
+				//answer to it.
+				_followUp = (uint8_t)(0xA0 | (IsBusy() ? 0x02 : 0x00));
 				_hasFollowUp = true;
 				_shiftCount = 0;
 				break;
@@ -269,8 +336,10 @@ private:
 				//in each channel, and the program asks for the same item again with 1 or 2 to
 				//say the word on that side. 3 is both, which is what a video or a menu page
 				//asks for, and 0 is silence - a page turned without saying anything.
-				_audioChannels = _cmd[1] & 0x03;
-				RequestShow(((uint32_t)_cmd[2] << 8) | _cmd[3]);
+				//The channels belong to the show they arrive with, so they are handed over
+				//rather than latched here: a show that turns out to be one the drive is to
+				//ignore must not silence the piece it is ignoring it in favour of.
+				RequestShow(((uint32_t)_cmd[2] << 8) | _cmd[3], (uint8_t)(_cmd[1] & 0x03));
 				break;
 			}
 
@@ -318,6 +387,26 @@ private:
 	//Where a segment item's stream begins and how far it runs, or nothing if this disc has
 	//none. The directory is the answer where there is one; the stride is what is left when a
 	//disc keeps its items somewhere this cannot read.
+	//An item too long for its allocation takes the ones after it, and only its own stream says
+	//how many - see CdSegmentIndex::StreamAllocations. Every way of finding an item below
+	//answers with a single allocation unless the disc's directory says otherwise, and two
+	//discs' directories cannot be read: a quarter of one disc's items are longer than that,
+	//and two thirds of the other's, which runs to items of fifty-two allocations. All of them
+	//were being cut off at the two seconds one allocation runs for. A word was spoken half way
+	//through; a demonstration meant to draw four letters stopped in the middle of the first;
+	//a lesson lasting a hundred and three seconds showed two.
+	//
+	//Never shortens what it is given. An allocation is also how long a page stands on the
+	//screen, and a page whose picture is one frame of a long allocation is meant to stay.
+	bool StretchToStream(uint32_t& lba, uint32_t& sectors)
+	{
+		uint32_t allocations = CdSegmentIndex::StreamAllocations(_image, lba, MaxItemAllocations);
+		if(allocations > 0 && allocations * SegmentStride > sectors) {
+			sectors = allocations * SegmentStride;
+		}
+		return true;
+	}
+
 	bool SegmentItem(uint32_t item, uint32_t& lba, uint32_t& sectors)
 	{
 		if(item == 0) {
@@ -328,7 +417,7 @@ private:
 		if(item <= _segmentItems.size() && _segmentItems[item - 1].Sectors > 0) {
 			lba = _segmentItems[item - 1].Lba;
 			sectors = _segmentItems[item - 1].Sectors;
-			return true;
+			return StretchToStream(lba, sectors);
 		}
 
 		//Otherwise the disc's own spacing, where its readable records all agree on one. This
@@ -339,7 +428,7 @@ private:
 		if(_segmentEvenStep > 0) {
 			lba = _segmentEvenBase + (item - 1) * _segmentEvenStep;
 			sectors = _segmentEvenStep;
-			return true;
+			return StretchToStream(lba, sectors);
 		}
 
 		//Otherwise the n'th file there is. A number with no file of its own belongs to a disc
@@ -348,21 +437,23 @@ private:
 		if(item <= _segmentOrder.size()) {
 			lba = _segmentOrder[item - 1].Lba;
 			sectors = _segmentOrder[item - 1].Sectors;
-			return true;
+			return StretchToStream(lba, sectors);
 		}
 		if(_segmentOrigin == 0) {
 			return false;
 		}
 		lba = _segmentOrigin + (item - 1) * SegmentStride;
 		sectors = SegmentStride;
-		return true;
+		return StretchToStream(lba, sectors);
 	}
 
 	//What the machine asked to show. Whether it is worth opening a player for is the front
 	//end's judgement, not the drive's: most of what these discs carry is a single frame, and
 	//it is the front end that knows what it can do with one.
-	void RequestShow(uint32_t number)
+	void RequestShow(uint32_t number, uint8_t channels)
 	{
+		_audioChannels = channels;
+
 		if(number >= FirstSegmentNumber) {
 			uint32_t item = number - FirstSegmentNumber + 1;
 			uint32_t lba = 0, sectors = 0;
@@ -376,6 +467,30 @@ private:
 			_playLba = lba;
 			_playSectors = sectors;
 			_playPending = true;
+
+			//Measured in the sectors that carry something rather than in the allocation they
+			//sit in: a page is a handful of sectors inside a hundred and fifty, and a drive
+			//still busy with it two seconds later is a drive that cannot turn pages. Not in
+			//the span the stream's own clocks cover either - these discs do not keep honest
+			//ones, which is why everything else here counts sectors too. The clocks call this
+			//disc's lessons nothing at all, and a lesson said to last nothing is a lesson that
+			//restarts on the next click.
+			double discSeconds = 0, streamSeconds = 0;
+			CdSegmentIndex::MeasureItem(_image, lba, sectors, discSeconds, streamSeconds);
+
+			//Sound is what takes time. A page shown in silence is a picture put up and done
+			//with, however much of the disc happens to lie behind it, so it never leaves the
+			//drive busy - and it must not, because what lies behind one of these pages can be
+			//the whole rest of the disc. The last item on a disc is the tail of it in the
+			//directory, half an hour of it, and taking that for the length of the page drawn
+			//from its first frames left the drive busy for that half hour: every page turned
+			//after it was taken for a page turned over something still running, and ignored.
+			//The screen stopped on that page and stayed there.
+			if(channels != 0) {
+				_busySeconds = discSeconds;
+				_busyUntilEnd = false;
+			}
+			_pictureShown = true;
 			MessageManager::Log("[YuXing] Program asked for segment item " + std::to_string(item) +
 				" (number " + std::to_string(number) + ", sector " + std::to_string(lba) + ")");
 			return;
@@ -395,6 +510,11 @@ private:
 		_playLba = 0;
 		_playSectors = 0;
 		_playPending = true;
+		//A track is played through and the machine waits for it, so what is showing it says
+		//when it is over rather than this having to work it out
+		_busySeconds = 0;
+		_busyUntilEnd = true;
+		_pictureShown = true;
 		MessageManager::Log("[YuXing] Program asked for track " + std::to_string(number));
 	}
 
@@ -423,7 +543,13 @@ public:
 		_followUp = 0;
 		_hasFollowUp = false;
 		_move = _shifting = _canReadData = _seekOk = _readComplete = _keyboardSelected = false;
+		_commandPending = false;
+		_idleReads = 0;
+		_statusBitsRead = 0;
 		_audioChannels = 3;
+		_busySeconds = 0;
+		_busyUntilEnd = false;
+		_pictureShown = false;
 		_pointerShown = false;
 		_pointerShape = 0;
 		_pointerX = PointerLeft;
@@ -482,7 +608,8 @@ public:
 		if(!_menu.TakeShow(item)) {
 			return 0;
 		}
-		RequestShow(item);
+		//A menu still is a page of the disc's own menu, with whatever it says on it spoken
+		RequestShow(item, 3);
 		return _playPending ? _playSectors : 0;
 	}
 
@@ -564,7 +691,25 @@ public:
 		return true;
 	}
 
-	void EndPlayback(bool) { }
+	void EndPlayback(bool)
+	{
+		_busySeconds = 0;
+		_busyUntilEnd = false;
+	}
+
+	//Whether the drive still has something in hand - see _busySeconds
+	bool IsBusy() { return _busyUntilEnd || _busySeconds > 0; }
+
+	//Whether the screen is the drive's - see _pictureShown
+	bool IsPictureShown() { return _pictureShown; }
+
+	//Time passing, in seconds, for whatever is still running
+	void TickPlayback(double seconds)
+	{
+		if(_busySeconds > 0) {
+			_busySeconds = _busySeconds > seconds ? _busySeconds - seconds : 0;
+		}
+	}
 
 	//An ISO9660 directory record: length at 0, extent LBA at 2, data length at 10, flags at
 	//25, name length at 32, name at 33. Walks one directory looking for a name, and reports
@@ -1048,6 +1193,7 @@ public:
 				if(_driveSelected) {
 					data = (_status & 1) ? 0 : 0x0F;
 					_shifting = false;
+					_statusBitsRead++;
 				}
 				return true;
 
@@ -1104,6 +1250,8 @@ public:
 					if(value == 0 || value == 4) {
 						//One more command bit, MSB first
 						_shiftIn = (uint8_t)((_shiftIn >> 1) | (value << 5));
+						_commandPending = true;
+						_idleReads = 0;
 						return true;
 					}
 				}
@@ -1129,9 +1277,36 @@ public:
 						//the end of it and where a second answer has to be waiting.
 						if(++_shiftCount >= 8) {
 							_shiftCount = 0;
+							bool wasRead = _statusBitsRead >= 8;
+							_statusBitsRead = 0;
 							if(_hasFollowUp) {
 								_status = _followUp;
 								_hasFollowUp = false;
+								_idleReads = 0;
+							} else if(wasRead && !_commandPending && ++_idleReads >= 2) {
+								//A whole answer read out, twice over, with nothing outstanding.
+								//That is the machine's boot loader looking for the drive: it
+								//clocks bytes out asking for nothing until one of them is the
+								//ready byte, and only then downloads what it is to run - so
+								//being asked this way is the machine starting over, and the
+								//drive is back at the beginning of what it serves.
+								//
+								//From a cold start the loader finds its byte, because the drive
+								//has just been reset. A program that exits back to it left its
+								//own last answer standing, which read back as the same byte for
+								//ever: leaving a program was a black screen the machine never
+								//came out of.
+								//
+								//Both qualifications are load-bearing. Answering the FIRST such
+								//read with ready overwrites the acknowledgement a program is
+								//reading for what it just sent, and the program stops responding;
+								//counting a byte the machine never clocked out of this port
+								//catches the sector fetches of the download itself, which are
+								//read from $4207 and would rewind the drive part way through.
+								_status = ReadyStatus;
+								_pos = _basePos = _seekPos = 0;
+								_seekOk = false;
+								_readComplete = false;
 							}
 						}
 						break;
@@ -1174,11 +1349,11 @@ public:
 	void Serialize(Serializer& s)
 	{
 		SVArray(_cmd, 20); SVArray(_baseSector, 3); SVArray(_statusByCmd, 0x100);
-		SV(_cmdSel); SV(_keyByteIndex); SV(_shiftIn); SV(_status); SV(_cmdIndex); SV(_audioChannels);
+		SV(_cmdSel); SV(_keyByteIndex); SV(_shiftIn); SV(_status); SV(_cmdIndex); SV(_audioChannels); SV(_busySeconds); SV(_busyUntilEnd); SV(_pictureShown);
 		SV(_pos); SV(_basePos); SV(_seekPos);
 		SV(_keySend); SV(_keySendBit); SV(_keySelect);
 		SV(_followUp); SV(_hasFollowUp); SV(_shiftCount);
-		SV(_move); SV(_shifting); SV(_canReadData); SV(_seekOk);
+		SV(_move); SV(_shifting); SV(_canReadData); SV(_seekOk); SV(_commandPending); SV(_idleReads); SV(_statusBitsRead);
 		SV(_driveSelected); SV(_keyboardSelected); SV(_readComplete);
 		SV(_programIndex);
 

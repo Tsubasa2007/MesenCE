@@ -317,6 +317,54 @@ public:
 		return (image.SubmodeAt(lba) & 0x0E) != 0;
 	}
 
+	//How many allocations an item's stream reaches into.
+	//
+	//An item gets one fixed allocation, and one too long for it takes the allocations that
+	//follow - along with the item numbers that belong to them, which is why a disc's numbering
+	//runs ahead of the files it names. So the numbering says where an item starts and nothing
+	//in it says how far the item goes; the stream says, by closing with an end code, and the
+	//allocation that code falls in is the last one the item owns.
+	//
+	//Counted in whole allocations rather than in sectors, because an allocation is also what a
+	//page is given to stand on the screen for. An item's stream stopping a third of the way
+	//into its own allocation does not make the page shorter.
+	//
+	//Nought when no end code turns up before the item's own sectors run out: a stream not laid
+	//out this way at all, where whatever the caller already had is the better answer.
+	//
+	//An item's sectors are one unbroken run - every item measured here carries content from
+	//its first sector to its end code with no gap anywhere in it - so the first empty sector
+	//after that run has started is the end of what this item can possibly hold. Reading past
+	//it would find the next item's end code and hand back its allocations as though they
+	//belonged to this one. One item on one disc carries no end code at all, and that is what
+	//would have happened to it.
+	static uint32_t StreamAllocations(CdImageFile& image, uint32_t lba, uint32_t maxAllocations)
+	{
+		bool started = false;
+		for(uint32_t i = 0; i < maxAllocations * SegmentStride; i++) {
+			uint8_t submode = image.SubmodeAt(lba + i);
+			if((submode & 0x0E) == 0) {
+				if(started) {
+					break;
+				}
+				continue;
+			}
+			started = true;
+
+			vector<uint8_t> payload = image.ReadRawPayload(lba + i, (submode & 0x20) ? PayloadSize : SectorSize);
+			if(payload.empty()) {
+				break;
+			}
+
+			for(size_t at = 3; at < payload.size(); at++) {
+				if(payload[at] == 0xB9 && payload[at - 1] == 0x01 && payload[at - 2] == 0 && payload[at - 3] == 0) {
+					return i / SegmentStride + 1;
+				}
+			}
+		}
+		return 0;
+	}
+
 private:
 
 private:
