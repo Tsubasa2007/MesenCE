@@ -29,11 +29,25 @@ private:
 	int32_t _accumX = 0;
 	int32_t _accumY = 0;
 
+	//How much of this poll's movement has already been folded in. The machine clocks a
+	//report out mid-frame, well after the poll that set the movement, and a script sets
+	//movement later still - the input-polled event runs after OnAfterSetState, so a poll
+	//that folded only there would drop everything a script had to say. Folding again when
+	//a report is about to go out picks up whatever arrived late, and remembering how much
+	//was already taken keeps it from being counted twice. The coordinates themselves are
+	//left as they are - they are what a movie records.
+	int16_t _foldedX = 0;
+	int16_t _foldedY = 0;
+
 	bool _queue[QueueSize] = {};
 	uint8_t _queueHead = 0;
 	uint8_t _queueCount = 0;
 	bool _clock = false;
 	bool _vcdMode = false;
+
+	//What the last report said the buttons were, so a change in them is worth reporting even
+	//when the mouse has not moved
+	uint8_t _sentButtons = 0;
 
 	void Push(bool bit)
 	{
@@ -53,11 +67,30 @@ private:
 		Push(true); //stop bit
 	}
 
+	//Whether anything has happened worth a report. A real mouse sends one only when it has
+	//moved or a button has changed, and stays quiet otherwise.
+	void Fold()
+	{
+		MousePosition pos = GetCoordinates();
+		_accumX += pos.X - _foldedX;
+		_accumY += pos.Y - _foldedY;
+		_foldedX = pos.X;
+		_foldedY = pos.Y;
+	}
+
+	bool HasSomethingToReport()
+	{
+		Fold();
+		uint8_t buttons = (uint8_t)((IsPressed(Buttons::Left) ? 1 : 0) | (IsPressed(Buttons::Right) ? 2 : 0));
+		return _accumX != 0 || _accumY != 0 || buttons != _sentButtons;
+	}
+
 	void LoadReport()
 	{
 		uint8_t buttons = 0;
 		if(IsPressed(Buttons::Left)) { buttons |= 0x20; }
 		if(IsPressed(Buttons::Right)) { buttons |= 0x10; }
+		_sentButtons = (uint8_t)((IsPressed(Buttons::Left) ? 1 : 0) | (IsPressed(Buttons::Right) ? 2 : 0));
 
 		uint8_t x = (uint8_t)_accumX;
 		uint8_t y = (uint8_t)_accumY;
@@ -79,7 +112,7 @@ protected:
 	void Serialize(Serializer& s) override
 	{
 		BaseControlDevice::Serialize(s);
-		SV(_accumX); SV(_accumY); SV(_queueHead); SV(_queueCount); SV(_clock); SV(_vcdMode);
+		SV(_accumX); SV(_accumY); SV(_queueHead); SV(_queueCount); SV(_clock); SV(_vcdMode); SV(_sentButtons); SV(_foldedX); SV(_foldedY);
 		for(uint32_t i = 0; i < QueueSize; i++) {
 			SVI(_queue[i]);
 		}
@@ -94,9 +127,9 @@ protected:
 
 	void OnAfterSetState() override
 	{
-		MousePosition pos = GetCoordinates();
-		_accumX += pos.X;
-		_accumY += pos.Y;
+		_foldedX = 0;
+		_foldedY = 0;
+		Fold();
 	}
 
 public:
@@ -106,6 +139,19 @@ public:
 
 	//Set by YuxingMapper - see the class comment
 	void SetVcdMode(bool enabled) { _vcdMode = enabled; }
+
+	//Names for the movement and the buttons, so that a script can drive this mouse the
+	//way it can drive every other one in the fork - each of the others has this and only
+	//this one did not, which left it the single pointing device no test could move.
+	vector<DeviceButtonName> GetKeyNameAssociations() override
+	{
+		return {
+			{ "xOffset", BaseControlDevice::DeviceXCoordButtonId, true },
+			{ "yOffset", BaseControlDevice::DeviceYCoordButtonId, true },
+			{ "left", Buttons::Left },
+			{ "right", Buttons::Right },
+		};
+	}
 
 	uint8_t ReadRam(uint16_t addr) override
 	{
@@ -133,6 +179,28 @@ public:
 
 		if(!(value & 0x04) && !_clock && (value & 0x01)) {
 			if(_queueCount == 0) {
+				//A report every time one is asked for. The machine asks sixteen times a frame,
+				//without pause, and a real mouse on the other end of that wire is always
+				//sending - so what it hears when the mouse is still is not silence but the
+				//same report over again, saying nothing has moved and no button is down.
+				//
+				//Answering only when something had changed left it hearing nothing at all, and
+				//the last thing it had heard stood. After a click that was a button going
+				//down, so it went on acting on that click: once on the page it was clicked on,
+				//and again on the page that click had turned to.
+				//
+				//The idle first, and it is load-bearing. A report is framed - a low start bit,
+				//seven of data, a high stop bit - and between reports the line idles high,
+				//which is how the reader knows where one begins. Sent back to back there is no
+				//idle at all, and the reader hunts for a start bit up to three times: landing
+				//on a zero inside a byte it takes that for the start, reads seven bits out of
+				//step, finds a data bit where the stop bit should be and throws the report
+				//away. That is what it did to all but one of 1230 of them, which is why the
+				//pointer once did not move at all.
+				Fold();
+				for(int i = 0; i < 4; i++) {
+					Push(true);
+				}
 				LoadReport();
 			} else {
 				_queueHead = (_queueHead + 1) % QueueSize;
