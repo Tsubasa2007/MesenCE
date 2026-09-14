@@ -19,10 +19,7 @@
 #include "Utilities/StringUtilities.h"
 #include "Core/NES/NesConsole.h"
 #include "Core/NES/Mappers/Bbk/BbkFdc.h"
-#include "Core/NES/Mappers/Bung/DrPcJrMapper.h"
-#include "Core/NES/Mappers/Yuxing/YuxingMapper.h"
 #include "Core/NES/Mappers/CdSegmentIndex.h"
-#include "Core/NES/Mappers/CdStreamFile.h"
 #include "InteropNotificationListeners.h"
 
 #ifdef _WIN32
@@ -270,37 +267,6 @@ extern "C"
 			path = nes->GetVideoDiscPath();
 		}
 		StringUtilities::CopyToBuffer(path, outBuffer, maxLength);
-	}
-
-	//Write one of a disc's items out as an ordinary MPEG-1 file, for something other than
-	//this to play - see CdStreamFile. `from` and `to` are counted in the sectors that carry
-	//the stream, `to` of nought meaning the rest of the item. Returns how many sectors were
-	//written.
-	//
-	//Reads the named image itself rather than the mounted one, so unlike its neighbours here
-	//this may be called from any thread - and from a disc that is not mounted at all, which
-	//is what the disc menu does.
-	DllExport uint32_t __stdcall ExtractNesDiscItem(char* binPath, uint32_t lba, uint32_t sectors, uint32_t from, uint32_t to, bool retime, char* outPath)
-	{
-		return CdStreamFile::Write(binPath, lba, sectors, from, to, retime, outPath);
-	}
-
-	//The pack clock at a sector of a named image, or at the nearest one either side of it.
-	//Reads the named image itself, so this too may be called from any thread.
-	DllExport bool __stdcall GetNesDiscPackClock(char* binPath, uint32_t lba, bool searchBack, double* clock)
-	{
-		CdImageFile image;
-		if(!image.Open(binPath)) {
-			return false;
-		}
-
-		double value = CdSegmentIndex::ClockNear(image, lba, searchBack);
-		if(value < 0) {
-			return false;
-		}
-
-		*clock = value;
-		return true;
 	}
 
 	//The transport for a video the core is decoding itself: where it has got to, how long it

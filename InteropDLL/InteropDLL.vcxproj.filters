@@ -28,6 +28,9 @@
     <ClCompile Include="EmuApiWrapper.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DiscApiWrapper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="ConfigApiWrapper.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
