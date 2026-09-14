@@ -663,10 +663,12 @@ private:
 		if(_cmd < 0xE0 || _paramCount < 5) {
 			return;
 		}
-		uint32_t sectors = _params[3];
-		if(sectors == 0) {
-			return;
-		}
+		//The count is one byte, and a program of 512KB is 256 sectors, so it asks for 0. Read
+		//as nothing to send, the machine was left waiting for a program that never came: the
+		//KW2000 in its read loop for good, the KW3000 jumping into memory that still held the
+		//BIOS and falling through zero page. Zero is 256, as it is to the loop that counts
+		//the sectors back in.
+		uint32_t sectors = _params[3] ? _params[3] : 0x100;
 		uint32_t msf = ((uint32_t)_params[0] * 60 + _params[1]) * 75 + _params[2];
 		uint32_t lba = msf >= 150 ? msf - 150 : 0;
 
