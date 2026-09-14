@@ -121,6 +121,11 @@ private:
 	//behind it draws a full screen of its own, 960 cells of it, over and over, and everything
 	//the person does reaches a program they cannot see.
 	bool _pictureShown = false;
+	//Whether what is up is the picture of the menu entry a game was picked from, shown while
+	//the game is read in. A game never asks the drive for anything, so nothing it does will
+	//replace that picture: it comes down when the last of the program has been handed over,
+	//which is when a real machine goes from it straight to the game - see ShowLoadingPicture.
+	bool _loadingPicture = false;
 	bool _pointerShown = false;
 	uint8_t _pointerShape = 0;
 	uint32_t _pointerX = PointerLeft;
@@ -468,6 +473,8 @@ private:
 	void RequestShow(uint32_t number, uint8_t channels)
 	{
 		_audioChannels = channels;
+		//Whatever the program asks for is its own picture, not the one put up while it loaded
+		_loadingPicture = false;
 
 		if(number >= FirstSegmentNumber) {
 			uint32_t item = number - FirstSegmentNumber + 1;
@@ -566,6 +573,7 @@ public:
 		_busySeconds = 0;
 		_busyUntilEnd = false;
 		_pictureShown = false;
+		_loadingPicture = false;
 		_pointerShown = false;
 		_pointerShape = 0;
 		_pointerX = PointerLeft;
@@ -625,12 +633,21 @@ public:
 		return left;
 	}
 
-	//Once a title screen has been got past, the picture of the entry pointing at the program
-	//now picked, up while the machine reads that program in. Silent, so it leaves the drive
-	//free, and the program replaces it the first time it asks for a picture of its own.
+	//The picture of the entry pointing at the program now picked, up while the machine reads
+	//that program in. Silent, so it leaves the drive free.
+	//
+	//Every disc with a play sequence has one, not only those behind a title screen. On a game
+	//disc it is the game's own card - its title, its size and 正在读盘，请稍候 - and a real
+	//machine shows exactly that for the whole load, the percentage read so far drawn over it,
+	//and then goes straight to the game. Leaving it off showed the BIOS's own screen instead,
+	//which on the real machine is never seen once a game has been picked.
+	//
+	//What takes it down differs. A program behind a title screen replaces it the first time it
+	//asks for a picture of its own. A game never asks for one, so its card comes down when the
+	//last of the program has been handed over - see _loadingPicture.
 	void ShowLoadingPicture()
 	{
-		if(!_menu.OpensOnTitle() || _programIndex < 0 || _programIndex >= (int32_t)_programs.size()) {
+		if(_programIndex < 0 || _programIndex >= (int32_t)_programs.size()) {
 			return;
 		}
 		for(uint32_t entry = 0; entry < _menu.EntryCount(); entry++) {
@@ -638,6 +655,7 @@ public:
 				uint32_t item = _menu.EntryItem(entry);
 				if(item != 0) {
 					RequestShow(item, 0);
+					_loadingPicture = !_menu.OpensOnTitle();
 					MessageManager::Log("[YuXing] Loading picture: item " + std::to_string(item));
 				}
 				return;
@@ -1296,6 +1314,12 @@ public:
 				data = _pos >= 0 && _pos < (int32_t)_disc.size() ? _disc[_pos] : 0;
 				if(++_pos >= (int32_t)_disc.size()) {
 					_readComplete = true;
+					//The whole program is in, so the card shown while it loaded makes way for it
+					if(_loadingPicture) {
+						_loadingPicture = false;
+						_pictureShown = false;
+						MessageManager::Log("[YuXing] Program read in - loading picture taken down");
+					}
 				}
 				return true;
 		}
@@ -1442,7 +1466,7 @@ public:
 		SV(_keySend); SV(_keySendBit); SV(_keySelect);
 		SV(_followUp); SV(_hasFollowUp); SV(_shiftCount);
 		SV(_move); SV(_shifting); SV(_canReadData); SV(_seekOk); SV(_commandPending); SV(_idleReads); SV(_statusBitsRead); SV(_leaving); SV(_programLeft);
-		SV(_driveSelected); SV(_keyboardSelected); SV(_readComplete);
+		SV(_driveSelected); SV(_keyboardSelected); SV(_readComplete); SV(_loadingPicture);
 		SV(_programIndex);
 
 		//The disc is not part of a savestate, so the positions above only mean anything if the
