@@ -142,6 +142,21 @@ namespace Mesen.Interop
 			return reels;
 		}
 
+		//The video the running machine has asked to play, if any. True once per request - the
+		//machine's program is stopped until NesVideoPlaybackEnded() answers it. Only for the
+		//external player: the core takes the request itself unless that has been chosen.
+		[DllImport(DllPath)][return: MarshalAs(UnmanagedType.I1)] public static extern bool GetNesVideoPlayRequest(out byte track, out UInt32 startMsf, out UInt32 endMsf);
+		[DllImport(DllPath)] public static extern void NesVideoPlaybackEnded([MarshalAs(UnmanagedType.I1)] bool completed);
+
+		//How long an item on the mounted disc is: discSeconds is how long it plays for,
+		//streamSeconds is the span its own clocks cover - near zero for a single still
+		//picture. Reads the mounted image, so only from the emulation thread.
+		[DllImport(DllPath)][return: MarshalAs(UnmanagedType.I1)] public static extern bool GetNesDiscItemSeconds(UInt32 lba, UInt32 sectors, out double discSeconds, out double streamSeconds);
+
+		//Where one of the mounted disc's videos is. The number is the one a title names.
+		//Reads the mounted image, so only from the emulation thread.
+		[DllImport(DllPath)][return: MarshalAs(UnmanagedType.I1)] public static extern bool GetNesDiscTrackExtent(UInt32 video, out UInt32 lba, out UInt32 sectors);
+
 		//Write one of a disc's items out as an MPEG-1 file - see CdStreamFile. from and to are
 		//counted in the sectors that carry the stream, to of 0 meaning the rest of the item.
 		//Reads the named image itself, so this may be called from any thread and from a disc

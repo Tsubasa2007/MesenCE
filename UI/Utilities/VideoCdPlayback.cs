@@ -1,0 +1,398 @@
+﻿using Mesen.Config;
+using Mesen.Interop;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace Mesen.Utilities
+{
+	//Playing a video the emulated machine has asked for.
+	//
+	//The machine's own picture cannot show one - see the note in VideoCdTrack - so the track
+	//goes to whatever the system opens MPEG files with, and the machine is held in its wait
+	//loop meanwhile. That is the whole of the illusion: the program waits, then carries on,
+	//which is what it does on the real machine while its decoder chip has the screen.
+	//
+	//A real machine comes back by itself when the video ends, so this does too: the play
+	//command names where to start and where to stop, so how long it runs for is known before
+	//it is handed over, and when that time is up the window is closed and the machine
+	//released. Closing the window early still works and simply gets there sooner - whichever
+	//comes first wins.
+	public static class VideoCdPlayback
+	{
+		private static readonly object _lock = new();
+		private static bool _playing = false;
+		//Whether the video ran to its end rather than being closed part way. A transport told
+		//to play runs on through the disc, so the machine is told which of the two happened
+		//and carries on into the next video only when the first is true. Closing the window is
+		//how the user stops it.
+		private static bool _completed = false;
+		//Cancelled when a play ends some other way, so a window that was closed by hand does
+		//not get a second ending when its running time would have been up
+		private static CancellationTokenSource? _running;
+
+		//A segment asked for while another was on screen. The machine that asks for these is
+		//not waiting on the answer, so the request outlives the window that blocked it.
+		private static (uint Lba, uint Sectors)? _queued;
+
+		//Where the video just asked for lives, taken by the core while we are still on the
+		//thread the machine runs on. The work of playing it happens on a thread of its own,
+		//and the mounted image cannot be read from there.
+		private static (uint Lba, uint Sectors)? _takenItem;
+
+		//How long the segment just taken really runs, measured by the core while we are still
+		//on the thread the machine runs on. Playing it happens on a thread of its own, and the
+		//mounted image must not be read from there.
+		private static double _takenStreamSeconds;
+
+		//Opening a player takes a moment, and the clock here starts before it appears. Rather
+		//than cut the end off every video, give it a little longer than the machine asked for.
+		//Matches YuxingVcdDrive::SegmentTrack - "this is not a track number, it is an address"
+		private const byte SegmentTrack = 0xFF;
+
+		private static readonly TimeSpan StartupGrace = TimeSpan.FromSeconds(2);
+		//Extracted tracks are kept for the session: a title plays the same few over and over
+		private static readonly Dictionary<string, string> _extracted = new();
+
+		//Called once a frame, on the thread the machine runs on. Everything here has to be
+		//cheap: reading a track out of the image takes long enough that doing it here stalls
+		//the emulation for a visible moment, and a machine frozen mid-click sees the button
+		//still down when it resumes and acts on it twice. So this only notices the request -
+		//the work goes to a thread of its own.
+		public static void Poll()
+		{
+			//The core shows the disc's video itself unless a player outside was chosen, and the
+			//request is only there to be taken once - whoever asks first gets it. Taking it here
+			//as well would mean the picture went to whichever of the two happened to look first,
+			//which in practice was always this one.
+			if(!ConfigManager.Config.Nes.UseExternalVideoPlayer) {
+				return;
+			}
+
+			bool busy;
+			lock(_lock) {
+				busy = _playing;
+			}
+			if(busy) {
+				//A play asked for while one is already on screen. Leaving it in the machine
+				//would stall it until the request timed out, so take it and answer it at once
+				//rather than opening a second window on top of the first.
+				if(EmuApi.GetNesVideoPlayRequest(out byte held, out uint heldStart, out uint heldEnd)) {
+					//A machine held in its playback loop is waiting on the answer and must
+					//have it. One that is not held has already moved on and will not ask
+					//again, so its request is kept and shown when the screen is free -
+					//otherwise everything after the first is lost. Only the last is worth
+					//keeping: they are pages, and the machine is already on the newest.
+					if(held == SegmentTrack) {
+						lock(_lock) {
+							_queued = (heldStart, heldEnd);
+						}
+					} else {
+						//Not a video that ended, so the transport does not carry on from it
+						EmuApi.NesVideoPlaybackEnded(false);
+					}
+				}
+				return;
+			}
+
+			//Whatever came in while the last one was on screen
+			(uint Lba, uint Sectors)? queued;
+			lock(_lock) {
+				queued = _queued;
+				_queued = null;
+			}
+			if(queued.HasValue) {
+				lock(_lock) {
+					_playing = true;
+					_completed = false;
+				}
+				(uint lba, uint sectors) = queued.Value;
+				_takenStreamSeconds = MeasureSegment(lba, sectors);
+				Task.Run(() => {
+					try {
+						if(!Start(SegmentTrack, lba, sectors)) {
+							Finish(false);
+						}
+					} catch(Exception ex) {
+						EmuApi.WriteLogEntry("[Video CD] " + ex.Message);
+						Finish(false);
+					}
+				});
+				return;
+			}
+
+			if(!EmuApi.GetNesVideoPlayRequest(out byte track, out uint startMsf, out uint endMsf)) {
+				return;
+			}
+
+			//The same setting, and the same rule, as when the core plays it: the disc's video
+			//tracks only, whichever machine reads the disc. Never a segment item - the pages a
+			//menu is made of are segment items.
+			if(ConfigManager.Config.Nes.DisableDiscVideoPlayback && track != SegmentTrack) {
+				//Answered rather than ignored. The machine is stopped in its playback loop until
+				//somebody says the video is over, and leaving it there costs it the two seconds
+				//the drive waits before giving up on its own. Not a completion, so a transport
+				//running through the disc stops here instead of stepping to the next video.
+				EmuApi.NesVideoPlaybackEnded(false);
+				return;
+			}
+
+			if(track == SegmentTrack) {
+				_takenStreamSeconds = MeasureSegment(startMsf, endMsf);
+			} else {
+				//Where the video is comes from the core, which reads the sheet beside the
+				//disc and the disc's own table as one, and then finds the item inside the
+				//track it names. Working it out again here is what let the two ways of playing
+				//a video disagree about which video they were on.
+				_takenItem = EmuApi.GetNesDiscTrackExtent(track, out uint itemLba, out uint itemSectors)
+					? (itemLba, itemSectors)
+					: null;
+			}
+
+			lock(_lock) {
+				_playing = true;
+				_completed = false;
+			}
+
+			Task.Run(() => {
+				try {
+					if(!Start(track, startMsf, endMsf)) {
+						Finish(false);
+					}
+				} catch(Exception ex) {
+					EmuApi.WriteLogEntry("[Video CD] " + ex.Message);
+					Finish(false);
+				}
+			});
+		}
+
+		//The one measurement, made by the core - see CdSegmentIndex::MeasureItem. This was
+		//worked out here as well, from the same pack headers, which left two copies of it
+		//that could drift apart.
+		private static double MeasureSegment(uint lba, uint sectors)
+		{
+			return EmuApi.GetNesDiscItemSeconds(lba, sectors, out _, out double streamSeconds)
+				? streamSeconds
+				: 0;
+		}
+
+		//A position in the packet is minutes, seconds and frames, 75 frames to the second,
+		//counted from the start of the track it names
+		private static uint ToSectors(uint msf)
+		{
+			return ((msf >> 16) * 60 + ((msf >> 8) & 0xFF)) * 75 + (msf & 0xFF);
+		}
+
+		private static bool Start(byte track, uint startMsf, uint endMsf)
+		{
+			string discPath = EmuApi.GetNesVideoDiscPath();
+			if(string.IsNullOrEmpty(discPath)) {
+				return false;
+			}
+
+			List<VideoCdTrack> tracks = VideoCdTrack.ReadCueSheet(discPath, out string binPath);
+
+			//The YuXing machines do not ask for a stretch of a video track. Their video is
+			//held as segment items inside the one data track, so what arrives is the item's
+			//own address and length rather than anything the cue sheet names - see
+			//YuxingVcdDrive::TakePlayRequest.
+			if(track == SegmentTrack) {
+				if(string.IsNullOrEmpty(binPath) || !File.Exists(binPath)) {
+					EmuApi.WriteLogEntry($"[Video CD] segment at {startMsf}: no disc image behind {Path.GetFileName(discPath)}");
+					return false;
+				}
+				//Most of what these discs hold is a single frame - a page of the lesson.
+				//A player given one is a window that opens, shows it and closes again, once
+				//per page turn, which is worse to use than the blank screen it replaces. It
+				//was tried. Those pages want drawing where the machine would have drawn
+				//them, not showing somewhere else, so they wait for that.
+				double running = _takenStreamSeconds;
+				if(running < 1.0) {
+					EmuApi.WriteLogEntry($"[Video CD] segment at {startMsf} is a still - nothing here can show one");
+					return false;
+				}
+				EmuApi.WriteLogEntry($"[Video CD] segment at {startMsf}: {running:0.0}s, extracting");
+
+				VideoCdTrack item = new() {
+					Number = 1,
+					Lba = startMsf,
+					Sectors = endMsf,
+					SegmentName = $"Item at {startMsf}"
+				};
+				string itemPath = ExtractOnce(item, binPath, discPath, 0, 0);
+				bool started = Launch(itemPath);
+				EmuApi.WriteLogEntry($"[Video CD] segment at {startMsf}: {(started ? "player opened" : "nothing opened it")} - {Path.GetFileName(itemPath)}");
+				return started;
+			}
+
+			if(_takenItem == null) {
+				//A disc that does not name that video is not one to guess about
+				EmuApi.WriteLogEntry($"[Video CD] no track for video {track} on {Path.GetFileName(discPath)}");
+				return false;
+			}
+
+			VideoCdTrack wanted = new() {
+				Number = track + 1,
+				Lba = _takenItem.Value.Lba,
+				Sectors = _takenItem.Value.Sectors
+			};
+
+			uint from = ToSectors(startMsf);
+			uint to = ToSectors(endMsf);
+			string outPath = ExtractOnce(wanted, binPath, discPath, from, to);
+			return Launch(outPath);
+		}
+
+		//Hand the file to whatever opens it, and hold the machine until either the window
+		//goes or the running time is up - whichever comes first.
+		private static bool Launch(string outPath)
+		{
+			Process? player = Process.Start(new ProcessStartInfo() { FileName = outPath, UseShellExecute = true });
+			if(player == null) {
+				//Nothing is registered for the file, or the shell handed it to something that
+				//was already running. Either way there is no window of ours to wait on.
+				return false;
+			}
+
+			player.EnableRaisingEvents = true;
+			player.Exited += (s, e) => Finish(true);
+			if(player.HasExited) {
+				//Already gone by the time the handler was attached, so no window was ever up
+				Finish(false);
+				return true;
+			}
+
+			//75 sectors to the second, and the length is taken from what came out rather than
+			//from what was asked for: a stretch that ran off the end of its item is shorter
+			//than the positions that named it.
+			long sectors = new FileInfo(outPath).Length / VideoCdTrack.PayloadSize;
+			CancellationTokenSource cts = new();
+			lock(_lock) {
+				_running = cts;
+			}
+			_ = Task.Delay(TimeSpan.FromSeconds(sectors / 75.0) + StartupGrace, cts.Token)
+				.ContinueWith(t => {
+					if(t.IsCanceled) {
+						return;
+					}
+					//Set before the window goes, because closing it raises Exited and that
+					//gets to Finish first
+					lock(_lock) {
+						_completed = true;
+					}
+					ClosePlayer(player);
+					Finish(true);
+				}, TaskScheduler.Default);
+			return true;
+		}
+
+		private static string ExtractOnce(VideoCdTrack wanted, string binPath, string discPath, uint from, uint to)
+		{
+			//A stretch of a track is its own file: the same track appears several times over
+			//with different bounds, and they are not interchangeable.
+			string key = $"{binPath}#{wanted.Number}#{wanted.Lba}#{from}#{to}";
+			lock(_lock) {
+				if(_extracted.TryGetValue(key, out string? cached) && File.Exists(cached)) {
+					return cached;
+				}
+			}
+
+			string folder = VideoCdTrack.GetScratchFolder();
+			string span = to > from ? $" {from}-{to}" : "";
+			string name = wanted.IsSegment ? wanted.SegmentName ?? "Item" : $"Video {wanted.VideoNumber}";
+			string outPath = Path.Combine(folder,
+				Path.GetFileNameWithoutExtension(discPath) + $" - {name}{span}.mpg");
+			wanted.ExtractToFile(binPath, outPath, from, to);
+
+			lock(_lock) {
+				_extracted[key] = outPath;
+			}
+			return outPath;
+		}
+
+		//Ask the player to go away, the way closing its window would. Only ever the process
+		//this started, and only a request first - a media player is the user's own program and
+		//may well have other things open in it.
+		private static void ClosePlayer(Process player)
+		{
+			try {
+				if(player.HasExited) {
+					return;
+				}
+				if(player.CloseMainWindow()) {
+					player.WaitForExit(2000);
+				}
+				if(!player.HasExited) {
+					player.Kill();
+				}
+			} catch(Exception ex) {
+				//It may have gone on its own between the test and the request
+				EmuApi.WriteLogEntry("[Video CD] could not close the player: " + ex.Message);
+			}
+		}
+
+		//Let the machine out of its wait loop. hadWindow says a player really was on screen and
+		//has now gone, which is the moment the machine's pointer has been left behind - see
+		//MouseManager.WantCaptureSoon.
+		private static void Finish(bool hadWindow)
+		{
+			CancellationTokenSource? cts;
+			bool completed;
+			lock(_lock) {
+				if(!_playing) {
+					//The running time was up and the window was closed by hand at the same
+					//moment; the machine has already been let go once
+					return;
+				}
+				_playing = false;
+				completed = _completed;
+				cts = _running;
+				_running = null;
+			}
+			cts?.Cancel();
+			cts?.Dispose();
+			EmuApi.NesVideoPlaybackEnded(completed);
+
+			if(hadWindow) {
+				//Movement was not reaching the machine while the video had the focus, so its
+				//pointer is wherever it was before. Taking the capture back means the next thing
+				//the user does can be to aim, rather than having to click the old spot first.
+				MouseManager.WantCaptureSoon();
+			}
+		}
+
+		//A machine that stops mid-play would otherwise leave the flag set for the next one.
+		//The extracted files go too: they are held for the session because a title plays the
+		//same few over and over, but a whole disc of them is several hundred megabytes and
+		//nothing else will ever come back for them.
+		public static void Reset()
+		{
+			lock(_lock) {
+				_queued = null;
+			}
+			CancellationTokenSource? cts;
+			List<string> files;
+			lock(_lock) {
+				_playing = false;
+				_completed = false;
+				cts = _running;
+				_running = null;
+				files = new List<string>(_extracted.Values);
+				_extracted.Clear();
+			}
+			cts?.Cancel();
+			cts?.Dispose();
+
+			foreach(string file in files) {
+				try {
+					File.Delete(file);
+				} catch {
+					//A player may still have it open - it will be overwritten next time round
+				}
+			}
+		}
+	}
+}

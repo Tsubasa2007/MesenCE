@@ -88,6 +88,7 @@
 					</c:OptionSection>
 
 					<c:OptionSection Header="{l:Translate lblDiscVideoSettings}">
+						<CheckBox IsChecked="{Binding Config.UseExternalVideoPlayer}" Content="{l:Translate chkUseExternalVideoPlayer}" />
 						<CheckBox IsChecked="{Binding Config.DisableDiscVideoPlayback}" Content="{l:Translate chkDisableDiscVideoPlayback}" />
 					</c:OptionSection>
 

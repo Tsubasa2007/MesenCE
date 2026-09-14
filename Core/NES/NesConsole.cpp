@@ -552,6 +552,20 @@ void NesConsole::ClockDiscVideo()
 		yuxing->ClockDiscMenu();
 	}
 
+	//A player outside was asked for instead, so the request is left for the front end to take -
+	//see VideoCdPlayback. Only one of the two may take it: the front end asks from the render
+	//loop and this from inside the frame, so with both asking the front end always won. A video
+	//that was on screen when the choice changed is taken down and the machine let go from it,
+	//since nothing here would ever move it on again.
+	if(GetNesConfig().UseExternalVideoPlayer) {
+		if(_discVideo && _discVideo->IsPlaying()) {
+			_discVideo->Stop();
+			EndVideoPlayback(false);
+			_emu->GetVideoDecoder()->ForceFilterUpdate();
+		}
+		return;
+	}
+
 	//The pointer the machine asked for, onto whatever picture is up. It belongs to the disc's
 	//program rather than to any one picture, so it is set every frame and not at the moment a
 	//picture starts.

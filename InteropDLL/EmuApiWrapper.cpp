@@ -269,6 +269,27 @@ extern "C"
 		StringUtilities::CopyToBuffer(path, outBuffer, maxLength);
 	}
 
+	//The video the machine is waiting on, if it has asked for one. Returns true once per
+	//request; the caller then owns it and must call NesVideoPlaybackEnded, because the
+	//machine's own program is stopped until it does. Only for the external player - the core
+	//takes the request itself unless that has been chosen, see NesConsole::ClockDiscVideo.
+	DllExport bool __stdcall GetNesVideoPlayRequest(uint8_t* track, uint32_t* startMsf, uint32_t* endMsf)
+	{
+		if(NesConsole* nes = dynamic_cast<NesConsole*>(_emu->GetConsole().get())) {
+			return nes->TakeVideoPlayRequest(*track, *startMsf, *endMsf);
+		}
+		return false;
+	}
+
+	//"completed" says the video ran to its end rather than being stopped part way, which is
+	//what decides whether the transport carries on into the next one
+	DllExport void __stdcall NesVideoPlaybackEnded(bool completed)
+	{
+		if(NesConsole* nes = dynamic_cast<NesConsole*>(_emu->GetConsole().get())) {
+			nes->EndVideoPlayback(completed);
+		}
+	}
+
 	//The transport for a video the core is decoding itself: where it has got to, how long it
 	//is, and whether it is paused. False when nothing is playing, which is what hides the
 	//controls. Which drive is showing it is the console's business, but the player is not -

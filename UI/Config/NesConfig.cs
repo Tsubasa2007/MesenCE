@@ -46,6 +46,7 @@ namespace Mesen.Config
 		[ObservableProperty] public partial bool BbkShowDiskLed { get; set; } = false;
 		[ObservableProperty] public partial bool Yuyin2Printer { get; set; } = false;
 		[ObservableProperty] public partial bool YuxingSkipVcdScreen { get; set; } = true;
+		[ObservableProperty] public partial bool UseExternalVideoPlayer { get; set; } = false;
 		[ObservableProperty] public partial bool DisableDiscVideoPlayback { get; set; } = false;
 		[ObservableProperty] public partial bool YuxingDTypeMouse { get; set; } = false;
 		[ObservableProperty] public partial string BbkDiskFolder { get; set; } = "";
@@ -180,6 +181,7 @@ namespace Mesen.Config
 				BbkShowDiskLed = BbkShowDiskLed,
 				Yuyin2Printer = Yuyin2Printer,
 				YuxingSkipVcdScreen = YuxingSkipVcdScreen,
+				UseExternalVideoPlayer = UseExternalVideoPlayer,
 				DisableDiscVideoPlayback = DisableDiscVideoPlayback,
 				YuxingDTypeMouse = YuxingDTypeMouse,
 				VsDualVideoOutput = VsDualVideoOutput,
@@ -325,6 +327,7 @@ namespace Mesen.Config
 		[MarshalAs(UnmanagedType.I1)] public bool BbkShowDiskLed;
 		[MarshalAs(UnmanagedType.I1)] public bool Yuyin2Printer;
 		[MarshalAs(UnmanagedType.I1)] public bool YuxingSkipVcdScreen;
+		[MarshalAs(UnmanagedType.I1)] public bool UseExternalVideoPlayer;
 		[MarshalAs(UnmanagedType.I1)] public bool DisableDiscVideoPlayback;
 		[MarshalAs(UnmanagedType.I1)] public bool YuxingDTypeMouse;
 		public VsDualOutputOption VsDualVideoOutput;

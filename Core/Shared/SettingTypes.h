@@ -683,6 +683,11 @@ struct NesConfig
 	//The YuXing VCD models power on showing the player's own screen, which is left behind
 	//by ejecting the disc. Skipping it boots straight to the computer side instead.
 	bool YuxingSkipVcdScreen = true;
+	//A disc's video is decoded onto the machine's own screen unless this hands it to whatever
+	//the system opens MPEG files with instead - see VideoCdPlayback. Either machine family.
+	bool UseExternalVideoPlayer = false;
+	//Skips a disc's video tracks, whichever family reads the disc and whichever way it would
+	//have been played. Never a segment item: a menu's pages are made of those.
 	bool DisableDiscVideoPlayback = false;
 	//The D-type machines had no mouse of their own - theirs came on an add-on cartridge and
 	//is a plain free-running serial mouse, nothing like the later models' built-in one. The

@@ -306,6 +306,7 @@
 			<Control ID="chkYuxingDTypeMouse">Use the D-type add-on serial mouse instead of the built-in mouse</Control>
 
 			<Control ID="lblDiscVideoSettings">Video CD Settings</Control>
+			<Control ID="chkUseExternalVideoPlayer">Play the disc's video in an external player instead of on the machine's screen</Control>
 			<Control ID="chkDisableDiscVideoPlayback">Skip the disc's video tracks instead of playing them</Control>
 
 			<Control ID="lblVsDualSystem">VS. DualSystem Settings</Control>
