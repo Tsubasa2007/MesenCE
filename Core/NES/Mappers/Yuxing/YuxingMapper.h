@@ -166,11 +166,18 @@ private:
 	//$6000-$7FFF one included, is an 8K page of it.
 	static constexpr uint32_t PramSize = 0x100000;
 
+	//The MMC3 clone's own work RAM, after the machine's own and out of reach of every bank
+	//number there is - see UpdatePrgMapping
+	static constexpr uint32_t Mmc3WorkRamSize = 0x2000;
+
 	YuxingType _type = YuxingType::Unknown;
 
 	//16K PRAM bank mask and 8K CRAM bank mask, both set from the machine revision
 	uint8_t _pramMask = 0x3F;
 	uint8_t _cramMask = 0x0F;
+
+	//How many 8K CRAM banks the loader filled for the program now running
+	uint8_t _cramLoaded = 0;
 
 	//Key matrix row select - 14 bits, written as two halves through $4202/$4203
 	uint16_t _keyRowMask = 0;
@@ -319,13 +326,38 @@ private:
 	//===== MMC3-clone mode ($5501 bit 7) =====
 	uint8_t Mmc3SetPrg(uint8_t value) { return value & 0x3F; }
 
+	//The 8KB CRAM bank the clone selects has its low two bit-pairs swapped. The loader
+	//writes a bank through $5501 at the same swapped position, so this undoes itself.
+	static uint8_t Swap5(uint8_t bank)
+	{
+		return (uint8_t)((bank & 0x10) | ((bank << 2) & 0x0C) | ((bank >> 2) & 0x03));
+	}
+
+	//How far a CHR bank number reaches: only as far as the loader filled, rounded up to the
+	//next power of two, and never past the video RAM the machine has. A cartridge MMC3 folds
+	//a bank number to the CHR on its board and titles written for one rely on it - a program
+	//holding sixteen banks asks for bank $11 and means bank $01. Nothing here knows how much
+	//a program brought except the loader, which paged every bank of it through $5501 on the
+	//way in. A program that brought none (it builds its own tiles) leaves this alone: all it
+	//saw was the start-up write selecting bank 0, and no program carries a single 8K bank.
+	uint8_t CramFoldMask()
+	{
+		if(_cramLoaded < 2) {
+			return _cramMask;
+		}
+		uint8_t mask = 0;
+		while(mask < _cramLoaded - 1) {
+			mask = (uint8_t)((mask << 1) | 1);
+		}
+		return mask < _cramMask ? mask : _cramMask;
+	}
+
 	//The clone's CHR bank number is not laid out the way the MMC3 expects: the 8KB bank it
 	//selects has its low two bit-pairs swapped before the 1K page index is put back on.
 	uint16_t Mmc3SetChr(uint8_t value)
 	{
-		uint8_t bank = (uint8_t)((value >> 3) & _cramMask);
-		uint8_t fixed = (uint8_t)((bank & 0x10) | ((bank << 2) & 0x0C) | ((bank >> 2) & 0x03));
-		return (uint16_t)((fixed << 3) | (value & 0x07));
+		uint8_t bank = (uint8_t)((value >> 3) & CramFoldMask());
+		return (uint16_t)((Swap5(bank) << 3) | (value & 0x07));
 	}
 
 	//Map the four 8K PRG banks + eight 1K CHR banks per the current MMC3 register state.
@@ -500,7 +532,28 @@ private:
 	void UpdatePrgMapping()
 	{
 		if((_reg5500 & 0x04) && _mmc3Mode) {
-			//The MMC3 clone owns the window in this combination
+			//The MMC3 clone owns $8000-$FFFF in this combination, and $6000-$7FFF is a page of
+			//its own rather than the one $5500 picks below.
+			//
+			//Which page that is only matters in that it is not the other one. A program handing
+			//the machine to another parks its whole zero page and stack there, along with the
+			//address to come back to, and the program it hands over to loads its own code over
+			//those same addresses - so on a single shared page the second overwrote the first's
+			//way home and the machine never came back from a lesson. Neither one ever reads what
+			//the other wrote, and what tells them apart is which mode the machine is in: the
+			//parking, the saved address and the unparking all happen with the clone switched on,
+			//and the loading and the running of the loaded code all happen with it switched off.
+			//The handover code says as much itself - it opens the clone's RAM window with $A001
+			//in the instruction before it reads the address back out of here.
+			//
+			//So it is the clone's own eight kilobytes, the way a cartridge's is, and not a page
+			//of the machine's RAM at all. It cannot be one: every page is reachable - the clone's
+			//PRG registers reach the first sixty-four (see Mmc3SetPrg) and the plain window reaches
+			//all of them - so whichever page were picked, some program would be running out of it.
+			//One did: a disc game asked the clone for the very page picked here, so its own writes
+			//to this window came down on its own code, and five frames later it branched into what
+			//it had written and stopped dead with the screen blanked.
+			SetCpuMemoryMapping(0x6000, 0x7FFF, PrgMemoryType::WorkRam, PramSize, MemoryAccessType::ReadWrite);
 			return;
 		}
 
@@ -548,7 +601,7 @@ protected:
 	uint16_t GetChrPageSize() override { return 0x400; }
 	uint16_t GetChrRamPageSize() override { return 0x400; }
 	uint32_t GetChrRamSize() override { return 0x80000; } //512KB CRAM
-	uint32_t GetWorkRamSize() override { return PramSize; }
+	uint32_t GetWorkRamSize() override { return PramSize + Mmc3WorkRamSize; }
 	uint32_t GetWorkRamPageSize() override { return 0x2000; }
 	bool ForceWorkRamSize() override { return true; }
 	uint32_t GetSaveRamSize() override { return 0; }
@@ -654,6 +707,7 @@ protected:
 		_lastPpuScanline = -2;
 		_lastBandScanline = -2;
 		Mmc3Reset();
+		_cramLoaded = 0;
 
 		if(!_swapListener) {
 			_swapListener.reset(new DiscSwapListener(this));
@@ -810,13 +864,24 @@ protected:
 			case 0x5501:
 				_reg5501 = value;
 				MapCram8k(_reg5501 & _cramMask);
+				//How much character data this program brought - see CramFoldMask. Bit 7 is the
+				//mode flag rather than part of the bank, so a write that only hands the window
+				//to the clone says nothing about the size.
+				if((value & 0x80) == 0) {
+					uint8_t loaded = (uint8_t)(Swap5((uint8_t)(value & _cramMask)) + 1);
+					if(loaded > _cramLoaded) {
+						_cramLoaded = loaded;
+					}
+				}
 				_lastSplitBand = 0xFF;
 				//Bit 7 hands $8000-$FFFF over to the MMC3 clone
 				_mmc3Mode = (value & 0x80) != 0;
+				//Both ways round, because $6000-$7FFF changes with the mode and Mmc3Sync()
+				//only owns $8000-$FFFF. Leaving that window to the previous mode is what made
+				//the two programs either side of a handover share it.
+				UpdatePrgMapping();
 				if(_mmc3Mode) {
 					Mmc3Sync();
-				} else {
-					UpdatePrgMapping();
 				}
 				break;
 		}
@@ -1594,7 +1659,7 @@ public:
 	{
 		BaseMapper::Serialize(s);
 		SV(_keyRowMask); SV(_reg5002); SV(_reg4800); SV(_reg5500); SV(_reg5501);
-		SV(_reg8000); SV(_mmc3Mode); SV(_vcdMode); SV(_vcdKeyboardSelected);
+		SV(_reg8000); SV(_mmc3Mode); SV(_cramLoaded); SV(_vcdMode); SV(_vcdKeyboardSelected);
 		SV(_mmc3Cmd); SV(_mmc3Prg0); SV(_mmc3Prg1);
 		SV(_mmc3Chr01); SV(_mmc3Chr23); SV(_mmc3Chr4); SV(_mmc3Chr5); SV(_mmc3Chr6); SV(_mmc3Chr7);
 		SV(_mmc3IrqLatch); SV(_mmc3IrqCounter); SV(_mmc3IrqPreset); SV(_mmc3IrqPresetVbl);
