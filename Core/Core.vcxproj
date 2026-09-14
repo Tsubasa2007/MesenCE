@@ -815,6 +815,18 @@
     <ClInclude Include="WS\WsSerial.h" />
     <ClInclude Include="WS\WsTimer.h" />
     <ClInclude Include="WS\WsTypes.h" />
+    <ClInclude Include="SuperAcan\SacConsole.h" />
+    <ClInclude Include="SuperAcan\SacControlManager.h" />
+    <ClInclude Include="SuperAcan\SacDefaultVideoFilter.h" />
+    <ClInclude Include="SuperAcan\SacTypes.h" />
+    <ClInclude Include="SuperAcan\SacCpu.h" />
+    <ClInclude Include="SuperAcan\SacMemoryManager.h" />
+    <ClInclude Include="SuperAcan\W65C02.h" />
+    <ClInclude Include="SuperAcan\SacPpu.h" />
+    <ClInclude Include="SuperAcan\SacApu.h" />
+    <ClInclude Include="SuperAcan\Moira\Moira.h" />
+    <ClInclude Include="SuperAcan\Moira\MoiraConfig.h" />
+    <ClInclude Include="SuperAcan\Moira\MoiraTypes.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Debugger\Base6502Assembler.cpp" />
@@ -1130,6 +1142,51 @@
     <ClCompile Include="WS\WsPpu.cpp" />
     <ClCompile Include="WS\WsSerial.cpp" />
     <ClCompile Include="WS\WsTimer.cpp" />
+    <ClCompile Include="SuperAcan\SacConsole.cpp" />
+    <ClCompile Include="SuperAcan\SacDefaultVideoFilter.cpp" />
+    <ClCompile Include="SuperAcan\SacMemoryManager.cpp" />
+    <ClCompile Include="SuperAcan\W65C02.cpp" />
+    <ClCompile Include="SuperAcan\SacPpu.cpp" />
+    <ClCompile Include="SuperAcan\SacApu.cpp" />
+    <ClCompile Include="SuperAcan\SacCpu.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <DisableLanguageExtensions>false</DisableLanguageExtensions>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Moira\Moira.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <DisableLanguageExtensions>false</DisableLanguageExtensions>
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <TreatWarningAsError>false</TreatWarningAsError>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Moira\MoiraCore68000.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <DisableLanguageExtensions>false</DisableLanguageExtensions>
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <TreatWarningAsError>false</TreatWarningAsError>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Moira\MoiraCore68010.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <DisableLanguageExtensions>false</DisableLanguageExtensions>
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <TreatWarningAsError>false</TreatWarningAsError>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Moira\MoiraCore68020.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <DisableLanguageExtensions>false</DisableLanguageExtensions>
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <TreatWarningAsError>false</TreatWarningAsError>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Moira\MoiraDebugger.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <DisableLanguageExtensions>false</DisableLanguageExtensions>
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <TreatWarningAsError>false</TreatWarningAsError>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="Core.ruleset" />

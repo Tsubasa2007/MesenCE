@@ -142,6 +142,9 @@ endif
 CORESRC := $(shell find Core -name '*.cpp')
 COREOBJ := $(CORESRC:.cpp=.o)
 
+#Moira, the Super A'Can's 68000 core, is written for C++20; the last --std on the line wins
+Core/SuperAcan/Moira/%.o: CXXFLAGS += --std=c++20
+
 UTILSRC := $(shell find Utilities -name '*.cpp' -o -name '*.c')
 UTILOBJ := $(addsuffix .o,$(basename $(UTILSRC)))
 

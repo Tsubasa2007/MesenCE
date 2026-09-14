@@ -16,6 +16,7 @@ enum class MemoryType
 	SmsMemory,
 	GbaMemory,
 	WsMemory,
+	SacMemory,
 
 	SnesPrgRom,
 	SnesWorkRam,
@@ -101,6 +102,9 @@ enum class MemoryType
 	WsBootRom,
 	WsInternalEeprom,
 	WsPort,
+
+	SacPrgRom,
+	SacWorkRam,
 
 	None
 };

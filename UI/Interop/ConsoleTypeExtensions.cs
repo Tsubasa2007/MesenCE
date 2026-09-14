@@ -14,6 +14,7 @@ namespace Mesen.Interop
 				ConsoleType.Sms => CpuType.Sms,
 				ConsoleType.Gba => CpuType.Gba,
 				ConsoleType.Ws => CpuType.Ws,
+				ConsoleType.SuperAcan => CpuType.Sac,
 				_ => throw new Exception("Invalid type")
 			};
 		}
@@ -23,6 +24,7 @@ namespace Mesen.Interop
 			return type switch {
 				ConsoleType.Gba => false,
 				ConsoleType.Ws => false,
+				ConsoleType.SuperAcan => false,
 				_ => true
 			};
 		}

@@ -37,6 +37,7 @@
 #include "SMS/SmsConsole.h"
 #include "GBA/GbaConsole.h"
 #include "WS/WsConsole.h"
+#include "SuperAcan/SacConsole.h"
 #include "Debugger/Debugger.h"
 #include "Debugger/BaseEventManager.h"
 #include "Debugger/DebugTypes.h"
@@ -581,6 +582,7 @@ void Emulator::TryLoadRom(VirtualFile& romFile, LoadRomResult& result, unique_pt
 	TryLoadRom<SmsConsole>(romFile, result, console, useFileSignature);
 	TryLoadRom<GbaConsole>(romFile, result, console, useFileSignature);
 	TryLoadRom<WsConsole>(romFile, result, console, useFileSignature);
+	TryLoadRom<SacConsole>(romFile, result, console, useFileSignature);
 }
 
 template<typename T>
@@ -1104,6 +1106,12 @@ void Emulator::ResetDebugger(bool startDebugger)
 
 void Emulator::InitDebugger()
 {
+	//The Super A'Can has no debugger for its 68000 yet, and a debugger with no processor
+	//behind it has nothing it can safely do. Everything that asks for one copes with none.
+	if(_consoleType == ConsoleType::SuperAcan) {
+		return;
+	}
+
 	if(!_debugger) {
 		//Lock to make sure we don't try to start debuggers in 2 separate threads at once
 		auto lock = _debuggerLock.AcquireSafe();

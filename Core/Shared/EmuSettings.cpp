@@ -154,6 +154,10 @@ void EmuSettings::Serialize(Serializer& s)
 			SV(_ws.UseBootRom);
 			break;
 
+		case ConsoleType::SuperAcan:
+			//No settings of its own yet
+			break;
+
 		default:
 			throw std::runtime_error("unsupported console type");
 	}
@@ -468,6 +472,7 @@ OverscanDimensions EmuSettings::GetOverscan()
 		case ConsoleType::Gameboy:
 		case ConsoleType::Gba:
 		case ConsoleType::Ws:
+		case ConsoleType::SuperAcan:
 			break;
 	}
 

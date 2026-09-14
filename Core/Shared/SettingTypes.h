@@ -369,7 +369,8 @@ enum class ConsoleType
 	PcEngine = 3,
 	Sms = 4,
 	Gba = 5,
-	Ws = 6
+	Ws = 6,
+	SuperAcan = 7
 };
 
 enum class GameboyModel
@@ -1146,4 +1147,5 @@ enum class DebuggerFlags
 	SmsDebuggerEnabled = (1 << 10),
 	GbaDebuggerEnabled = (1 << 11),
 	WsDebuggerEnabled = (1 << 12),
+	SacDebuggerEnabled = (1 << 13),
 };
