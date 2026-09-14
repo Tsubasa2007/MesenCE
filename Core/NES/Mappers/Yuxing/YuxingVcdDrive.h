@@ -745,6 +745,11 @@ public:
 	//sits inside the data track at an absolute address - so it is handed over as one,
 	//which is what the sentinel track number says.
 	static constexpr uint8_t SegmentTrack = 0xFF;
+
+	//Whether one is waiting, without taking it. What is showing decides whether a request
+	//can be taken at all, and that decision has to be made before anything is consumed.
+	bool HasPlayRequest() { return _playPending; }
+
 	bool TakePlayRequest(uint8_t& track, uint32_t& lba, uint32_t& sectors)
 	{
 		if(!_playPending) {

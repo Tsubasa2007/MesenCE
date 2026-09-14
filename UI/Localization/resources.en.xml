@@ -305,8 +305,8 @@
 			<Control ID="chkYuxingSkipVcdScreen">Skip the VCD player screen when the drive is empty</Control>
 			<Control ID="chkYuxingDTypeMouse">Use the D-type add-on serial mouse instead of the built-in mouse</Control>
 
-			<Control ID="lblKewangSettings">Kingwon / Doctor PC jr. Settings</Control>
-			<Control ID="chkKewangDisableVideoPlayback">Do not open a video player for the disc's video tracks</Control>
+			<Control ID="lblDiscVideoSettings">Video CD Settings</Control>
+			<Control ID="chkDisableDiscVideoPlayback">Skip the disc's video tracks instead of playing them</Control>
 
 			<Control ID="lblVsDualSystem">VS. DualSystem Settings</Control>
 			<Control ID="lblVsDualPlayAudio">Play audio for:</Control>

@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 
 #include "Utilities/Serializer.h"
 
@@ -1347,6 +1347,26 @@ template<class T> void NesPpu<T>::SendFrame()
 	if(_region != ConsoleRegion::Ntsc || cfg.PpuExtraScanlinesAfterNmi != 0 || cfg.PpuExtraScanlinesBeforeNmi != 0) {
 		//Force 2-phase pattern for PAL or when overclocking is used
 		videoPhase = _frameCount & 0x01;
+	}
+
+	//A video off the disc takes the screen outright while it runs - the machine draws
+	//nothing of its own meanwhile - so it is sent in place of the PPU's frame, at its own
+	//size. See NesConsole::ClockDiscVideo.
+	uint32_t* discVideo = _console->GetDiscVideoFrame();
+	if(discVideo) {
+		CdVideoPlayer* player = _console->GetDiscVideoPlayer();
+		RenderedFrame video((uint16_t*)discVideo, player->GetWidth(), player->GetHeight(), 1.0, _frameCount, _console->GetControlManager()->GetPortStates(), videoPhase);
+		bool rewinding = _emu->GetRewindManager()->IsRewinding();
+		//Drawn on this thread rather than handed to the one that draws. Which filter a frame
+		//needs is answered out of the machine's state at the moment it is drawn, and a video
+		//ends between two frames: hand this one over and the answer can change before it is
+		//read, leaving the video's picture to be drawn by the machine's own filter, which
+		//reads it as palette indices and runs off the end of its palette. Drawing it here
+		//keeps the picture and the answer about it together.
+		_emu->GetVideoDecoder()->UpdateFrame(video, true, rewinding);
+		_emu->ProcessEndOfFrame();
+		_enableOamDecay = _settings->GetNesConfig().EnableOamDecay;
+		return;
 	}
 
 	RenderedFrame frame(_currentOutputBuffer, NesConstants::ScreenWidth, NesConstants::ScreenHeight, 1.0, _frameCount, _console->GetControlManager()->GetPortStates(), videoPhase);

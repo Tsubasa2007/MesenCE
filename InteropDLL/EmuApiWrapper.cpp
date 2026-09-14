@@ -269,23 +269,48 @@ extern "C"
 		StringUtilities::CopyToBuffer(path, outBuffer, maxLength);
 	}
 
-	//The video the machine is waiting on, if it has asked for one. Returns true once per
-	//request; the caller then owns it and must call NesVideoPlaybackEnded, because the
-	//machine's own program is stopped until it does.
-	DllExport bool __stdcall GetNesVideoPlayRequest(uint8_t* track, uint32_t* startMsf, uint32_t* endMsf)
+	//The transport for a video the core is decoding itself: where it has got to, how long it
+	//is, and whether it is paused. False when nothing is playing, which is what hides the
+	//controls. Which drive is showing it is the console's business, but the player is not -
+	//it is asked for directly rather than growing four more methods on NesConsole.
+	DllExport bool __stdcall GetNesDiscVideoStatus(bool* paused, double* position, double* duration)
 	{
-		if(NesConsole* nes = dynamic_cast<NesConsole*>(_emu->GetConsole().get())) {
-			return nes->TakeVideoPlayRequest(*track, *startMsf, *endMsf);
+		NesConsole* nes = dynamic_cast<NesConsole*>(_emu->GetConsole().get());
+		CdVideoPlayer* player = nes ? nes->GetDiscVideoPlayer() : nullptr;
+		if(!player || !player->IsPlaying()) {
+			return false;
 		}
-		return false;
+		*paused = player->IsPaused();
+		*position = player->GetPosition();
+		*duration = player->GetDuration();
+		return true;
 	}
 
-	//"completed" says the video ran to its end rather than being stopped part way, which is
-	//what decides whether the transport carries on into the next one
-	DllExport void __stdcall NesVideoPlaybackEnded(bool completed)
+	//The three things the transport can ask for. Each is a request the player picks up on its
+	//own thread when it next clocks a frame - none of them touch the decoder from here.
+	DllExport void __stdcall SetNesDiscVideoPaused(bool paused)
 	{
-		if(NesConsole* nes = dynamic_cast<NesConsole*>(_emu->GetConsole().get())) {
-			nes->EndVideoPlayback(completed);
+		NesConsole* nes = dynamic_cast<NesConsole*>(_emu->GetConsole().get());
+		if(CdVideoPlayer* player = nes ? nes->GetDiscVideoPlayer() : nullptr) {
+			player->SetPaused(paused);
+		}
+	}
+
+	DllExport void __stdcall SeekNesDiscVideo(double seconds)
+	{
+		NesConsole* nes = dynamic_cast<NesConsole*>(_emu->GetConsole().get());
+		if(CdVideoPlayer* player = nes ? nes->GetDiscVideoPlayer() : nullptr) {
+			player->RequestSeek(seconds);
+		}
+	}
+
+	//Ends this video now. The machine is told the video finished, so it carries on as if it
+	//had played to the end - the same answer it gets when a video runs out.
+	DllExport void __stdcall SkipNesDiscVideo()
+	{
+		NesConsole* nes = dynamic_cast<NesConsole*>(_emu->GetConsole().get());
+		if(CdVideoPlayer* player = nes ? nes->GetDiscVideoPlayer() : nullptr) {
+			player->RequestSkip();
 		}
 	}
 

@@ -1548,6 +1548,8 @@ public:
 
 	//A video the disc's own program has asked to show. The drive decides what is worth
 	//handing over; this is only the way out to the front end - see NesConsole.
+	bool HasVideoPlayRequest() { return _vcd.HasPlayRequest(); }
+
 	bool TakeVideoPlayRequest(uint8_t& track, uint32_t& lba, uint32_t& sectors)
 	{
 		return _vcd.TakePlayRequest(track, lba, sectors);

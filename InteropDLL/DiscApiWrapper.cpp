@@ -1,76 +1,17 @@
 #include "Common.h"
 #include "Core/Shared/Emulator.h"
-#include "Core/NES/NesConsole.h"
-#include "Core/NES/Mappers/Bung/DrPcJrMapper.h"
-#include "Core/NES/Mappers/Yuxing/YuxingMapper.h"
 #include "Core/NES/Mappers/CdSegmentIndex.h"
 #include "Core/NES/Mappers/CdStreamFile.h"
 
-//The disc drives' entry points, in a file of their own. Asking a drive about its disc needs
-//the machines' mapper headers, and through them NesPpu.h, whose register names are in the
-//global namespace - one of them is Mask, which X11 declares too. EmuApiWrapper.cpp includes
-//X11 on Linux, so the two cannot share a file: they met there and the Linux build stopped.
+//The disc entry points, in a file of their own. EmuApiWrapper.cpp includes X11 on Linux,
+//whose global Mask clashes with the NES register names the machines' disc code brings in,
+//so whatever reaches into that code is kept here rather than there. What is left of it on
+//this branch reads a named image and asks no drive, since the core now plays a disc's video.
 
 extern unique_ptr<Emulator> _emu;
 
 extern "C"
 {
-	//How long an item on the mounted disc is - see CdSegmentIndex::MeasureItem. Must be
-	//called from the thread the machine runs on: it reads the mounted image, whose sector
-	//cache belongs to the emulation and to nobody else.
-	DllExport bool __stdcall GetNesDiscItemSeconds(uint32_t lba, uint32_t sectors, double* discSeconds, double* streamSeconds)
-	{
-		NesConsole* nes = dynamic_cast<NesConsole*>(_emu->GetConsole().get());
-		if(!nes) {
-			return false;
-		}
-
-		//Which drive holds the disc is the mapper's business, not the console's, so the
-		//question is asked here rather than adding another disc-shaped method to NesConsole
-		CdImageFile* image = nullptr;
-		if(DrPcJrMapper* pcjr = dynamic_cast<DrPcJrMapper*>(nes->GetMapper())) {
-			image = &pcjr->GetDiscImage();
-		} else if(YuxingMapper* yuxing = dynamic_cast<YuxingMapper*>(nes->GetMapper())) {
-			image = &yuxing->GetDiscImage();
-		}
-		if(!image || !image->IsOpen()) {
-			return false;
-		}
-
-		CdSegmentIndex::MeasureItem(*image, lba, sectors, *discSeconds, *streamSeconds);
-		return true;
-	}
-
-	//Where one of the mounted disc's videos is - see CdSegmentIndex::ReadTracks. The number
-	//is the one a title names, which is one less than the disc's own numbering. Reads the
-	//mounted image, so from the thread the machine runs on only.
-	DllExport bool __stdcall GetNesDiscTrackExtent(uint32_t video, uint32_t* lba, uint32_t* sectors)
-	{
-		NesConsole* nes = dynamic_cast<NesConsole*>(_emu->GetConsole().get());
-		if(!nes) {
-			return false;
-		}
-
-		//Which drive holds the disc is the mapper's business, not the console's
-		const vector<CdTrack>* tracks = nullptr;
-		CdImageFile* image = nullptr;
-		if(DrPcJrMapper* pcjr = dynamic_cast<DrPcJrMapper*>(nes->GetMapper())) {
-			tracks = &pcjr->GetDiscTracks();
-			image = &pcjr->GetDiscImage();
-		} else if(YuxingMapper* yuxing = dynamic_cast<YuxingMapper*>(nes->GetMapper())) {
-			tracks = &yuxing->GetDiscTracks();
-			image = &yuxing->GetDiscImage();
-		}
-
-		CdTrack found = {};
-		if(!tracks || !image || !image->IsOpen() || !CdSegmentIndex::FindVideoTrack(*tracks, video, found)) {
-			return false;
-		}
-
-		//What the track names is not what lies in it - see CdSegmentIndex::FindItem
-		return CdSegmentIndex::FindItem(*image, found.Lba, found.Sectors, *lba, *sectors);
-	}
-
 	//Write one of a disc's items out as an ordinary MPEG-1 file, for something other than
 	//this to play - see CdStreamFile. `from` and `to` are counted in the sectors that carry
 	//the stream, `to` of nought meaning the rest of the item. Returns how many sectors were

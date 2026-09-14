@@ -80,6 +80,13 @@ public:
 	}
 
 public:
+	//How far into a stretch of disc its stream has got by a given sector - which is not the
+	//same as how far into the stretch that sector is. See ContentSectors.
+	static double ContentSeconds(CdImageFile& image, uint32_t lba, uint32_t sectors)
+	{
+		return ContentSectors(image, lba, sectors) / SectorsPerSecond;
+	}
+
 	//Where the item a track stands for really lies on the disc, which is not where the track
 	//does.
 	//
