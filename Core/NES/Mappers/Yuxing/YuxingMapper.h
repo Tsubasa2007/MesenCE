@@ -1222,8 +1222,8 @@ protected:
 		//computer side: it is the useful state, and the only one a recording can start from.
 		//
 		//An empty drive and nothing else. Whatever is in the drive belongs on the player's
-		//side, in every state it can be in: a disc carrying one program has had it picked
-		//already, a disc carrying a library draws its own menu, and one whose program has not
+		//side, in every state it can be in: a disc carrying one program shows its title screen
+		//or has had it picked already, a disc carrying a library draws its own menu, and one whose program has not
 		//been chosen yet is chosen from the disk list, which starts the machine again on it.
 		//Skipping for any of those is what made a disc reachable only through that list.
 		if(_vcdMode && !_vcd.HasDisc() && _console->GetNesConfig().YuxingSkipVcdScreen) {
@@ -1240,6 +1240,7 @@ protected:
 	{
 		if(_persistedProgramIndex >= 0 && _vcd.GetProgramCount() > 0) {
 			_vcd.SelectProgram((uint32_t)_persistedProgramIndex);
+			_vcd.ShowLoadingPicture();
 			return;
 		}
 
@@ -1252,7 +1253,11 @@ protected:
 		//A disc that carries a library of them is a different thing - there is no one program
 		//to start, the machine's way of choosing is a menu it reads off the disc itself, and
 		//guessing at the first one would start something arbitrary. Those are left alone.
-		if(_vcd.GetProgramCount() == 1) {
+		//
+		//So is a single program behind a title screen, which is every one seen so far: the
+		//screen waits for a key, and the key is what starts the program - see
+		//YuxingVcdMenu::OpensOnTitle.
+		if(_vcd.GetProgramCount() == 1 && !_vcd.OpensOnTitle()) {
 			_vcd.SelectProgram(0);
 		}
 	}
@@ -1303,7 +1308,7 @@ protected:
 				if(_vcd.LoadDisc(discPath)) {
 					RestoreSelectedProgram();
 					MessageManager::Log("[YuXing] Inserted disc: " + discPath);
-					if(_vcd.GetProgramCount() > 0 && !_vcd.IsDiscInserted()) {
+					if(_vcd.GetProgramCount() > 0 && !_vcd.IsDiscInserted() && !_vcd.OpensOnTitle()) {
 						MessageManager::DisplayMessage("YuXing", std::to_string(_vcd.GetProgramCount()) + " programs on disc - pick one from the disk list");
 					}
 					return _vcd.IsDiscInserted();
@@ -1403,6 +1408,13 @@ public:
 		double fps = _console->GetFps();
 		_vcd.TickPlayback(1.0 / (fps > 1 ? fps : 50.0));
 
+		//A program that left is no longer the one this machine starts on - see
+		//YuxingVcdDrive's _leaving. Picking it again from the disc's first screen is.
+		if(_vcd.TakeProgramLeft()) {
+			_persistedProgramIndex = -1;
+			MessageManager::Log("[YuXing] The program left - back to the start of the disc");
+		}
+
 		if(!_vcd.HasMenu()) {
 			return;
 		}
@@ -1485,9 +1497,9 @@ public:
 		if(chosen || MenuKeyPressed(keyboard, YuxingKeyboard::Enter) ||
 			MenuKeyPressed(keyboard, YuxingKeyboard::NumpadEnter) ||
 			MenuKeyPressed(keyboard, YuxingKeyboard::Space)) {
-			uint32_t program = menu.Enter();
-			if(program != YuxingVcdMenu::Nowhere) {
-				StartMenuProgram(program);
+			uint32_t entry = menu.Enter();
+			if(entry != YuxingVcdMenu::Nowhere) {
+				StartMenuProgram(_vcd.GetEntryProgram(entry));
 			}
 		}
 	}
@@ -1515,7 +1527,7 @@ public:
 		_persistedProgramIndex = (int32_t)index;
 		_persistedDiscRom = _emu->GetRomInfo().RomFile.GetFilePath();
 		_persistedDiscPath = _vcd.GetDiscFilename();
-		MessageManager::Log("[YuXing] Menu chose entry " + std::to_string(index + 1) + ": " +
+		MessageManager::Log("[YuXing] Menu chose " +
 			_vcd.GetProgramName(index));
 		_emu->GetSystemActionManager()->PowerCycle();
 	}

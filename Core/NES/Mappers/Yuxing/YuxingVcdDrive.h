@@ -176,6 +176,12 @@ private:
 	//how many answers have been clocked out since anything was asked - see the $04 shift
 	bool _commandPending = false;
 	int32_t _idleReads = 0;
+
+	//A program has said it is leaving ($AF), and the machine has not yet come back asking
+	//for something to run - see the idle reads below. _programLeft is that having happened,
+	//held for the mapper, which keeps the choice of program across a reset.
+	bool _leaving = false;
+	bool _programLeft = false;
 	int32_t _statusBitsRead = 0;
 
 	//Segment items are allocated a fixed stride each, so item N lives at a constant distance
@@ -277,6 +283,15 @@ private:
 					_pictureShown = false;
 					MessageManager::Log("[YuXing] Program took the screen back");
 				}
+				break;
+
+			case 0xAF:
+				//"I am leaving." Every program that drives the disc as a player sends it twice on its
+				//way out, and nothing else sends it: it is the last thing before the program hands the
+				//machine back to the BIOS, which then asks the drive for something to run. What the
+				//drive does about it waits for that question - taking the program away now would
+				//leave the second of the two unanswered, and the program retries it for ever.
+				_leaving = true;
 				break;
 
 			case 0xAD:
@@ -545,6 +560,7 @@ public:
 		_move = _shifting = _canReadData = _seekOk = _readComplete = _keyboardSelected = false;
 		_commandPending = false;
 		_idleReads = 0;
+		_leaving = false;
 		_statusBitsRead = 0;
 		_audioChannels = 3;
 		_busySeconds = 0;
@@ -596,8 +612,38 @@ public:
 	}
 
 	//A menu is only worth walking when there is more than one program to reach through it,
-	//and only while none has been picked - once one is running it owns the screen.
-	bool HasMenu() { return _menu.IsOpen() && _programs.size() > 1 && _disc.empty(); }
+	//or a title screen to get past before the one there is, and only while none has been
+	//picked - once one is running it owns the screen.
+	bool HasMenu() { return _menu.IsOpen() && (_programs.size() > 1 || _menu.OpensOnTitle()) && _disc.empty(); }
+	bool OpensOnTitle() { return _menu.OpensOnTitle(); }
+
+	//Whether a program left since this was last asked - see _programLeft
+	bool TakeProgramLeft()
+	{
+		bool left = _programLeft;
+		_programLeft = false;
+		return left;
+	}
+
+	//Once a title screen has been got past, the picture of the entry pointing at the program
+	//now picked, up while the machine reads that program in. Silent, so it leaves the drive
+	//free, and the program replaces it the first time it asks for a picture of its own.
+	void ShowLoadingPicture()
+	{
+		if(!_menu.OpensOnTitle() || _programIndex < 0 || _programIndex >= (int32_t)_programs.size()) {
+			return;
+		}
+		for(uint32_t entry = 0; entry < _menu.EntryCount(); entry++) {
+			if(_menu.EntrySector(entry) == _programs[_programIndex].Lba) {
+				uint32_t item = _menu.EntryItem(entry);
+				if(item != 0) {
+					RequestShow(item, 0);
+					MessageManager::Log("[YuXing] Loading picture: item " + std::to_string(item));
+				}
+				return;
+			}
+		}
+	}
 	YuxingVcdMenu& GetMenu() { return _menu; }
 
 	//The picture the menu wants up, put through the same path as a program's own request.
@@ -635,6 +681,26 @@ public:
 		return label + " (" + std::to_string(program.Size / 1024) + "KB)";
 	}
 	int32_t GetProgramIndex() { return _programIndex; }
+
+	//The program a menu entry starts: the one that begins where the entry says it does - see
+	//YuxingVcdMenu. Not always exactly: one game disc has two entries that point four sectors
+	//short of a program, each the one program on the disc that nothing else reaches, so the
+	//first to start at or a little after the address is the one meant. An entry pointing at
+	//no program at all keeps its place in the list, which is all there was to go on before.
+	uint32_t GetEntryProgram(uint32_t entry)
+	{
+		static constexpr uint32_t Slack = 16;
+		uint32_t sector = _menu.EntrySector(entry);
+		uint32_t best = entry;
+		uint32_t bestGap = Slack + 1;
+		for(size_t i = 0; i < _programs.size(); i++) {
+			if(_programs[i].Lba >= sector && _programs[i].Lba - sector < bestGap) {
+				best = (uint32_t)i;
+				bestGap = _programs[i].Lba - sector;
+			}
+		}
+		return best;
+	}
 
 	//Point the drive's view at one program without disturbing the protocol state - which is
 	//what restoring a savestate needs, since Reset() would wipe what was just read back.
@@ -1306,6 +1372,23 @@ public:
 								_status = ReadyStatus;
 								_pos = _basePos = _seekPos = 0;
 								_seekOk = false;
+
+								//...unless the program that was running said it was leaving. A real drive
+								//goes back to the first thing it shows, not to the program: that is its own
+								//screen, which is not on the disc, so the nearest thing is where the disc's
+								//own play sequence starts - its title screen or its menu, as at power-on.
+								//Serving the program again instead made leaving a reload that looked like
+								//nothing had happened. A disc with no play sequence has nowhere else to go.
+								if(_leaving && _menu.IsOpen()) {
+									_disc.clear();
+									_programIndex = -1;
+									_pictureShown = false;
+									_busySeconds = 0;
+									_busyUntilEnd = false;
+									_menu.Restart();
+									_programLeft = true;
+								}
+								_leaving = false;
 								_readComplete = false;
 							}
 						}
@@ -1353,7 +1436,7 @@ public:
 		SV(_pos); SV(_basePos); SV(_seekPos);
 		SV(_keySend); SV(_keySendBit); SV(_keySelect);
 		SV(_followUp); SV(_hasFollowUp); SV(_shiftCount);
-		SV(_move); SV(_shifting); SV(_canReadData); SV(_seekOk); SV(_commandPending); SV(_idleReads); SV(_statusBitsRead);
+		SV(_move); SV(_shifting); SV(_canReadData); SV(_seekOk); SV(_commandPending); SV(_idleReads); SV(_statusBitsRead); SV(_leaving); SV(_programLeft);
 		SV(_driveSelected); SV(_keyboardSelected); SV(_readComplete);
 		SV(_programIndex);
 

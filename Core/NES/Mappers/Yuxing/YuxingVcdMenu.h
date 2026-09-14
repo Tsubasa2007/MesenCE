@@ -13,11 +13,12 @@
 //it; nothing on this side did, which is why these discs could only be started by picking a
 //program out of a list that no real machine has.
 //
-//What makes it usable is that the leaves line up with the programs: a disc with 143 lists
-//that play something has 143 programs, one with 208 has 208, and the first leaf of the
-//teaching disc sits under the entry for the first volume, which is what its FILE0001.BIN
-//turns out to be. So the n'th leaf, counted in the order the descriptors appear, is the
-//n'th program.
+//What connects an entry to its program is the entry itself. A play list's header has room
+//for a playing time and a wait, and these discs keep the program's address there instead:
+//the minute, second and frame of where it starts, which is the form the machine's own seek
+//command takes. Counting the play lists in the order they appear only looks the same on
+//some discs - one game disc stores the pages of its two catalogues grouped by shape rather
+//than in order, and counted that way all but its first six entries started the wrong game.
 class YuxingVcdMenu
 {
 private:
@@ -40,9 +41,12 @@ private:
 	static constexpr uint32_t SelectionAreas = 16;
 	static constexpr uint32_t PlayHeader = 14;
 
+	//The two seconds, at 75 sectors to the second, that come before sector 0 in an address
+	static constexpr uint32_t LeadIn = 150;
+
 	vector<uint8_t> _psd;
 
-	//Where every play list is, in the order they appear - which is the order of the programs
+	//Where every play list is, in the order they appear
 	vector<uint32_t> _leaves;
 
 	uint32_t _offset = 0;
@@ -169,8 +173,9 @@ public:
 	static constexpr uint32_t Nowhere = 0xFFFFFFFF;
 
 	//Reads the disc's menu, if it has one worth walking. A disc whose descriptor holds no
-	//lists to choose from is not offering a menu at all - one carries nothing but play lists,
-	//because its own program does the choosing and only asks the drive for pictures.
+	//lists to choose from is not offering a menu - its own program does the choosing, and only
+	//asks the drive for pictures - but it still opens on something: the play list a player
+	//starts from is its title screen, and that is walked too - see OpensOnTitle.
 	bool Open(CdImageFile& image, uint32_t lba, uint32_t length)
 	{
 		Close();
@@ -180,15 +185,19 @@ public:
 		}
 
 		Index();
-		if(!_hasChoices || _leaves.empty()) {
+		if(_leaves.empty() || (!_hasChoices && TypeAt(0) != PlayList)) {
 			Close();
 			return false;
 		}
 
 		_open = true;
 		Show(0);
-		MessageManager::Log("[YuXing] Disc menu: " + std::to_string(_leaves.size()) +
-			" entries to choose from");
+		if(_hasChoices) {
+			MessageManager::Log("[YuXing] Disc menu: " + std::to_string(_leaves.size()) +
+				" entries to choose from");
+		} else {
+			MessageManager::Log("[YuXing] Disc opens on its title screen");
+		}
 		return true;
 	}
 
@@ -205,7 +214,45 @@ public:
 	}
 
 	bool IsOpen() { return _open; }
+
+	//Whether the disc starts on a title screen rather than a menu. Every disc carrying one
+	//program does: its first play list is a picture held until a key is pressed - "press
+	//play to start" - and the one after it is the loading picture, carrying the program's
+	//address (see EntrySector). A player shows the first, and on the key shows the second and
+	//loads from that address. Picking the program ahead of it is what left nothing at all on
+	//the screen for the whole of the load.
+	bool OpensOnTitle() { return _open && !_hasChoices; }
+
+	//Back to where a player starts, which is where it goes when a program leaves
+	void Restart()
+	{
+		if(_open) {
+			Show(0);
+		}
+	}
 	uint32_t EntryCount() { return (uint32_t)_leaves.size(); }
+
+	//Where on the disc an entry's program starts, as a sector - see the top of this file. The
+	//address counts the two seconds every disc begins with, which a sector number does not.
+	uint32_t EntrySector(uint32_t entry)
+	{
+		if(entry >= _leaves.size() || _leaves[entry] + 12 >= _psd.size()) {
+			return Nowhere;
+		}
+		uint32_t at = _leaves[entry];
+		uint32_t address = ((uint32_t)_psd[at + 10] * 60 + _psd[at + 11]) * 75 + _psd[at + 12];
+		return address >= LeadIn ? address - LeadIn : Nowhere;
+	}
+
+	//The picture an entry puts up while its program loads: its play list's first item
+	uint32_t EntryItem(uint32_t entry)
+	{
+		if(entry >= _leaves.size()) {
+			return 0;
+		}
+		uint16_t item = Word(_leaves[entry] + PlayHeader);
+		return item == NoOffset ? 0 : item;
+	}
 
 	//The still the menu wants on the screen, handed over once
 	bool TakeShow(uint32_t& item)
@@ -253,8 +300,8 @@ public:
 		return true;
 	}
 
-	//Follow the choice standing at. Answers with the program to start, or Nowhere when the
-	//choice only led to another list - in which case that list is now the one on screen.
+	//Follow the choice standing at. Answers with the entry chosen, or Nowhere when the choice
+	//only led to another list - in which case that list is now the one on screen.
 	uint32_t Enter()
 	{
 		if(!_open) {
@@ -267,7 +314,9 @@ public:
 			//A list with nothing to choose is a disc waiting to be started - the opening
 			//screen is one, and on the machine it is left by giving up waiting. Where it
 			//would have gone by itself is what a key does here.
-			target = Target(_offset + 14);
+			//A title screen is a play list, which keeps where it goes next in a different
+			//place from a selection list's timeout.
+			target = TypeAt(_offset) == PlayList ? Target(_offset + 6) : Target(_offset + 14);
 			if(target == Nowhere) {
 				return Nowhere;
 			}
@@ -302,7 +351,8 @@ public:
 	//rather sit and wait for a person does exactly that.
 	bool TimeOut()
 	{
-		if(HasChoice()) {
+		//A title screen waits for its key: its play list says so, with a wait of for ever
+		if(HasChoice() || TypeAt(_offset) == PlayList) {
 			return false;
 		}
 		return Turn(_offset + 14);
