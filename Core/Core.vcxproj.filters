@@ -2883,6 +2883,36 @@
     <ClInclude Include="SuperAcan\SacController.h">
       <Filter>SuperAcan</Filter>
     </ClInclude>
+    <ClInclude Include="SuperAcan\Debugger\SacSoundDebugger.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\Debugger\SacSoundDisUtils.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\Debugger\SacSoundTraceLogger.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\Debugger\SacDebugger.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\Debugger\SacDisUtils.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\Debugger\SacAssembler.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\Debugger\SacSoundAssembler.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\Debugger\SacEventManager.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\Debugger\SacTraceLogger.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\Debugger\SacPpuTools.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
     <ClInclude Include="SuperAcan\Moira\Moira.h">
       <Filter>SuperAcan\Moira</Filter>
     </ClInclude>
@@ -3356,6 +3386,36 @@
     <ClCompile Include="SuperAcan\SacApu.cpp">
       <Filter>SuperAcan</Filter>
     </ClCompile>
+    <ClCompile Include="SuperAcan\Debugger\SacSoundDebugger.cpp">
+      <Filter>SuperAcan</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Debugger\SacSoundDisUtils.cpp">
+      <Filter>SuperAcan</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Debugger\SacSoundTraceLogger.cpp">
+      <Filter>SuperAcan</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Debugger\SacDebugger.cpp">
+      <Filter>SuperAcan</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Debugger\SacDisUtils.cpp">
+      <Filter>SuperAcan</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Debugger\SacAssembler.cpp">
+      <Filter>SuperAcan</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Debugger\SacSoundAssembler.cpp">
+      <Filter>SuperAcan</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Debugger\SacEventManager.cpp">
+      <Filter>SuperAcan</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Debugger\SacTraceLogger.cpp">
+      <Filter>SuperAcan</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Debugger\SacPpuTools.cpp">
+      <Filter>SuperAcan</Filter>
+    </ClCompile>
     <ClCompile Include="SuperAcan\SacCpu.cpp">
       <Filter>SuperAcan</Filter>
     </ClCompile>
@@ -3393,6 +3453,9 @@
       <Filter>WS</Filter>
     </ClCompile>
     <ClCompile Include="Debugger\ExpressionEvaluator.Ws.cpp">
+      <Filter>Debugger</Filter>
+    </ClCompile>
+    <ClCompile Include="Debugger\ExpressionEvaluator.Sac.cpp">
       <Filter>Debugger</Filter>
     </ClCompile>
     <ClCompile Include="WS\WsControlManager.cpp">

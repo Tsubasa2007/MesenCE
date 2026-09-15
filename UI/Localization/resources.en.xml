@@ -2823,6 +2823,8 @@ E
 			<Value ID="Sms">SMS</Value>
 			<Value ID="Gba">GBA</Value>
 			<Value ID="Ws">WS</Value>
+			<Value ID="Sac">68000</Value>
+			<Value ID="SacSound">Sound CPU (65C02)</Value>
 		</Enum>
 		
 		<Enum ID="MemoryType">
@@ -2924,6 +2926,15 @@ E
 			<Value ID="WsBootRom">Boot ROM</Value>
 			<Value ID="WsInternalEeprom">IEEPROM (Internal)</Value>
 			<Value ID="WsPort">I/O Port</Value>
+
+			<Value ID="SacMemory">CPU Memory</Value>
+			<Value ID="SacSoundMemory">Sound CPU Memory</Value>
+			<Value ID="SacPrgRom">ROM</Value>
+			<Value ID="SacWorkRam">Work RAM</Value>
+			<Value ID="SacVideoRam">Video RAM</Value>
+			<Value ID="SacPaletteRam">Palette RAM</Value>
+			<Value ID="SacSoundRam">Sound RAM</Value>
+			<Value ID="SacSaveRam">Save RAM</Value>
 
 			<Value ID="None">None</Value>
 		</Enum>
@@ -3577,6 +3588,7 @@ E
 			<Value ID="OpenAssembler">Assembler</Value>
 			<Value ID="OpenDebugger">Debugger</Value>
 			<Value ID="OpenSpcDebugger">SPC Debugger</Value>
+			<Value ID="OpenSacSoundDebugger">Sound CPU Debugger</Value>
 			<Value ID="OpenSa1Debugger">SA-1 Debugger</Value>
 			<Value ID="OpenSt018Debugger">ST018 Debugger</Value>
 			<Value ID="OpenGsuDebugger">GSU Debugger</Value>

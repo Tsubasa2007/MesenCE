@@ -825,6 +825,16 @@
     <ClInclude Include="SuperAcan\SacPpu.h" />
     <ClInclude Include="SuperAcan\SacApu.h" />
     <ClInclude Include="SuperAcan\SacController.h" />
+    <ClInclude Include="SuperAcan\Debugger\SacDebugger.h" />
+    <ClInclude Include="SuperAcan\Debugger\SacDisUtils.h" />
+    <ClInclude Include="SuperAcan\Debugger\SacAssembler.h" />
+    <ClInclude Include="SuperAcan\Debugger\SacSoundAssembler.h" />
+    <ClInclude Include="SuperAcan\Debugger\SacEventManager.h" />
+    <ClInclude Include="SuperAcan\Debugger\SacTraceLogger.h" />
+    <ClInclude Include="SuperAcan\Debugger\SacPpuTools.h" />
+    <ClInclude Include="SuperAcan\Debugger\SacSoundDebugger.h" />
+    <ClInclude Include="SuperAcan\Debugger\SacSoundDisUtils.h" />
+    <ClInclude Include="SuperAcan\Debugger\SacSoundTraceLogger.h" />
     <ClInclude Include="SuperAcan\Moira\Moira.h" />
     <ClInclude Include="SuperAcan\Moira\MoiraConfig.h" />
     <ClInclude Include="SuperAcan\Moira\MoiraTypes.h" />
@@ -836,6 +846,7 @@
     <ClCompile Include="Debugger\DisassemblySearch.cpp" />
     <ClCompile Include="Debugger\ExpressionEvaluator.St018.cpp" />
     <ClCompile Include="Debugger\ExpressionEvaluator.Ws.cpp" />
+    <ClCompile Include="Debugger\ExpressionEvaluator.Sac.cpp" />
     <ClCompile Include="Debugger\ExpressionEvaluator.Cx4.cpp" />
     <ClCompile Include="Debugger\ExpressionEvaluator.Gameboy.cpp" />
     <ClCompile Include="Debugger\ExpressionEvaluator.Gba.cpp" />
@@ -1149,6 +1160,16 @@
     <ClCompile Include="SuperAcan\W65C02.cpp" />
     <ClCompile Include="SuperAcan\SacPpu.cpp" />
     <ClCompile Include="SuperAcan\SacApu.cpp" />
+    <ClCompile Include="SuperAcan\Debugger\SacDebugger.cpp" />
+    <ClCompile Include="SuperAcan\Debugger\SacDisUtils.cpp" />
+    <ClCompile Include="SuperAcan\Debugger\SacAssembler.cpp" />
+    <ClCompile Include="SuperAcan\Debugger\SacSoundAssembler.cpp" />
+    <ClCompile Include="SuperAcan\Debugger\SacEventManager.cpp" />
+    <ClCompile Include="SuperAcan\Debugger\SacTraceLogger.cpp" />
+    <ClCompile Include="SuperAcan\Debugger\SacPpuTools.cpp" />
+    <ClCompile Include="SuperAcan\Debugger\SacSoundDebugger.cpp" />
+    <ClCompile Include="SuperAcan\Debugger\SacSoundDisUtils.cpp" />
+    <ClCompile Include="SuperAcan\Debugger\SacSoundTraceLogger.cpp" />
     <ClCompile Include="SuperAcan\SacCpu.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <DisableLanguageExtensions>false</DisableLanguageExtensions>

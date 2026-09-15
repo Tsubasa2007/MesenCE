@@ -522,6 +522,7 @@ namespace Mesen.Debugger.ViewModels
 			int alignValue = cpuType switch {
 				CpuType.Gba => 42,
 				CpuType.Ws => 36,
+				CpuType.Sac => 40,
 				_ => 24
 			};
 
@@ -552,6 +553,7 @@ namespace Mesen.Debugger.ViewModels
 				case CpuType.Spc:
 				case CpuType.Nes:
 				case CpuType.Pce:
+				case CpuType.SacSound:
 					addTag(cfg.ShowRegisters, "A:[A,2h] X:[X,2h] Y:[Y,2h] S:[SP,2h] ");
 					addTag(cfg.ShowStatusFlags, cfg.StatusFormat switch {
 						StatusFlagFormat.Hexadecimal => "P:[P,h] ",
@@ -621,6 +623,15 @@ namespace Mesen.Debugger.ViewModels
 						StatusFlagFormat.Text or _ => "F:[F,10] "
 					});
 					break;
+
+				case CpuType.Sac:
+					addTag(cfg.ShowRegisters, "D0:[D0,8h] D1:[D1,8h] D2:[D2,8h] D3:[D3,8h] D4:[D4,8h] D5:[D5,8h] D6:[D6,8h] D7:[D7,8h] A0:[A0,8h] A1:[A1,8h] A2:[A2,8h] A3:[A3,8h] A4:[A4,8h] A5:[A5,8h] A6:[A6,8h] A7:[A7,8h] ");
+					addTag(cfg.ShowStatusFlags, cfg.StatusFormat switch {
+						StatusFlagFormat.Hexadecimal => "SR:[SR,4h] ",
+						StatusFlagFormat.CompactText => "CCR:[PS] ",
+						StatusFlagFormat.Text or _ => "CCR:[PS,5] "
+					});
+					break;
 			}
 
 			addTag(cfg.ShowFramePosition, "V:[Scanline,3] H:[Cycle,3] ");
@@ -671,9 +682,11 @@ namespace Mesen.Debugger.ViewModels
 				CpuType.Gameboy => new string[] { "A", "B", "C", "D", "E", "F", "H", "L", "PS", "SP" },
 				CpuType.Nes => new string[] { "A", "X", "Y", "P", "SP" },
 				CpuType.Pce => new string[] { "A", "X", "Y", "P", "SP" },
+				CpuType.SacSound => new string[] { "A", "X", "Y", "P", "SP" },
 				CpuType.Sms => new string[] { "A", "B", "C", "D", "E", "F", "H", "L", "IX", "IY", "A'", "B'", "C'", "D'", "E'", "F'", "H'", "L'", "I", "R", "PS", "SP" },
 				CpuType.Gba or CpuType.St018 => new string[] { "R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "R10", "R11", "R12", "R13", "R14", "R15", "CPSR" },
 				CpuType.Ws => new string[] { "AX", "BX", "CX", "DX", "CS", "IP", "SS", "SP", "BP", "DS", "ES", "SI", "DI", "F" },
+				CpuType.Sac => new string[] { "D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7", "SR", "SP", "PS" },
 				_ => throw new Exception("unsupported cpu type")
 			};
 
@@ -729,7 +742,7 @@ namespace Mesen.Debugger.ViewModels
 		public LineProperties GetLineStyle(CodeLineData lineData, int lineIndex)
 		{
 			LineProperties props = lineData.CpuType switch {
-				CpuType.Spc => GetSecondaryCpuStyle(),
+				CpuType.Spc or CpuType.SacSound => GetSecondaryCpuStyle(),
 				CpuType.NecDsp or CpuType.Sa1 or CpuType.Gsu or CpuType.Cx4 => GetCoprocessorStyle(),
 				CpuType.Gameboy => _consoleType == ConsoleType.Snes ? GetCoprocessorStyle() : GetMainCpuStyle(),
 				_ => GetMainCpuStyle(),

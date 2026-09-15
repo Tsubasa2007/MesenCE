@@ -298,3 +298,7 @@ template bool Base6502Assembler<NesAddrMode>::IsOpModeAvailable(string& opcode, 
 enum class PceAddrMode;
 template void Base6502Assembler<PceAddrMode>::ProcessLine(string code, uint32_t& instructionAddress, vector<int16_t>& output, unordered_map<string, uint32_t>& labels, bool firstPass, unordered_map<string, uint32_t>& currentPassLabels);
 template bool Base6502Assembler<PceAddrMode>::IsOpModeAvailable(string& opcode, PceAddrMode mode);
+
+enum class SacSoundAddrMode : uint8_t;
+template void Base6502Assembler<SacSoundAddrMode>::ProcessLine(string code, uint32_t& instructionAddress, vector<int16_t>& output, unordered_map<string, uint32_t>& labels, bool firstPass, unordered_map<string, uint32_t>& currentPassLabels);
+template bool Base6502Assembler<SacSoundAddrMode>::IsOpModeAvailable(string& opcode, SacSoundAddrMode mode);

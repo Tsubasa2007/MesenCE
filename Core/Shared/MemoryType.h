@@ -17,6 +17,7 @@ enum class MemoryType
 	GbaMemory,
 	WsMemory,
 	SacMemory,
+	SacSoundMemory,
 
 	SnesPrgRom,
 	SnesWorkRam,
@@ -105,6 +106,10 @@ enum class MemoryType
 
 	SacPrgRom,
 	SacWorkRam,
+	SacVideoRam,
+	SacPaletteRam,
+	SacSoundRam,
+	SacSaveRam,
 
 	None
 };

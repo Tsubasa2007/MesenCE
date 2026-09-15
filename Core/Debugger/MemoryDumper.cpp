@@ -25,6 +25,8 @@
 #include "GBA/GbaMemoryManager.h"
 #include "WS/WsConsole.h"
 #include "WS/WsMemoryManager.h"
+#include "SuperAcan/SacConsole.h"
+#include "SuperAcan/SacMemoryManager.h"
 #include "Shared/Video/VideoDecoder.h"
 #include "Debugger/DebugTypes.h"
 #include "Debugger/DebugBreakHelper.h"
@@ -56,6 +58,8 @@ MemoryDumper::MemoryDumper(Debugger* debugger)
 		_gbaConsole = gba;
 	} else if(WsConsole* ws = dynamic_cast<WsConsole*>(console)) {
 		_wsConsole = ws;
+	} else if(SacConsole* sac = dynamic_cast<SacConsole*>(console)) {
+		_sacConsole = sac;
 	}
 
 	for(int i = 0; i < DebugUtilities::GetMemoryTypeCount(); i++) {
@@ -104,6 +108,8 @@ uint32_t MemoryDumper::GetMemorySize(MemoryType type)
 		case MemoryType::SmsMemory: return 0x10000;
 		case MemoryType::GbaMemory: return 0x10000000;
 		case MemoryType::WsMemory: return 0x100000;
+		case MemoryType::SacMemory: return 0x1000000;
+		case MemoryType::SacSoundMemory: return 0x10000;
 		case MemoryType::SnesRegister: return 0x10000;
 		case MemoryType::SmsPort: return 0x100;
 		case MemoryType::WsPort: return 0x10000;
@@ -234,6 +240,26 @@ void MemoryDumper::GetMemoryState(MemoryType type, uint8_t* buffer)
 			break;
 		}
 
+		case MemoryType::SacMemory: {
+			if(_sacConsole) {
+				SacMemoryManager* memManager = _sacConsole->GetMemoryManager();
+				for(int i = 0; i <= 0xFFFFFF; i++) {
+					buffer[i] = memManager->DebugRead(i);
+				}
+			}
+			break;
+		}
+
+		case MemoryType::SacSoundMemory: {
+			if(_sacConsole) {
+				SacMemoryManager* memManager = _sacConsole->GetMemoryManager();
+				for(int i = 0; i <= 0xFFFF; i++) {
+					buffer[i] = memManager->SoundDebugRead((uint16_t)i);
+				}
+			}
+			break;
+		}
+
 		default:
 			uint8_t* src = GetMemoryBuffer(type);
 			if(src) {
@@ -286,6 +312,8 @@ void MemoryDumper::InternalSetMemoryValues(MemoryType originalMemoryType, uint32
 			case MemoryType::SmsMemory: _smsConsole->GetMemoryManager()->DebugWrite(address, value); break;
 			case MemoryType::GbaMemory: _gbaConsole->GetMemoryManager()->DebugWrite(address, value); break;
 			case MemoryType::WsMemory: _wsConsole->GetMemoryManager()->DebugWrite(address, value); break;
+			case MemoryType::SacMemory: _sacConsole->GetMemoryManager()->DebugWrite(address, value); break;
+			case MemoryType::SacSoundMemory: _sacConsole->GetMemoryManager()->SoundDebugWrite((uint16_t)address, value); break;
 			case MemoryType::SpcDspRegisters: _spc->DebugWriteDspReg(address, value); break;
 
 			default:
@@ -387,6 +415,8 @@ uint8_t MemoryDumper::InternalGetMemoryValue(MemoryType memoryType, uint32_t add
 		case MemoryType::SmsPort: return _smsConsole->GetMemoryManager()->DebugReadPort(address);
 		case MemoryType::GbaMemory: return _gbaConsole->GetMemoryManager()->DebugRead(address);
 		case MemoryType::WsMemory: return _wsConsole->GetMemoryManager()->DebugRead(address);
+		case MemoryType::SacMemory: return _sacConsole->GetMemoryManager()->DebugRead(address);
+		case MemoryType::SacSoundMemory: return _sacConsole->GetMemoryManager()->SoundDebugRead((uint16_t)address);
 		case MemoryType::WsPort: return _wsConsole->GetMemoryManager()->DebugReadPort<uint8_t>(address);
 
 		default:

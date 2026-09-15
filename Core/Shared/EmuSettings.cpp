@@ -517,6 +517,9 @@ double EmuSettings::GetAspectRatio(ConsoleRegion region, FrameInfo baseFrameSize
 			} else if(_emu->GetRomInfo().Format == RomFormat::GameGear) {
 				//GG has a 6:5 PAR
 				return screenAspectRatio * (6.0 / 5.0);
+			} else if(_emu->GetConsoleType() == ConsoleType::SuperAcan) {
+				//The frame is 320 wide, and the 320-pixel mode's clock is 5/4 of the 256-pixel mode's (8:7 PAR)
+				return screenAspectRatio * (32.0 / 35.0);
 			}
 			return screenAspectRatio * ((region == ConsoleRegion::Pal || region == ConsoleRegion::Dendy) ? (11.0 / 8.0) : (8.0 / 7.0));
 

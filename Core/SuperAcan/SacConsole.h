@@ -53,6 +53,11 @@ public:
 	void SaveBattery() override;
 
 	uint32_t GetScanline() { return _scanline; }
+	uint16_t GetLineCycle();
+	SacCpu* GetCpu() { return _cpu.get(); }
+	SacPpu* GetPpu() { return _ppu.get(); }
+	SacMemoryManager* GetMemoryManager() { return _memoryManager.get(); }
+	uint16_t* GetFrameBuffer() { return _frameBuffer; }
 
 	BaseControlManager* GetControlManager() override;
 	ConsoleRegion GetRegion() override;

@@ -102,18 +102,26 @@ void W65C02::Interrupt(uint16_t vector, bool fromBrk)
 	_state.PC = (uint16_t)(Read(vector) | (Read((uint16_t)(vector + 1)) << 8));
 }
 
+void W65C02::TakeInterrupt(uint16_t vector, bool forNmi)
+{
+	uint16_t originalPc = _state.PC;
+	_state.CycleCount += 7;
+	Interrupt(vector, false);
+	_bus->OnInterrupt(originalPc, _state.PC, forNmi);
+}
+
 void W65C02::Exec()
 {
 	if(_state.Stopped) {
 		_state.CycleCount++;
+		_bus->OnHalted();
 		return;
 	}
 
 	if(_state.NmiPending) {
 		_state.NmiPending = false;
 		_state.Waiting = false;
-		_state.CycleCount += 7;
-		Interrupt(0xFFFA, false);
+		TakeInterrupt(0xFFFA, true);
 		return;
 	}
 
@@ -121,18 +129,19 @@ void W65C02::Exec()
 		//WAI ends on an interrupt request whether or not it is then taken
 		_state.Waiting = false;
 		if(!GetFlag(IrqDisable)) {
-			_state.CycleCount += 7;
-			Interrupt(0xFFFE, false);
+			TakeInterrupt(0xFFFE, false);
 			return;
 		}
 	}
 
 	if(_state.Waiting) {
 		_state.CycleCount++;
+		_bus->OnHalted();
 		return;
 	}
 
-	uint8_t opCode = Fetch();
+	_bus->OnInstruction();
+	uint8_t opCode = _bus->ReadOpCode(_state.PC++);
 	_state.CycleCount += _cycles[opCode];
 	ExecOpCode(opCode);
 }

@@ -122,6 +122,8 @@ namespace Mesen.Interop
 				CpuType.Sms => GetPpuState<SmsVdpState>(cpuType),
 				CpuType.Gba => GetPpuState<GbaPpuState>(cpuType),
 				CpuType.Ws => GetPpuState<WsPpuState>(cpuType),
+				CpuType.Sac => GetPpuState<SacPpuState>(cpuType),
+				CpuType.SacSound => GetPpuState<SacPpuState>(cpuType),
 				_ => throw new Exception("Unsupported cpu type")
 			};
 		}
@@ -144,6 +146,8 @@ namespace Mesen.Interop
 				CpuType.Sms => GetPpuToolsState<EmptyPpuToolsState>(cpuType),
 				CpuType.Gba => GetPpuToolsState<EmptyPpuToolsState>(cpuType),
 				CpuType.Ws => GetPpuToolsState<EmptyPpuToolsState>(cpuType),
+				CpuType.Sac => GetPpuToolsState<EmptyPpuToolsState>(cpuType),
+				CpuType.SacSound => GetPpuToolsState<EmptyPpuToolsState>(cpuType),
 				_ => throw new Exception("Unsupported cpu type")
 			};
 		}
@@ -410,6 +414,7 @@ namespace Mesen.Interop
 		[DllImport(DllPath)] public static extern void SetEventViewerConfig(CpuType cpuType, InteropPceEventViewerConfig config);
 		[DllImport(DllPath)] public static extern void SetEventViewerConfig(CpuType cpuType, InteropSmsEventViewerConfig config);
 		[DllImport(DllPath)] public static extern void SetEventViewerConfig(CpuType cpuType, InteropWsEventViewerConfig config);
+		[DllImport(DllPath)] public static extern void SetEventViewerConfig(CpuType cpuType, InteropSacEventViewerConfig config);
 
 		[DllImport(DllPath, EntryPoint = "GetEventViewerEvent")] private static extern DebugEventInfo GetEventViewerEventWrapper(CpuType cpuType, UInt16 scanline, UInt16 cycle);
 		public static DebugEventInfo? GetEventViewerEvent(CpuType cpuType, UInt16 scanline, UInt16 cycle)
@@ -557,6 +562,8 @@ namespace Mesen.Interop
 				CpuType.Sms => state is SmsCpuState,
 				CpuType.Gba => state is GbaCpuState,
 				CpuType.Ws => state is WsCpuState,
+				CpuType.Sac => state is SacCpuState,
+				CpuType.SacSound => state is SacSoundCpuState,
 				_ => false
 			};
 		}
@@ -571,6 +578,7 @@ namespace Mesen.Interop
 				ConsoleType.Sms => state is SmsVdpState,
 				ConsoleType.Gba => state is GbaPpuState,
 				ConsoleType.Ws => state is WsPpuState,
+				ConsoleType.SuperAcan => state is SacPpuState,
 				_ => false
 			};
 		}
@@ -601,6 +609,7 @@ namespace Mesen.Interop
 		GbaMemory,
 		WsMemory,
 		SacMemory,
+		SacSoundMemory,
 
 		SnesPrgRom,
 		SnesWorkRam,
@@ -689,6 +698,10 @@ namespace Mesen.Interop
 
 		SacPrgRom,
 		SacWorkRam,
+		SacVideoRam,
+		SacPaletteRam,
+		SacSoundRam,
+		SacSaveRam,
 
 		None,
 	}
@@ -1052,6 +1065,38 @@ namespace Mesen.Interop
 		public InteropEventViewerCategoryCfg CartWrite;
 		public InteropEventViewerCategoryCfg OtherRead;
 		public InteropEventViewerCategoryCfg OtherWrite;
+
+		public InteropEventViewerCategoryCfg Irq;
+		public InteropEventViewerCategoryCfg MarkedBreakpoints;
+
+		[MarshalAs(UnmanagedType.I1)] public bool ShowPreviousFrameEvents;
+	}
+
+	[StructLayout(LayoutKind.Sequential)]
+	public class InteropSacEventViewerConfig
+	{
+		public InteropEventViewerCategoryCfg VideoScrollWrite;
+		public InteropEventViewerCategoryCfg VideoWindowWrite;
+		public InteropEventViewerCategoryCfg VideoSpriteWrite;
+		public InteropEventViewerCategoryCfg VideoDmaWrite;
+		public InteropEventViewerCategoryCfg VideoOtherWrite;
+		public InteropEventViewerCategoryCfg VideoStatusRead;
+		public InteropEventViewerCategoryCfg VideoOtherRead;
+		public InteropEventViewerCategoryCfg PaletteWrite;
+		public InteropEventViewerCategoryCfg PaletteRead;
+		public InteropEventViewerCategoryCfg VramWrite;
+		public InteropEventViewerCategoryCfg VramRead;
+		public InteropEventViewerCategoryCfg SoundWrite;
+		public InteropEventViewerCategoryCfg SoundRead;
+		public InteropEventViewerCategoryCfg InputRead;
+		public InteropEventViewerCategoryCfg DmaWrite;
+		public InteropEventViewerCategoryCfg DmaRead;
+		public InteropEventViewerCategoryCfg IrqWrite;
+		public InteropEventViewerCategoryCfg IrqRead;
+		public InteropEventViewerCategoryCfg TimerWrite;
+		public InteropEventViewerCategoryCfg TimerRead;
+		public InteropEventViewerCategoryCfg OtherWrite;
+		public InteropEventViewerCategoryCfg OtherRead;
 
 		public InteropEventViewerCategoryCfg Irq;
 		public InteropEventViewerCategoryCfg MarkedBreakpoints;
@@ -1553,7 +1598,8 @@ namespace Mesen.Interop
 		Sms,
 		Gba,
 		Ws,
-		Sac
+		Sac,
+		SacSound
 	}
 
 	public enum StepType

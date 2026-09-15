@@ -404,6 +404,15 @@ namespace Mesen.Debugger.ViewModels
 					};
 					break;
 
+				case CpuType.Sac:
+					Tabs = new() {
+						new() { Title = "BG0", Layer = 0 },
+						new() { Title = "BG1", Layer = 1 },
+						new() { Title = "BG2", Layer = 2 },
+						new() { Title = "ROZ", Layer = 3 }
+					};
+					break;
+
 				default:
 					throw new Exception("unsupported cpu type");
 			}

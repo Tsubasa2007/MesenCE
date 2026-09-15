@@ -52,7 +52,10 @@
 		</DataTemplate>
 		<DataTemplate DataType="{x:Type cfg:WsEventViewerConfig}">
 			<v:WsEventViewerConfigView />
-		</DataTemplate>	
+		</DataTemplate>
+		<DataTemplate DataType="{x:Type cfg:SacEventViewerConfig}">
+			<v:SacEventViewerConfigView />
+		</DataTemplate>
 	</Window.DataTemplates>
 	
 	<DockPanel>

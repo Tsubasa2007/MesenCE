@@ -78,6 +78,7 @@ namespace Mesen.Interop
 		GbaDebuggerEnabled = (1 << 11),
 		WsDebuggerEnabled = (1 << 12),
 		SacDebuggerEnabled = (1 << 13),
+		SacSoundDebuggerEnabled = (1 << 14),
 	}
 
 	public struct InteropShortcutKeyInfo

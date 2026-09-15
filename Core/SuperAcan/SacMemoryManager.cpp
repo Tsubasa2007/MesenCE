@@ -4,23 +4,59 @@
 #include "SuperAcan/SacCpu.h"
 #include "SuperAcan/SacControlManager.h"
 #include "SuperAcan/SacApu.h"
+#include "Shared/Emulator.h"
+#include "Shared/CpuType.h"
+#include "Shared/MemoryOperationType.h"
 #include "Shared/MessageManager.h"
 #include "Utilities/HexUtilities.h"
 #include "Utilities/Serializer.h"
 
 uint8_t SacSoundBus::Read(uint16_t addr)
 {
-	return _memoryManager->SoundCpuRead(addr);
+	uint8_t value = _memoryManager->SoundCpuRead(addr);
+	_emu->ProcessMemoryRead<CpuType::SacSound>(addr, value, MemoryOperationType::Read);
+	return value;
+}
+
+uint8_t SacSoundBus::ReadOpCode(uint16_t addr)
+{
+	uint8_t value = _memoryManager->SoundCpuRead(addr);
+	_emu->ProcessMemoryRead<CpuType::SacSound>(addr, value, MemoryOperationType::ExecOpCode);
+	return value;
+}
+
+uint8_t SacSoundBus::ReadOperand(uint16_t addr)
+{
+	uint8_t value = _memoryManager->SoundCpuRead(addr);
+	_emu->ProcessMemoryRead<CpuType::SacSound>(addr, value, MemoryOperationType::ExecOperand);
+	return value;
 }
 
 void SacSoundBus::Write(uint16_t addr, uint8_t value)
 {
-	_memoryManager->SoundCpuWrite(addr, value);
+	if(_emu->ProcessMemoryWrite<CpuType::SacSound>(addr, value, MemoryOperationType::Write)) {
+		_memoryManager->SoundCpuWrite(addr, value);
+	}
 }
 
-SacMemoryManager::SacMemoryManager()
+void SacSoundBus::OnInstruction()
 {
-	_soundBus.reset(new SacSoundBus(this));
+	_emu->ProcessInstruction<CpuType::SacSound>();
+}
+
+void SacSoundBus::OnInterrupt(uint16_t originalPc, uint16_t newPc, bool forNmi)
+{
+	_emu->ProcessInterrupt<CpuType::SacSound>(originalPc, newPc, forNmi);
+}
+
+void SacSoundBus::OnHalted()
+{
+	_emu->ProcessHaltedCpu<CpuType::SacSound>();
+}
+
+SacMemoryManager::SacMemoryManager(Emulator* emu)
+{
+	_soundBus.reset(new SacSoundBus(this, emu));
 	_soundCpu.reset(new W65C02(_soundBus.get()));
 }
 
@@ -37,6 +73,57 @@ void SacMemoryManager::Init(SacConsole* console, SacCpu* cpu, uint8_t* prgRom, u
 	_workRam = workRam;
 	memset(_saveRam, 0xFF, sizeof(_saveRam));
 	memset(_lockoutKey, 0xFF, sizeof(_lockoutKey));
+}
+
+uint8_t SacMemoryManager::DebugRead(uint32_t addr)
+{
+	addr &= 0xFFFFFF;
+	if(addr < 0x1000 && _bootRomLow) {
+		return _bootRom[addr];
+	} else if(addr >= 0xF80000 && addr <= 0xF80FFF && _bootRomHigh) {
+		return _bootRom[addr - 0xF80000];
+	} else if(addr <= SacConstants::CartEnd) {
+		return _prgRom[addr % _prgRomSize];
+	} else if(addr >= 0xF80000 && addr <= 0xFBFFFF) {
+		return _prgRom[(addr - 0xF80000) % _prgRomSize];
+	} else if(addr >= SacConstants::WorkRamStart) {
+		return _workRam[addr & (SacConstants::WorkRamSize - 1)];
+	} else if(addr >= 0xF40000 && addr <= 0xF5FFFF) {
+		return _videoRam[addr - 0xF40000];
+	} else if(addr >= 0xF00200 && addr <= 0xF003FF) {
+		return _paletteRam[addr - 0xF00200];
+	} else if(addr >= 0xF00000 && addr <= 0xF001FF) {
+		uint16_t word = _videoRegs[(addr - 0xF00000) >> 1];
+		return (addr & 1) ? (uint8_t)word : (uint8_t)(word >> 8);
+	} else if(addr >= 0xE80000 && addr <= 0xE8FFFF) {
+		return _soundRam[addr & 0xFFFF];
+	} else if(addr >= 0xEC0000 && addr <= 0xECFFFF) {
+		return (addr & 1) ? _saveRam[(addr & 0xFFFF) >> 1] : 0xFF;
+	}
+	return 0;
+}
+
+uint16_t SacMemoryManager::DebugRead16(uint32_t addr)
+{
+	return (uint16_t)((DebugRead(addr) << 8) | DebugRead(addr + 1));
+}
+
+void SacMemoryManager::DebugWrite(uint32_t addr, uint8_t value)
+{
+	addr &= 0xFFFFFF;
+	if(addr <= SacConstants::CartEnd && !(addr < 0x1000 && _bootRomLow)) {
+		_prgRom[addr % _prgRomSize] = value;
+	} else if(addr >= SacConstants::WorkRamStart) {
+		_workRam[addr & (SacConstants::WorkRamSize - 1)] = value;
+	} else if(addr >= 0xF40000 && addr <= 0xF5FFFF) {
+		_videoRam[addr - 0xF40000] = value;
+	} else if(addr >= 0xF00200 && addr <= 0xF003FF) {
+		_paletteRam[addr - 0xF00200] = value;
+	} else if(addr >= 0xE80000 && addr <= 0xE8FFFF) {
+		_soundRam[addr & 0xFFFF] = value;
+	} else if(addr >= 0xEC0000 && addr <= 0xECFFFF && (addr & 1)) {
+		_saveRam[(addr & 0xFFFF) >> 1] = value;
+	}
 }
 
 //At reset the machine copies the sound processor's half of its internal ROM into the bottom
@@ -623,6 +710,65 @@ void SacMemoryManager::RunSoundCpu(uint64_t targetCycle)
 		_soundCpu->Exec();
 	}
 	_inSoundCpu = false;
+}
+
+void SacMemoryManager::GetState(SacSystemState& system, SacSoundCpuState& soundCpu)
+{
+	for(int ch = 0; ch < 2; ch++) {
+		system.DmaSource[ch] = _dmaSource[ch];
+		system.DmaDest[ch] = _dmaDest[ch];
+		system.DmaCount[ch] = _dmaCount[ch];
+		system.LatchedControls[ch] = _latchedControls[ch];
+		system.SoundShiftRegs[ch] = _soundShiftRegs[ch];
+	}
+	system.SpriteDmaSource = _spriteDmaSource;
+	system.SpriteDmaDest = _spriteDmaDest;
+	system.LineOnTarget = _lineOnTarget;
+	system.LineOffTarget = _lineOffTarget;
+	system.SoundCpuControl = _soundCpuCtrl;
+	system.FrcControl = _frcControl;
+	system.FrcFrequency = _frcFrequency;
+	system.IrqMask = _irqMask;
+	system.IrqLines = _cpu->GetIrqLines();
+	system.SoundIrqEnable = _soundIrqEnable;
+	system.SoundIrqSource = _soundIrqSource;
+	system.SoundShiftControl = _soundShiftCtrl;
+	system.SoundStatus = _soundStatus;
+	system.SoundRegAddress = _soundRegAddr;
+	system.LockoutAddress = _lockoutAddress;
+	system.BootRomLow = _bootRomLow;
+	system.BootRomHigh = _bootRomHigh;
+
+	GetSoundCpuState(soundCpu);
+}
+
+void SacMemoryManager::GetSoundCpuState(SacSoundCpuState& state)
+{
+	W65C02::State& cpu = _soundCpu->GetState();
+	state.CycleCount = cpu.CycleCount;
+	state.PC = cpu.PC;
+	state.A = cpu.A;
+	state.X = cpu.X;
+	state.Y = cpu.Y;
+	state.SP = cpu.SP;
+	state.PS = cpu.PS;
+	state.Running = _soundCpuRunning;
+	state.Waiting = cpu.Waiting;
+	state.Stopped = cpu.Stopped;
+	state.IrqLine = cpu.IrqLine;
+	state.NmiPending = cpu.NmiPending;
+}
+
+//The registers the debugger lets the user edit
+void SacMemoryManager::SetSoundCpuState(SacSoundCpuState& state)
+{
+	W65C02::State& cpu = _soundCpu->GetState();
+	cpu.PC = state.PC;
+	cpu.A = state.A;
+	cpu.X = state.X;
+	cpu.Y = state.Y;
+	cpu.SP = state.SP;
+	cpu.PS = state.PS;
 }
 
 void SacMemoryManager::TriggerSoundNmi()

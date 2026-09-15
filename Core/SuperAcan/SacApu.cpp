@@ -107,6 +107,26 @@ void SacApu::MixSample()
 	_sampleCount++;
 }
 
+void SacApu::GetState(SacApuState& state)
+{
+	for(int i = 0; i < 16; i++) {
+		Channel& channel = _channels[i];
+		SacApuChannelState& out = state.Channels[i];
+		out.Pitch = channel.Pitch;
+		out.Length = channel.Length;
+		out.StartAddr = channel.StartAddr;
+		out.CurrAddr = channel.CurrAddr;
+		out.EndAddr = channel.EndAddr;
+		out.Volume = channel.Volume;
+		out.Streaming = channel.Register9;
+		out.OneShot = channel.OneShot;
+		out.Active = (_activeChannels & (1 << i)) != 0;
+	}
+	state.TimerPeriod = (uint16_t)((_regs[0x12] << 8) | _regs[0x11]);
+	state.TimerControl = _regs[0x14];
+	state.TimerActive = _timerActive;
+}
+
 //Reading the timer control or the streaming status drops that interrupt
 uint8_t SacApu::Read(uint8_t reg)
 {

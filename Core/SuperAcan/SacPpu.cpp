@@ -131,20 +131,32 @@ uint16_t SacPpu::SampleTilemap(int layer, int region, int x, int y, int xsize, i
 		}
 	}
 
-	uint32_t count = (uint32_t)((y >> 3) * xsize + (x >> 3));
-	uint32_t tile = 0;
-	uint32_t palette = 0;
-	bool xflip = false;
-	bool yflip = false;
+	SacPpu::LayerTileInfo info = DecodeTile(layer, region, (uint32_t)((y >> 3) * xsize + (x >> 3)));
+
+	int tileX = x & 7;
+	int tileY = y & 7;
+	if(info.XFlip) {
+		tileX = 7 - tileX;
+	}
+	if(info.YFlip) {
+		tileY = 7 - tileY;
+	}
+	return GetColorIndex(region, info.Palette, GetTilePixel(region, info.Tile, tileX, tileY));
+}
+
+//The entry at a position in a layer's map (row by row), and the tile it names
+SacPpu::LayerTileInfo SacPpu::DecodeTile(int layer, int region, uint32_t count)
+{
+	LayerTileInfo info;
 
 	if(layer == 3 && (RozMode() & 0x03) == 0) {
 		//MAME's reading of the one mode only the boot logo uses: a single 64x64 tile it
 		//rearranges as 8x8 ones
-		tile = 0x880 + ((count & 7) * 2);
+		uint32_t tile = 0x880 + ((count & 7) * 2);
 		if(count & 0x20) {
 			tile ^= 1;
 		}
-		tile |= (count & 0xC0) >> 2;
+		info.Tile = tile | ((count & 0xC0) >> 2);
 	} else {
 		uint32_t base;
 		uint32_t tileBank;
@@ -160,31 +172,159 @@ uint16_t SacPpu::SampleTilemap(int layer, int region, int x, int y, int xsize, i
 			tileMode = TilemapTileMode(layer);
 		}
 
-		uint16_t entry = VramWord(base + count);
+		uint32_t wordIndex = (base + count) & 0xFFFF;
+		uint16_t entry = VramWord(wordIndex);
 		uint32_t paletteBase = entry >> 12;
 		if(tileMode & 0x0200) {
 			paletteBase |= 8;
 		}
 
+		info.MapAddress = wordIndex * 2;
+		info.Entry = entry;
+
 		//Bit 11 flips a tile horizontally and bit 10 vertically, as in a sprite entry. MAME's
 		//tilemaps have the two the other way round, but a picture drawn as its left half and a
 		//mirror of it has the right half's entries with bit 11 set.
-		tile = (entry & 0x03FF) + tileBank;
-		xflip = (entry & 0x0800) != 0;
-		yflip = (entry & 0x0400) != 0;
+		info.Tile = (entry & 0x03FF) + tileBank;
+		info.XFlip = (entry & 0x0800) != 0;
+		info.YFlip = (entry & 0x0400) != 0;
 		//The 2bpp text layer steps its palettes by four
-		palette = (layer != 3 && region == 2) ? (paletteBase << 2) : paletteBase;
+		info.Palette = (layer != 3 && region == 2) ? (paletteBase << 2) : paletteBase;
+	}
+
+	info.ColorBase = GetColorIndex(region, info.Palette, 0);
+	return info;
+}
+
+void SacPpu::GetLayerSize(int layer, int& width, int& height)
+{
+	int xsize = 0;
+	int ysize = 0;
+	GetTilemapDimensions(layer, xsize, ysize);
+	width = xsize * 8;
+	height = ysize * 8;
+}
+
+//A pixel as the layer would show it before scrolling, and whether it is transparent
+uint16_t SacPpu::GetLayerPixel(int layer, int x, int y, bool& transparent)
+{
+	int xsize = 0;
+	int ysize = 0;
+	GetTilemapDimensions(layer, xsize, ysize);
+	int region = GetTilemapRegion(layer);
+	int transMask = region == 0 ? 0xFF : (region == 1 ? 0x0F : (region == 2 ? 0x03 : 0x01));
+
+	uint16_t pixel = SampleTilemap(layer, region, x, y, xsize, ysize);
+	transparent = (pixel & transMask) == 0;
+	return pixel;
+}
+
+uint32_t SacPpu::GetSpriteCount()
+{
+	return (uint32_t)Reg(0x22) + 1;
+}
+
+//The same reading of an entry as DrawSpritesLine's. A direct sprite is a single 8x8 tile.
+SacPpu::SpriteViewInfo SacPpu::GetSprite(uint32_t index)
+{
+	static constexpr int ySizes[16] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 16, 20, 22, 24, 26 };
+
+	SpriteViewInfo sprite;
+	uint32_t entry = (((uint32_t)Reg(0x20) << 2) >> 1) + index * 4;
+	uint16_t w0 = VramWord(entry);
+	uint16_t w1 = VramWord(entry + 1);
+	uint16_t w2 = VramWord(entry + 2);
+	sprite.Pointer = VramWord(entry + 3);
+
+	sprite.Enabled = (w0 & 0x4000) != 0 && sprite.Pointer != 0;
+	sprite.RawY = w0 & 0x1FF;
+	sprite.RawX = w2 & 0x1FF;
+	sprite.Y = sprite.RawY >= 0x180 ? sprite.RawY - 0x200 : sprite.RawY;
+	sprite.X = sprite.RawX >= 0x180 ? sprite.RawX - 0x200 : sprite.RawX;
+
+	sprite.Bank = w1 >> 12;
+	sprite.Mask = (w1 >> 8) & 0x03;
+	sprite.XFlip = (w1 & 0x0800) != 0;
+	sprite.YFlip = (w1 & 0x0400) != 0;
+	sprite.Priority = (w2 >> 9) & 0x03;
+	sprite.WidthTiles = 1 << (w1 & 0x07);
+	sprite.HeightTiles = ySizes[(w0 >> 9) & 0x0F];
+	sprite.Region = (Reg(0x26) & 0x01) ? 0 : 1;
+
+	uint32_t bankSize = 0x100u << sprite.Region;
+	sprite.Direct = (sprite.Pointer & 0x8000) || (sprite.WidthTiles == 1 && sprite.HeightTiles == 1);
+	if(sprite.Direct) {
+		sprite.WidthTiles = 1;
+		sprite.HeightTiles = 1;
+		sprite.FirstTile = sprite.Bank * bankSize + (sprite.Pointer & 0x03FF);
+		sprite.Palette = sprite.Pointer >> 12;
+	} else {
+		uint16_t data = VramWord((uint32_t)sprite.Pointer << 1);
+		sprite.FirstTile = sprite.Bank * bankSize + (data & 0x03FF);
+		sprite.Palette = data >> 12;
+	}
+	return sprite;
+}
+
+uint16_t SacPpu::GetSpritePixel(const SpriteViewInfo& sprite, int x, int y, bool& transparent, uint32_t& tile)
+{
+	uint32_t bankSize = 0x100u << sprite.Region;
+	uint32_t palette;
+	bool tileXFlip;
+	bool tileYFlip;
+
+	if(sprite.Direct) {
+		tile = sprite.FirstTile;
+		palette = sprite.Palette;
+		tileXFlip = sprite.XFlip ^ ((sprite.Pointer & 0x0800) != 0);
+		tileYFlip = sprite.YFlip ^ ((sprite.Pointer & 0x0400) != 0);
+	} else {
+		//A flipped sprite also takes its tiles from the table in reverse
+		int column = x >> 3;
+		int row = y >> 3;
+		int xtile = sprite.XFlip ? sprite.WidthTiles - 1 - column : column;
+		int ytile = sprite.YFlip ? sprite.HeightTiles - 1 - row : row;
+		uint16_t data = VramWord(((uint32_t)sprite.Pointer << 1) + ytile * sprite.WidthTiles + xtile);
+		if(data == 0) {
+			transparent = true;
+			tile = 0;
+			return 0;
+		}
+		tile = sprite.Bank * bankSize + (data & 0x03FF);
+		palette = data >> 12;
+		tileXFlip = sprite.XFlip ^ ((data & 0x0800) != 0);
+		tileYFlip = sprite.YFlip ^ ((data & 0x0400) != 0);
 	}
 
 	int tileX = x & 7;
 	int tileY = y & 7;
-	if(xflip) {
+	if(tileXFlip) {
 		tileX = 7 - tileX;
 	}
-	if(yflip) {
+	if(tileYFlip) {
 		tileY = 7 - tileY;
 	}
-	return GetColorIndex(region, palette, GetTilePixel(region, tile, tileX, tileY));
+	uint8_t pixel = GetTilePixel(sprite.Region, tile, tileX, tileY);
+	transparent = pixel == 0;
+	return GetColorIndex(sprite.Region, palette, pixel);
+}
+
+//The entry under a tile position, taking a flipped layer into account as SampleTilemap does
+SacPpu::LayerTileInfo SacPpu::GetLayerTile(int layer, int column, int row)
+{
+	int xsize = 0;
+	int ysize = 0;
+	GetTilemapDimensions(layer, xsize, ysize);
+	if(layer != 3) {
+		uint16_t flags = TilemapFlags(layer);
+		if(flags & 0x02) {
+			column = xsize - 1 - column;
+		}
+		if(flags & 0x01) {
+			row = ysize - 1 - row;
+		}
+	}
+	return DecodeTile(layer, GetTilemapRegion(layer), (uint32_t)(row * xsize + column));
 }
 
 // Sprite table entry, four words:

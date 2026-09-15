@@ -1,5 +1,7 @@
 #pragma once
 #include "pch.h"
+#include "Shared/BaseState.h"
+#include "SuperAcan/SacCpu.h"
 
 //Timing is MAME's supracan driver: everything is derived from the one 53.693175MHz crystal.
 //The 68000 runs at /6, the pixel clock at /10, and a frame is 342x262 pixel clocks of which
@@ -28,6 +30,10 @@ public:
 	static constexpr uint32_t MaxScreenHeight = 240;
 	static constexpr uint32_t MaxPixelCount = MaxScreenWidth * MaxScreenHeight;
 
+	//The frame buffer carries the frame's width and height after the pixels, so the video filter
+	//sees the mode the frame was drawn in while the frame itself is always sent as 320x240
+	static constexpr uint32_t FrameBufferSize = MaxPixelCount + 2;
+
 	//The cartridge sits at the bottom of the 68000's space and the system's work RAM at the
 	//top, mirrored four times across $FC0000-$FFFFFF
 	static constexpr uint32_t CartEnd = 0x3FFFFF;
@@ -35,7 +41,87 @@ public:
 	static constexpr uint32_t WorkRamSize = 0x10000;
 };
 
-struct SacState
+//What the debugger's video viewers are given: where the frame is, and the video registers
+//($F00000-$F001FF) as words
+struct SacPpuState : BaseState
 {
 	uint32_t FrameCount;
+	uint16_t Scanline;
+	uint16_t VideoRegs[0x100];
+};
+
+//The sound processor, a 65C02, and whether the 68000 lets it run
+struct SacSoundCpuState : BaseState
+{
+	uint64_t CycleCount;
+	uint16_t PC;
+	uint8_t A;
+	uint8_t X;
+	uint8_t Y;
+	uint8_t SP;
+	uint8_t PS;
+	bool Running;
+	bool Waiting;
+	bool Stopped;
+	bool IrqLine;
+	bool NmiPending;
+};
+
+//The UM6619's registers on the 68000's side ($E90000-$E9003F), the video chip's DMA and raster
+//interrupt as they stand, and the sound registers at $400-$4FF of sound RAM
+struct SacSystemState
+{
+	uint32_t DmaSource[2];
+	uint32_t DmaDest[2];
+	uint32_t SpriteDmaSource;
+	uint32_t SpriteDmaDest;
+	int32_t LineOnTarget;
+	int32_t LineOffTarget;
+	uint16_t DmaCount[2];
+	uint16_t SoundCpuControl;
+	uint16_t FrcControl;
+	uint16_t FrcFrequency;
+	uint16_t LatchedControls[2];
+	uint8_t IrqMask;
+	uint8_t IrqLines;
+	uint8_t SoundIrqEnable;
+	uint8_t SoundIrqSource;
+	uint8_t SoundShiftControl;
+	uint8_t SoundShiftRegs[2];
+	uint8_t SoundStatus;
+	uint8_t SoundRegAddress;
+	uint8_t LockoutAddress;
+	bool BootRomLow;
+	bool BootRomHigh;
+};
+
+struct SacApuChannelState
+{
+	uint16_t Pitch;
+	uint16_t Length;
+	uint16_t StartAddr;
+	uint16_t CurrAddr;
+	uint16_t EndAddr;
+	uint8_t Volume;
+	uint8_t Streaming;
+	bool OneShot;
+	bool Active;
+};
+
+struct SacApuState
+{
+	SacApuChannelState Channels[16];
+	uint16_t TimerPeriod;
+	uint8_t TimerControl;
+	bool TimerActive;
+};
+
+//Everything the register viewer shows
+struct SacState : BaseState
+{
+	SacCpuState Cpu;
+	SacPpuState Ppu;
+	SacSoundCpuState SoundCpu;
+	SacSystemState System;
+	SacApuState Apu;
 };

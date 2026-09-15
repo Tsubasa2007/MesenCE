@@ -15,6 +15,15 @@ public:
 		virtual ~Bus() {}
 		virtual uint8_t Read(uint16_t addr) = 0;
 		virtual void Write(uint16_t addr, uint8_t value) = 0;
+
+		//Optional, for a debugger: an opcode or operand fetch (both read like any other byte
+		//unless overridden), the start of each instruction, an interrupt once its vector has
+		//been taken, and a cycle spent waiting (WAI) or stopped (STP)
+		virtual uint8_t ReadOpCode(uint16_t addr) { return Read(addr); }
+		virtual uint8_t ReadOperand(uint16_t addr) { return Read(addr); }
+		virtual void OnInstruction() {}
+		virtual void OnInterrupt(uint16_t originalPc, uint16_t newPc, bool forNmi) {}
+		virtual void OnHalted() {}
 	};
 
 	enum Flag : uint8_t
@@ -50,7 +59,7 @@ private:
 
 	uint8_t Read(uint16_t addr) { return _bus->Read(addr); }
 	void Write(uint16_t addr, uint8_t value) { _bus->Write(addr, value); }
-	uint8_t Fetch() { return Read(_state.PC++); }
+	uint8_t Fetch() { return _bus->ReadOperand(_state.PC++); }
 	uint16_t FetchWord();
 	void Push(uint8_t value);
 	uint8_t Pop();
@@ -65,6 +74,7 @@ private:
 	uint16_t AddrIndirectY(bool pagePenalty);
 
 	void Interrupt(uint16_t vector, bool fromBrk);
+	void TakeInterrupt(uint16_t vector, bool forNmi);
 	void Branch(bool condition);
 
 	void Ora(uint8_t value);
@@ -93,6 +103,7 @@ public:
 	void Exec();
 
 	void SetIrq(bool asserted) { _state.IrqLine = asserted; }
+	void SetProgramCounter(uint16_t pc) { _state.PC = pc; }
 	void TriggerNmi() { _state.NmiPending = true; }
 
 	State& GetState() { return _state; }

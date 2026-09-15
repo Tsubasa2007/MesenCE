@@ -11,6 +11,7 @@
 #include "Shared/EmuSettings.h"
 #include "Shared/SettingTypes.h"
 #include "Shared/RewindManager.h"
+#include "Shared/EventType.h"
 #include "Shared/NotificationManager.h"
 #include "Shared/MessageManager.h"
 #include "Shared/Video/VideoDecoder.h"
@@ -79,17 +80,24 @@ LoadRomResult SacConsole::LoadRom(VirtualFile& romFile)
 	memset(_workRam, 0, _workRamSize);
 	_emu->RegisterMemory(MemoryType::SacWorkRam, _workRam, _workRamSize);
 
-	_frameBuffer = new uint16_t[SacConstants::MaxPixelCount];
-	memset(_frameBuffer, 0, SacConstants::MaxPixelCount * sizeof(uint16_t));
+	_frameBuffer = new uint16_t[SacConstants::FrameBufferSize];
+	memset(_frameBuffer, 0, SacConstants::FrameBufferSize * sizeof(uint16_t));
 
 	_controlManager.reset(new SacControlManager(_emu));
-	_memoryManager.reset(new SacMemoryManager());
-	_cpu.reset(new SacCpu(_memoryManager.get()));
+	_memoryManager.reset(new SacMemoryManager(_emu));
+	_cpu.reset(new SacCpu(_emu, _memoryManager.get()));
 	_memoryManager->Init(this, _cpu.get(), _prgRom, _prgRomSize, _workRam);
 	_ppu.reset(new SacPpu());
 	_ppu->Init(_memoryManager->GetVideoRam(), _memoryManager->GetPaletteRam(), _memoryManager->GetVideoRegs(), _frameBuffer);
 	_apu.reset(new SacApu(_emu, _memoryManager.get(), _memoryManager->GetSoundRam()));
 	_memoryManager->SetApu(_apu.get());
+
+	//For the debugger's memory and video viewers. Video RAM and the palette are held as the
+	//68000 addresses them, a byte at a time, high byte of each word first.
+	_emu->RegisterMemory(MemoryType::SacVideoRam, _memoryManager->GetVideoRam(), 0x20000);
+	_emu->RegisterMemory(MemoryType::SacPaletteRam, _memoryManager->GetPaletteRam(), 0x200);
+	_emu->RegisterMemory(MemoryType::SacSoundRam, _memoryManager->GetSoundRam(), 0x10000);
+	_emu->RegisterMemory(MemoryType::SacSaveRam, _memoryManager->GetSaveRam(), 0x8000);
 	LoadSoundTables();
 	LoadBootRom();
 
@@ -159,6 +167,10 @@ void SacConsole::RunFrame()
 {
 	for(uint32_t line = 0; line < SacConstants::ScanlineCount; line++) {
 		_scanline = line;
+		if(line == 0) {
+			_emu->ProcessEvent(EventType::StartFrame, CpuType::Sac);
+		}
+		_emu->ProcessPpuCycle<CpuType::Sac>();
 
 		//A visible line is drawn as the machine reaches it, from the registers as they stand
 		_memoryManager->ProcessLineIrqs(line);
@@ -186,6 +198,18 @@ void SacConsole::RunFrame()
 
 	SendFrame();
 	LogProgress();
+}
+
+//Where the 68000 has got to within the line being run, in pixel clocks (0-341)
+uint16_t SacConsole::GetLineCycle()
+{
+	uint64_t lineStart = _cpuTargetCycle >= SacConstants::CpuCyclesPerLine ? _cpuTargetCycle - SacConstants::CpuCyclesPerLine : 0;
+	uint64_t now = _cpu->GetCycleCount();
+	if(now < lineStart) {
+		return 0;
+	}
+	uint64_t clocks = (now - lineStart) * SacConstants::CpuClockDivider / SacConstants::PixelClockDivider;
+	return (uint16_t)std::min<uint64_t>(clocks, SacConstants::ClocksPerScanline - 1);
 }
 
 //The 68000 up to a target, stopping on the way wherever the free-running counter interrupts
@@ -291,11 +315,17 @@ void SacConsole::SendFrame()
 {
 	_frameCount++;
 
+	_emu->ProcessEvent(EventType::EndFrame, CpuType::Sac);
 	_emu->GetNotificationManager()->SendNotification(ConsoleNotificationType::PpuFrameDone);
 
 	DumpFrame();
 
-	RenderedFrame frame(_frameBuffer, _ppu->GetScreenWidth(), _ppu->GetScreenHeight(), 1.0, _frameCount, _controlManager->GetPortStates());
+	//Both widths fill the same width of a TV (the 320-pixel mode has a faster pixel clock), and
+	//the 224-line mode is the middle of the 240 lines, so the frame is sent at one fixed size and
+	//the window does not resize when a game changes mode
+	_frameBuffer[SacConstants::MaxPixelCount] = (uint16_t)_ppu->GetScreenWidth();
+	_frameBuffer[SacConstants::MaxPixelCount + 1] = (uint16_t)_ppu->GetScreenHeight();
+	RenderedFrame frame(_frameBuffer, SacConstants::MaxScreenWidth, SacConstants::MaxScreenHeight, 1.0, _frameCount, _controlManager->GetPortStates());
 	bool rewinding = _emu->GetRewindManager()->IsRewinding();
 	_emu->GetVideoDecoder()->UpdateFrame(frame, rewinding, rewinding);
 
@@ -334,7 +364,7 @@ ConsoleType SacConsole::GetConsoleType()
 
 vector<CpuType> SacConsole::GetCpuTypes()
 {
-	return { CpuType::Sac };
+	return { CpuType::Sac, CpuType::SacSound };
 }
 
 uint64_t SacConsole::GetMasterClock()
@@ -362,11 +392,12 @@ PpuFrameInfo SacConsole::GetPpuFrame()
 	PpuFrameInfo frame = {};
 	frame.FirstScanline = 0;
 	frame.FrameCount = _frameCount;
-	frame.Width = _ppu->GetScreenWidth();
-	frame.Height = _ppu->GetScreenHeight();
+	//The same fixed size SendFrame gives the video decoder, with the frame's mode after the pixels
+	frame.Width = SacConstants::MaxScreenWidth;
+	frame.Height = SacConstants::MaxScreenHeight;
 	frame.ScanlineCount = SacConstants::ScanlineCount;
 	frame.CycleCount = SacConstants::ClocksPerScanline;
-	frame.FrameBufferSize = frame.Width * frame.Height * sizeof(uint16_t);
+	frame.FrameBufferSize = SacConstants::FrameBufferSize * sizeof(uint16_t);
 	frame.FrameBuffer = (uint8_t*)_frameBuffer;
 	return frame;
 }
@@ -392,29 +423,57 @@ void SacConsole::ProcessAudioPlayerAction(AudioPlayerActionParams p)
 
 AddressInfo SacConsole::GetAbsoluteAddress(AddressInfo& relAddress)
 {
+	//The sound processor sees nothing but sound RAM
+	if(relAddress.Type == MemoryType::SacSoundMemory) {
+		return { relAddress.Address & 0xFFFF, MemoryType::SacSoundRam };
+	}
+
 	uint32_t addr = relAddress.Address & 0xFFFFFF;
-	if(addr <= SacConstants::CartEnd) {
+	if(_memoryManager->IsBootRomMapped(addr)) {
+		//The boot ROM has no memory type of its own, so the debugger reads it as the 68000 does
+		return { -1, MemoryType::None };
+	} else if(addr <= SacConstants::CartEnd) {
 		return { (int32_t)(addr % _prgRomSize), MemoryType::SacPrgRom };
 	} else if(addr >= SacConstants::WorkRamStart) {
 		return { (int32_t)(addr & (SacConstants::WorkRamSize - 1)), MemoryType::SacWorkRam };
+	} else if(addr >= 0xF40000 && addr <= 0xF5FFFF) {
+		return { (int32_t)(addr - 0xF40000), MemoryType::SacVideoRam };
+	} else if(addr >= 0xF00200 && addr <= 0xF003FF) {
+		return { (int32_t)(addr - 0xF00200), MemoryType::SacPaletteRam };
+	} else if(addr >= 0xE80000 && addr <= 0xE8FFFF) {
+		return { (int32_t)(addr & 0xFFFF), MemoryType::SacSoundRam };
+	} else if(addr >= 0xEC0000 && addr <= 0xECFFFF && (addr & 1)) {
+		return { (int32_t)((addr & 0xFFFF) >> 1), MemoryType::SacSaveRam };
 	}
 	return { -1, MemoryType::None };
 }
 
 AddressInfo SacConsole::GetRelativeAddress(AddressInfo& absAddress, CpuType cpuType)
 {
+	if(cpuType == CpuType::SacSound) {
+		return absAddress.Type == MemoryType::SacSoundRam ? AddressInfo { absAddress.Address, MemoryType::SacSoundMemory } : AddressInfo { -1, MemoryType::None };
+	}
+
 	switch(absAddress.Type) {
 		case MemoryType::SacPrgRom: return { absAddress.Address, MemoryType::SacMemory };
 		case MemoryType::SacWorkRam: return { (int32_t)(SacConstants::WorkRamStart + absAddress.Address), MemoryType::SacMemory };
+		case MemoryType::SacVideoRam: return { (int32_t)(0xF40000 + absAddress.Address), MemoryType::SacMemory };
+		case MemoryType::SacPaletteRam: return { (int32_t)(0xF00200 + absAddress.Address), MemoryType::SacMemory };
+		case MemoryType::SacSoundRam: return { (int32_t)(0xE80000 + absAddress.Address), MemoryType::SacMemory };
+		case MemoryType::SacSaveRam: return { (int32_t)(0xEC0001 + absAddress.Address * 2), MemoryType::SacMemory };
 		default: return { -1, MemoryType::None };
 	}
 }
 
 void SacConsole::GetConsoleState(BaseState& state, ConsoleType consoleType)
 {
-	SacState sacState = {};
-	sacState.FrameCount = _frameCount;
-	(SacState&)state = sacState;
+	SacState& sacState = (SacState&)state;
+	sacState.Cpu = _cpu->GetState();
+	sacState.Ppu.FrameCount = _frameCount;
+	sacState.Ppu.Scanline = (uint16_t)_scanline;
+	memcpy(sacState.Ppu.VideoRegs, _memoryManager->GetVideoRegs(), sizeof(sacState.Ppu.VideoRegs));
+	_memoryManager->GetState(sacState.System, sacState.SoundCpu);
+	_apu->GetState(sacState.Apu);
 }
 
 void SacConsole::Serialize(Serializer& s)

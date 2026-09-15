@@ -562,6 +562,8 @@ namespace Mesen.Debugger.Utilities
 
 		[IconFile("SpcDebugger")]
 		OpenSpcDebugger,
+		[IconFile("SpcDebugger")]
+		OpenSacSoundDebugger,
 		[IconFile("Cx4Debugger")]
 		OpenCx4Debugger,
 		[IconFile("NecDspDebugger")]

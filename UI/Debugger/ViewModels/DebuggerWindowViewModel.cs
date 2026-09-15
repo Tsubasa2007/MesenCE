@@ -92,7 +92,9 @@ namespace Mesen.Debugger.ViewModels
 					CpuType = cpuType.Value;
 					if(consoleType.GetMainCpuType() != CpuType) {
 						Title = ResourceHelper.GetEnumText(CpuType) + " Debugger";
-						Icon = new WindowIcon(ImageUtilities.BitmapFromAsset("Assets/" + CpuType.ToString() + "Debugger.png"));
+						//The Super A'Can's sound processor has no icon of its own and borrows the SPC's
+						string iconName = CpuType == CpuType.SacSound ? "SpcDebugger" : CpuType.ToString() + "Debugger";
+						Icon = new WindowIcon(ImageUtilities.BitmapFromAsset("Assets/" + iconName + ".png"));
 						IsMainCpuDebugger = false;
 					} else {
 						Icon = new WindowIcon(ImageUtilities.BitmapFromAsset("Assets/Debugger.png"));
@@ -130,6 +132,8 @@ namespace Mesen.Debugger.ViewModels
 				CpuType.Sms => new SmsStatusViewModel(),
 				CpuType.Gba => new GbaStatusViewModel(),
 				CpuType.Ws => new WsStatusViewModel(),
+				CpuType.Sac => new SacStatusViewModel(),
+				CpuType.SacSound => new SacSoundStatusViewModel(),
 				_ => null
 			};
 

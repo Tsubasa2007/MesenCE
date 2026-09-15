@@ -15,6 +15,7 @@ class PceConsole;
 class SmsConsole;
 class GbaConsole;
 class WsConsole;
+class SacConsole;
 class Emulator;
 class Debugger;
 
@@ -42,6 +43,7 @@ private:
 	SmsConsole* _smsConsole = nullptr;
 	GbaConsole* _gbaConsole = nullptr;
 	WsConsole* _wsConsole = nullptr;
+	SacConsole* _sacConsole = nullptr;
 	BaseCartridge* _cartridge = nullptr;
 	Debugger* _debugger = nullptr;
 	bool _isMemorySupported[DebugUtilities::GetMemoryTypeCount()] = {};

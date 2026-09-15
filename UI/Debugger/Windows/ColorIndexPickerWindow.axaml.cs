@@ -56,11 +56,31 @@ namespace Mesen.Debugger.Windows
 					ColumnCount = 8;
 					break;
 
+				case CpuType.Sac:
+					Palette = GenerateSacPalette();
+					ColumnCount = 16;
+					break;
+
 				default:
 					throw new NotImplementedException();
 			}
 
 			InitializeComponent();
+		}
+
+		//The Super A'Can's 256 colours: 15-bit words, high byte first, red in the low bits
+		private static UInt32[] GenerateSacPalette()
+		{
+			byte[] ram = DebugApi.GetMemoryValues(MemoryType.SacPaletteRam, 0, 0x1FF);
+			UInt32[] pal = new UInt32[256];
+			for(int i = 0; i < 256 && i * 2 + 1 < ram.Length; i++) {
+				int value = (ram[i * 2] << 8) | ram[i * 2 + 1];
+				UInt32 r = (UInt32)((value & 0x1F) * 255 / 31);
+				UInt32 g = (UInt32)(((value >> 5) & 0x1F) * 255 / 31);
+				UInt32 b = (UInt32)(((value >> 10) & 0x1F) * 255 / 31);
+				pal[i] = 0xFF000000 | (r << 16) | (g << 8) | b;
+			}
+			return pal;
 		}
 
 		private static UInt32[] GenerateWsPalette()

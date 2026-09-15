@@ -1,6 +1,7 @@
 #pragma once
 #include "pch.h"
 #include "Utilities/ISerializable.h"
+#include "SuperAcan/SacTypes.h"
 
 class Emulator;
 class SoundMixer;
@@ -65,6 +66,7 @@ public:
 	uint8_t Read(uint8_t reg);
 	void Write(uint8_t reg, uint8_t value);
 	void PlayQueuedAudio();
+	void GetState(SacApuState& state);
 
 	void Serialize(Serializer& s) override;
 };

@@ -20,6 +20,9 @@
 #include "SMS/Debugger/SmsDisUtils.h"
 #include "GBA/Debugger/GbaDisUtils.h"
 #include "WS/Debugger/WsDisUtils.h"
+#include "SuperAcan/Debugger/SacDisUtils.h"
+#include "SuperAcan/Debugger/SacSoundDisUtils.h"
+#include "SuperAcan/SacTypes.h"
 #include "Shared/EmuSettings.h"
 
 DisassemblyInfo::DisassemblyInfo()
@@ -81,6 +84,8 @@ void DisassemblyInfo::GetDisassembly(string& out, uint32_t memoryAddr, LabelMana
 		case CpuType::Sms: SmsDisUtils::GetDisassembly(*this, out, memoryAddr, labelManager, settings); break;
 		case CpuType::Gba: GbaDisUtils::GetDisassembly(*this, out, memoryAddr, labelManager, settings); break;
 		case CpuType::Ws: WsDisUtils::GetDisassembly(*this, out, memoryAddr, labelManager, settings); break;
+		case CpuType::Sac: SacDisUtils::GetDisassembly(*this, out, memoryAddr, labelManager, settings); break;
+		case CpuType::SacSound: SacSoundDisUtils::GetDisassembly(*this, out, memoryAddr, labelManager, settings); break;
 
 		default:
 			throw std::runtime_error("GetDisassembly - Unsupported CPU type");
@@ -116,6 +121,8 @@ EffectiveAddressInfo DisassemblyInfo::GetEffectiveAddress(Debugger* debugger, vo
 		case CpuType::Sms: return SmsDisUtils::GetEffectiveAddress(*this, (SmsConsole*)debugger->GetConsole(), *(SmsCpuState*)cpuState);
 		case CpuType::Gba: return GbaDisUtils::GetEffectiveAddress(*this, (GbaConsole*)debugger->GetConsole(), *(GbaCpuState*)cpuState);
 		case CpuType::Ws: return WsDisUtils::GetEffectiveAddress(*this, (WsConsole*)debugger->GetConsole(), *(WsCpuState*)cpuState);
+		case CpuType::Sac: return SacDisUtils::GetEffectiveAddress(*this, (SacConsole*)debugger->GetConsole(), *(SacCpuState*)cpuState);
+		case CpuType::SacSound: return SacSoundDisUtils::GetEffectiveAddress(*this, (SacConsole*)debugger->GetConsole(), *(SacSoundCpuState*)cpuState);
 	}
 
 	throw std::runtime_error("GetEffectiveAddress - Unsupported CPU type");
@@ -141,6 +148,7 @@ uint32_t DisassemblyInfo::GetFullOpCode()
 		case CpuType::St018: return _byteCode[0] | (_byteCode[1] << 8) | (_opSize == 4 ? ((_byteCode[2] << 16) | (_byteCode[3] << 24)) : 0);
 		case CpuType::Gba: return _byteCode[0] | (_byteCode[1] << 8) | (_opSize == 4 ? ((_byteCode[2] << 16) | (_byteCode[3] << 24)) : 0);
 		case CpuType::Ws: return WsDisUtils::GetFullOpCode(*this);
+		case CpuType::Sac: return (_byteCode[0] << 8) | _byteCode[1];
 	}
 }
 
@@ -198,6 +206,8 @@ uint8_t DisassemblyInfo::GetOpSize(uint32_t opCode, uint8_t flags, CpuType type,
 		case CpuType::Sms: return SmsDisUtils::GetOpSize(opCode, cpuAddress, memType, memoryDumper);
 		case CpuType::Gba: return GbaDisUtils::GetOpSize(opCode, flags);
 		case CpuType::Ws: return WsDisUtils::GetOpSize(cpuAddress, memType, memoryDumper);
+		case CpuType::Sac: return SacDisUtils::GetOpSize(cpuAddress, memType, memoryDumper);
+		case CpuType::SacSound: return SacSoundDisUtils::GetOpSize((uint8_t)opCode);
 	}
 
 	throw std::runtime_error("GetOpSize - Unsupported CPU type");
@@ -219,6 +229,8 @@ bool DisassemblyInfo::IsJumpToSub()
 		case CpuType::Sms: return SmsDisUtils::IsJumpToSub(GetOpCode());
 		case CpuType::Gba: return GbaDisUtils::IsJumpToSub(GetFullOpCode<CpuType::Gba>(), _flags);
 		case CpuType::Ws: return WsDisUtils::IsJumpToSub(GetFullOpCode<CpuType::Ws>());
+		case CpuType::Sac: return SacDisUtils::IsJumpToSub((uint16_t)GetFullOpCode<CpuType::Sac>());
+		case CpuType::SacSound: return SacSoundDisUtils::IsJumpToSub(GetOpCode());
 	}
 
 	throw std::runtime_error("IsJumpToSub - Unsupported CPU type");
@@ -240,6 +252,8 @@ bool DisassemblyInfo::IsReturnInstruction()
 		case CpuType::Sms: return SmsDisUtils::IsReturnInstruction(_byteCode[0] | (_byteCode[1] << 8));
 		case CpuType::Gba: return GbaDisUtils::IsReturnInstruction(GetFullOpCode<CpuType::Gba>(), _flags);
 		case CpuType::Ws: return WsDisUtils::IsReturnInstruction(GetFullOpCode<CpuType::Ws>());
+		case CpuType::Sac: return SacDisUtils::IsReturnInstruction((uint16_t)GetFullOpCode<CpuType::Sac>());
+		case CpuType::SacSound: return SacSoundDisUtils::IsReturnInstruction(GetOpCode());
 	}
 
 	throw std::runtime_error("IsReturnInstruction - Unsupported CPU type");
@@ -276,6 +290,8 @@ bool DisassemblyInfo::IsUnconditionalJump()
 		case CpuType::Sms: return SmsDisUtils::IsUnconditionalJump(GetOpCode());
 		case CpuType::Gba: return GbaDisUtils::IsUnconditionalJump(GetFullOpCode<CpuType::Gba>(), _flags);
 		case CpuType::Ws: return WsDisUtils::IsUnconditionalJump(GetFullOpCode<CpuType::Ws>());
+		case CpuType::Sac: return SacDisUtils::IsUnconditionalJump((uint16_t)GetFullOpCode<CpuType::Sac>());
+		case CpuType::SacSound: return SacSoundDisUtils::IsUnconditionalJump(GetOpCode());
 	}
 
 	throw std::runtime_error("IsUnconditionalJump - Unsupported CPU type");
@@ -302,6 +318,8 @@ bool DisassemblyInfo::IsJump()
 		case CpuType::Sms: return SmsDisUtils::IsConditionalJump(GetOpCode());
 		case CpuType::Gba: return GbaDisUtils::IsConditionalJump(GetFullOpCode<CpuType::Gba>(), _flags);
 		case CpuType::Ws: return WsDisUtils::IsConditionalJump(GetFullOpCode<CpuType::Ws>());
+		case CpuType::Sac: return SacDisUtils::IsConditionalJump((uint16_t)GetFullOpCode<CpuType::Sac>());
+		case CpuType::SacSound: return SacSoundDisUtils::IsConditionalJump(GetOpCode());
 	}
 
 	throw std::runtime_error("IsJump - Unsupported CPU type");
@@ -320,6 +338,15 @@ void DisassemblyInfo::UpdateCpuFlags(uint8_t& cpuFlags)
 uint32_t DisassemblyInfo::GetMemoryValue(EffectiveAddressInfo effectiveAddress, MemoryDumper* memoryDumper, MemoryType memType)
 {
 	MemoryType effectiveMemType = effectiveAddress.Type == MemoryType::None ? memType : effectiveAddress.Type;
+	if(_cpuType == CpuType::Sac) {
+		//The 68000 is big-endian
+		uint32_t value = 0;
+		for(int i = 0; i < effectiveAddress.ValueSize; i++) {
+			value = (value << 8) | memoryDumper->GetMemoryValue(effectiveMemType, (uint32_t)effectiveAddress.Address + i);
+		}
+		return value;
+	}
+
 	switch(effectiveAddress.ValueSize) {
 		default:
 		case 1: return memoryDumper->GetMemoryValue(effectiveMemType, effectiveAddress.Address);

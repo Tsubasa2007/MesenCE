@@ -4,6 +4,7 @@
 #include "SuperAcan/W65C02.h"
 #include "Utilities/ISerializable.h"
 
+class Emulator;
 class SacApu;
 class SacConsole;
 class SacControlManager;
@@ -11,17 +12,24 @@ class SacCpu;
 class SacMemoryManager;
 
 //The sound processor's view of the machine: all 64KB of it is the sound RAM the 68000 shares,
-//with the register window at $400-$4FF laid over it
+//with the register window at $400-$4FF laid over it. Its accesses and instructions are passed on
+//to the debugger as it runs.
 class SacSoundBus final : public W65C02::Bus
 {
 private:
 	SacMemoryManager* _memoryManager = nullptr;
+	Emulator* _emu = nullptr;
 
 public:
-	SacSoundBus(SacMemoryManager* memoryManager) : _memoryManager(memoryManager) {}
+	SacSoundBus(SacMemoryManager* memoryManager, Emulator* emu) : _memoryManager(memoryManager), _emu(emu) {}
 
 	uint8_t Read(uint16_t addr) override;
 	void Write(uint16_t addr, uint8_t value) override;
+	uint8_t ReadOpCode(uint16_t addr) override;
+	uint8_t ReadOperand(uint16_t addr) override;
+	void OnInstruction() override;
+	void OnInterrupt(uint16_t originalPc, uint16_t newPc, bool forNmi) override;
+	void OnHalted() override;
 };
 
 //The 68000's view of the machine, after MAME's supracan main_map, and for now the sound
@@ -123,7 +131,7 @@ private:
 	void LogAccess(const string& what);
 
 public:
-	SacMemoryManager();
+	SacMemoryManager(Emulator* emu);
 	~SacMemoryManager();
 
 	void Init(SacConsole* console, SacCpu* cpu, uint8_t* prgRom, uint32_t prgRomSize, uint8_t* workRam);
@@ -135,6 +143,19 @@ public:
 	void Write8(uint32_t addr, uint8_t value);
 	void Write16(uint32_t addr, uint16_t value);
 
+	//For the debugger: memory as the 68000 sees it, without the side effects of reading registers
+	uint8_t DebugRead(uint32_t addr);
+	uint16_t DebugRead16(uint32_t addr);
+	void DebugWrite(uint32_t addr, uint8_t value);
+
+	//Whether the boot ROM hides the cartridge at addr ($0-$FFF and $F80000-$F80FFF, until the
+	//boot code switches it out)
+	bool IsBootRomMapped(uint32_t addr)
+	{
+		addr &= 0xFFFFFF;
+		return (addr < 0x1000 && _bootRomLow) || (addr >= 0xF80000 && addr <= 0xF80FFF && _bootRomHigh);
+	}
+
 	uint8_t SoundCpuRead(uint16_t addr);
 	void SoundCpuWrite(uint16_t addr, uint8_t value);
 	void RunSoundCpu(uint64_t targetCycle);
@@ -144,10 +165,20 @@ public:
 	void ProcessFrc(uint64_t cycle);
 	void SetSoundIrqLine(uint8_t bit, bool state);
 	uint8_t* GetSoundRam() { return _soundRam; }
+	uint8_t* GetSaveRam() { return _saveRam; }
 	bool IsSoundCpuRunning() { return _soundCpuRunning; }
 	W65C02::State GetSoundCpuState() { return _soundCpu->GetState(); }
 
+	//For the sound processor's debugger: its memory without the registers' side effects, and
+	//its registers
+	uint8_t SoundDebugRead(uint16_t addr) { return _soundRam[addr]; }
+	void SoundDebugWrite(uint16_t addr, uint8_t value) { _soundRam[addr] = value; }
+	W65C02* GetSoundCpu() { return _soundCpu.get(); }
+	void GetSoundCpuState(SacSoundCpuState& state);
+	void SetSoundCpuState(SacSoundCpuState& state);
+
 	uint8_t GetIrqMask() { return _irqMask; }
+	void GetState(SacSystemState& system, SacSoundCpuState& soundCpu);
 	void ProcessLineIrqs(uint32_t line);
 
 	uint8_t* GetVideoRam() { return _videoRam; }

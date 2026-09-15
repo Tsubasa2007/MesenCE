@@ -10,6 +10,41 @@
 //Video RAM and the palette are held as the 68000 sees them, big-endian.
 class SacPpu
 {
+public:
+	//One tilemap entry, decoded - for the renderer and the debugger's tilemap viewer
+	struct LayerTileInfo
+	{
+		uint32_t MapAddress = 0;
+		uint16_t Entry = 0;
+		uint32_t Tile = 0;
+		uint32_t Palette = 0;
+		uint16_t ColorBase = 0;
+		bool XFlip = false;
+		bool YFlip = false;
+	};
+
+	//One sprite table entry, decoded - for the debugger's sprite viewer
+	struct SpriteViewInfo
+	{
+		bool Enabled = false;
+		int RawX = 0;
+		int RawY = 0;
+		int X = 0;
+		int Y = 0;
+		int WidthTiles = 1;
+		int HeightTiles = 1;
+		int Priority = 0;
+		int Mask = 0;
+		bool XFlip = false;
+		bool YFlip = false;
+		bool Direct = false;
+		int Region = 1;
+		uint32_t Bank = 0;
+		uint16_t Pointer = 0;
+		uint32_t FirstTile = 0;
+		uint32_t Palette = 0;
+	};
+
 private:
 	uint8_t* _vram = nullptr;
 	uint8_t* _paletteRam = nullptr;
@@ -36,6 +71,7 @@ private:
 	void GetTilemapDimensions(int layer, int& xsize, int& ysize);
 	uint8_t GetTilePixel(int region, uint32_t tile, int x, int y);
 	uint16_t GetColorIndex(int region, uint32_t palette, uint8_t pixel);
+	LayerTileInfo DecodeTile(int layer, int region, uint32_t count);
 	uint16_t SampleTilemap(int layer, int region, int x, int y, int xsize, int ysize);
 
 	void DrawSpritesLine(int y, int width);
@@ -53,4 +89,17 @@ public:
 	uint32_t GetFirstLine();
 
 	void RenderLine(uint32_t line);
+
+	//For the debugger's tilemap viewer, reading whatever video RAM and registers Init was given.
+	//Layers 0-2 are the tilemaps and 3 the rotate/zoom layer's map, drawn unrotated.
+	void GetLayerSize(int layer, int& width, int& height);
+	int GetLayerRegion(int layer) { return GetTilemapRegion(layer); }
+	uint16_t GetLayerPixel(int layer, int x, int y, bool& transparent);
+	LayerTileInfo GetLayerTile(int layer, int column, int row);
+
+	//For the debugger's sprite viewer: the table's entries, and a sprite's pixels (relative to its
+	//top-left corner) exactly as DrawSpritesLine draws them
+	uint32_t GetSpriteCount();
+	SpriteViewInfo GetSprite(uint32_t index);
+	uint16_t GetSpritePixel(const SpriteViewInfo& sprite, int x, int y, bool& transparent, uint32_t& tile);
 };

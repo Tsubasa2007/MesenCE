@@ -940,6 +940,11 @@ namespace Mesen.ViewModels
 					OnClick = () => DebuggerWindow.GetOrOpenWindow(CpuType.Spc)
 				},
 				new ContextMenuAction() {
+					ActionType = ActionType.OpenSacSoundDebugger,
+					IsVisible = () => MainWindow.RomInfo.CpuTypes.Contains(CpuType.SacSound),
+					OnClick = () => DebuggerWindow.GetOrOpenWindow(CpuType.SacSound)
+				},
+				new ContextMenuAction() {
 					ActionType = ActionType.OpenCx4Debugger,
 					Shortcut = () => ConfigManager.Config.Debug.Shortcuts.Get(DebuggerShortcut.OpenCx4Debugger),
 					IsVisible = () => MainWindow.RomInfo.CpuTypes.Contains(CpuType.Cx4),

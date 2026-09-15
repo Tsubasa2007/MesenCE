@@ -88,6 +88,12 @@
 		<DataTemplate DataType="{x:Type sv:WsStatusViewModel}">
 			<sv:WsStatusView />
 		</DataTemplate>
+		<DataTemplate DataType="{x:Type sv:SacStatusViewModel}">
+			<sv:SacStatusView />
+		</DataTemplate>
+		<DataTemplate DataType="{x:Type sv:SacSoundStatusViewModel}">
+			<sv:SacSoundStatusView />
+		</DataTemplate>
 		<DataTemplate DataType="{x:Type sv:SnesStatusViewModel}">
 			<sv:SnesStatusView />
 		</DataTemplate>

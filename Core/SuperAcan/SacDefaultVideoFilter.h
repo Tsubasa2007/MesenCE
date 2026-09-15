@@ -15,6 +15,7 @@ private:
 
 protected:
 	void OnBeforeApplyFilter() override;
+	FrameInfo GetFrameInfo() override;
 
 public:
 	SacDefaultVideoFilter(Emulator* emu);

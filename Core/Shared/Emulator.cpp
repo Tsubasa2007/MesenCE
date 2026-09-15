@@ -1106,12 +1106,6 @@ void Emulator::ResetDebugger(bool startDebugger)
 
 void Emulator::InitDebugger()
 {
-	//The Super A'Can has no debugger for its 68000 yet, and a debugger with no processor
-	//behind it has nothing it can safely do. Everything that asks for one copes with none.
-	if(_consoleType == ConsoleType::SuperAcan) {
-		return;
-	}
-
 	if(!_debugger) {
 		//Lock to make sure we don't try to start debuggers in 2 separate threads at once
 		auto lock = _debuggerLock.AcquireSafe();
