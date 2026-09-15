@@ -21,6 +21,14 @@ public:
 	static constexpr uint32_t MaxSamples = 4000;
 
 private:
+	//The volume envelope's stages (see EnterPhase)
+	enum EnvPhase : uint8_t
+	{
+		EnvAttack, EnvDecay, EnvDecay2, EnvSustain, EnvRelease
+	};
+
+	static constexpr uint32_t EnvFull = 1 << 24;
+
 	struct Channel
 	{
 		uint16_t Pitch;
@@ -35,6 +43,13 @@ private:
 		uint8_t VolumeL;
 		uint8_t VolumeR;
 		bool OneShot;
+
+		uint8_t Envelope[4]; //registers $Ax-$Dx
+		uint8_t Phase;
+		uint32_t EnvLevel; //EnvFull is full volume
+		uint32_t EnvStep; //per sample, in the straight-line stages
+		uint32_t EnvFactor; //per sample, in the exponential ones: a multiplier scaled by 2^32
+		uint32_t EnvTarget; //where the first decay stops
 	};
 
 	SoundMixer* _soundMixer = nullptr;
@@ -55,7 +70,9 @@ private:
 	uint32_t _sampleCount = 0;
 
 	uint64_t GetTimerPeriod();
-	void KeyOn(uint8_t voice);
+	void RestartVoice(uint8_t voice);
+	void EnterPhase(Channel& channel, uint8_t phase);
+	bool StepEnvelope(Channel& channel);
 	void MixSample();
 
 public:
