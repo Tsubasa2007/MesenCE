@@ -824,6 +824,7 @@
     <ClInclude Include="SuperAcan\W65C02.h" />
     <ClInclude Include="SuperAcan\SacPpu.h" />
     <ClInclude Include="SuperAcan\SacApu.h" />
+    <ClInclude Include="SuperAcan\SacController.h" />
     <ClInclude Include="SuperAcan\Moira\Moira.h" />
     <ClInclude Include="SuperAcan\Moira\MoiraConfig.h" />
     <ClInclude Include="SuperAcan\Moira\MoiraTypes.h" />

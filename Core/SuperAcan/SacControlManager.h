@@ -4,30 +4,29 @@
 #include "Shared/CpuType.h"
 #include "Shared/Emulator.h"
 #include "Shared/EmuSettings.h"
-#include "SNES/Input/SnesController.h"
+#include "SuperAcan/SacController.h"
 
-//The machine's two pads have the same twelve buttons as a SNES pad. Until the console has input
-//settings of its own, each port is a SNES pad taken from the SNES controller settings.
+//The machine's two pad ports, each set up in the console's own input settings
 class SacControlManager final : public BaseControlManager
 {
 private:
-	SnesConfig _prevConfig = {};
+	SacConfig _prevConfig = {};
 
 public:
 	SacControlManager(Emulator* emu) : BaseControlManager(emu, CpuType::Sac) {}
 
 	shared_ptr<BaseControlDevice> CreateControllerDevice(ControllerType type, uint8_t port) override
 	{
-		if(type == ControllerType::None) {
+		if(type != ControllerType::SacController) {
 			return nullptr;
 		}
-		SnesConfig& cfg = _emu->GetSettings()->GetSnesConfig();
-		return shared_ptr<BaseControlDevice>(new SnesController(_emu, port, port == 0 ? cfg.Port1.Keys : cfg.Port2.Keys));
+		SacConfig& cfg = _emu->GetSettings()->GetSacConfig();
+		return shared_ptr<BaseControlDevice>(new SacController(_emu, port, port == 0 ? cfg.Port1.Keys : cfg.Port2.Keys));
 	}
 
 	void UpdateControlDevices() override
 	{
-		SnesConfig cfg = _emu->GetSettings()->GetSnesConfig();
+		SacConfig cfg = _emu->GetSettings()->GetSacConfig();
 		if(_emu->GetSettings()->IsEqual(_prevConfig, cfg) && _controlDevices.size() > 0) {
 			return;
 		}
@@ -56,9 +55,9 @@ public:
 			}
 
 			static constexpr uint8_t buttons[12] = {
-				SnesController::R, SnesController::L, SnesController::Y, SnesController::X,
-				SnesController::Right, SnesController::Left, SnesController::Down, SnesController::Up,
-				SnesController::Select, SnesController::Start, SnesController::B, SnesController::A
+				SacController::R, SacController::L, SacController::Y, SacController::X,
+				SacController::Right, SacController::Left, SacController::Down, SacController::Up,
+				SacController::Select, SacController::Start, SacController::B, SacController::A
 			};
 			for(int i = 0; i < 12; i++) {
 				if(device->IsPressed(buttons[i])) {

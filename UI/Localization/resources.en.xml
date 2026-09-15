@@ -597,6 +597,11 @@
 
 		<Form ID="OtherConsolesConfigView">
 			<Control ID="tabColecoVision">ColecoVision</Control>
+			<Control ID="tabSuperAcan">Super A'Can</Control>
+			<Control ID="grpControllers">Controllers</Control>
+			<Control ID="lblController1">Port 1:</Control>
+			<Control ID="lblController2">Port 2:</Control>
+			<Control ID="btnSetup">Setup</Control>
 		</Form>
 
 		<Form ID="CvConfigView">
@@ -2045,6 +2050,8 @@ E
 			<Value ID="SmsController">SMS Controller</Value>
 			<Value ID="SmsLightPhaser">Light Phaser</Value>
 			<Value ID="ColecoVisionController">ColecoVision Controller</Value>
+
+			<Value ID="SacController">Super A'Can Controller</Value>
 		</Enum>
 		<Enum ID="NesJissenMahjongButtons">
 			<Value ID="A">A</Value>

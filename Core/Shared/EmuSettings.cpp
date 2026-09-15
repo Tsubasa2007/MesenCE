@@ -310,6 +310,16 @@ WsConfig& EmuSettings::GetWsConfig()
 	return _ws;
 }
 
+void EmuSettings::SetSacConfig(SacConfig& config)
+{
+	_sac = config;
+}
+
+SacConfig& EmuSettings::GetSacConfig()
+{
+	return _sac;
+}
+
 void EmuSettings::SetGameConfig(GameConfig& config)
 {
 	_game = config;

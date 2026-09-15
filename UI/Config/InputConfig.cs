@@ -416,6 +416,9 @@ namespace Mesen.Config
 		WsController,
 		WsControllerVertical,
 		Pcv2Controller,
+
+		//Super A'Can
+		SacController,
 	}
 
 	public static class ControllerTypeExtensions
@@ -441,6 +444,7 @@ namespace Mesen.Config
 				case ControllerType.WsController:
 				case ControllerType.WsControllerVertical:
 				case ControllerType.Pcv2Controller:
+				case ControllerType.SacController:
 				case ControllerType.Pachinko:
 				case ControllerType.FcnsController:
 					return true;
@@ -471,6 +475,7 @@ namespace Mesen.Config
 				case ControllerType.WsController:
 				case ControllerType.WsControllerVertical:
 				case ControllerType.Pcv2Controller:
+				case ControllerType.SacController:
 					return true;
 			}
 
@@ -521,6 +526,7 @@ namespace Mesen.Config
 				case ControllerType.WsController:
 				case ControllerType.WsControllerVertical:
 				case ControllerType.Pcv2Controller:
+				case ControllerType.SacController:
 					return true;
 			}
 

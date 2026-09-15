@@ -245,7 +245,10 @@ enum class ControllerType
 	//WS
 	WsController,
 	WsControllerVertical,
-	Pcv2Controller
+	Pcv2Controller,
+
+	//Super A'Can
+	SacController
 };
 
 struct KeyMapping
@@ -821,6 +824,12 @@ struct WsConfig
 	uint32_t Channel3Vol = 100;
 	uint32_t Channel4Vol = 100;
 	uint32_t Channel5Vol = 100;
+};
+
+struct SacConfig
+{
+	ControllerConfig Port1;
+	ControllerConfig Port2;
 };
 
 struct AudioPlayerConfig

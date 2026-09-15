@@ -29,6 +29,7 @@ namespace Mesen.Interop
 		[DllImport(DllPath)] public static extern void SetSmsConfig(InteropSmsConfig config);
 		[DllImport(DllPath)] public static extern void SetCvConfig(InteropCvConfig config);
 		[DllImport(DllPath)] public static extern void SetWsConfig(InteropWsConfig config);
+		[DllImport(DllPath)] public static extern void SetSacConfig(InteropSacConfig config);
 
 		[DllImport(DllPath)] public static extern void SetGameConfig(InteropGameConfig config);
 

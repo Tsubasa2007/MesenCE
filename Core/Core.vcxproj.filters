@@ -2880,6 +2880,9 @@
     <ClInclude Include="SuperAcan\SacApu.h">
       <Filter>SuperAcan</Filter>
     </ClInclude>
+    <ClInclude Include="SuperAcan\SacController.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
     <ClInclude Include="SuperAcan\Moira\Moira.h">
       <Filter>SuperAcan\Moira</Filter>
     </ClInclude>
