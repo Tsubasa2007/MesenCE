@@ -1,6 +1,25 @@
 #include "pch.h"
 #include "SuperAcan/SacPpu.h"
 
+//Development aid, like SAC_DUMP_FRAMES: SAC_PERF=1 skips the rotate/zoom layer and =3 skips all
+//rendering, to time each stage; =5 reads the rotate/zoom per-line tables and sprite positions
+//exactly as MAME does, to compare against. Read once, and never from inside a per-pixel loop.
+static int SacPerfMode()
+{
+	static const int mode = [] {
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4996)
+#endif
+		const char* value = std::getenv("SAC_PERF");
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+		return value ? atoi(value) : 0;
+	}();
+	return mode;
+}
+
 void SacPpu::Init(uint8_t* vram, uint8_t* paletteRam, uint16_t* regs, uint16_t* frameBuffer)
 {
 	_vram = vram;
@@ -117,10 +136,27 @@ uint16_t SacPpu::GetColorIndex(int region, uint32_t palette, uint8_t pixel)
 	}
 }
 
+//The rotate/zoom layer draws a picture rather than a map of tiles when it is at its deepest setting
+//and has been given no map to read - the same game uses both, a map for its title screen and a
+//picture for the scene after it.
+bool SacPpu::IsRozBitmap()
+{
+	return (RozMode() & 0x03) == 3 && Reg(0x194) == 0 && Reg(0x196) != 0;
+}
+
 //A pixel of a whole layer, at a position inside it. A layer flipped as a whole shows its
 //tiles mirrored and each one flipped, which is sampling the mirrored position.
-uint16_t SacPpu::SampleTilemap(int layer, int region, int x, int y, int xsize, int ysize)
+uint16_t SacPpu::SampleTilemap(int layer, int region, int x, int y, int xsize, int ysize, bool* aboveSprites)
 {
+	if(layer == 3 && IsRozBitmap()) {
+		//No map to read, so the layer is a plain 8bpp picture instead: one byte a pixel, laid out
+		//row by row from where the bank register points. Read as tiles - which is what MAME does -
+		//it comes out as scrambled blocks. The per-line scroll tables are what mirror it, which is
+		//how one game draws a scene reflected in water.
+		uint32_t base = (uint32_t)((Reg(0x196) & 0xF000) >> 4) * 64;
+		return _vram[(base + (uint32_t)y * (uint32_t)(xsize * 8) + (uint32_t)x) & 0x1FFFF];
+	}
+
 	if(layer != 3) {
 		uint16_t flags = TilemapFlags(layer);
 		if(flags & 0x02) {
@@ -132,6 +168,9 @@ uint16_t SacPpu::SampleTilemap(int layer, int region, int x, int y, int xsize, i
 	}
 
 	SacPpu::LayerTileInfo info = DecodeTile(layer, region, (uint32_t)((y >> 3) * xsize + (x >> 3)));
+	if(aboveSprites) {
+		*aboveSprites = info.AboveSprites;
+	}
 
 	int tileX = x & 7;
 	int tileY = y & 7;
@@ -163,7 +202,12 @@ SacPpu::LayerTileInfo SacPpu::DecodeTile(int layer, int region, uint32_t count)
 		uint16_t tileMode;
 		if(layer == 3) {
 			base = (uint32_t)Reg(0x194) << 1;
-			tileBank = (Reg(0x196) & 0xF000) >> 3;
+			//The bank is a place in video RAM, the same bytes whatever the depth, so it counts half as
+			//many tiles for each doubling of their size: 8bpp tiles (64 bytes) shift by 4, 4bpp by 3
+			//and 2bpp by 2. Shifting by 3 regardless lands 8bpp one whole set of tiles along, which is
+			//no move at all once the tile number wraps, and 2bpp half way to its tiles - where one
+			//title's lightning silhouette reads every tile as a single column of pixels.
+			tileBank = (Reg(0x196) & 0xF000) >> (region == 0 ? 4 : (region == 2 ? 2 : 3));
 			tileMode = Reg(0x182);
 		} else {
 			base = (uint32_t)Reg(0x108 + layer * 0x20) << 1;
@@ -175,7 +219,14 @@ SacPpu::LayerTileInfo SacPpu::DecodeTile(int layer, int region, uint32_t count)
 		uint32_t wordIndex = (base + count) & 0xFFFF;
 		uint16_t entry = VramWord(wordIndex);
 		uint32_t paletteBase = entry >> 12;
+		//Bit 9 of the tile mode takes the palette's top bit for a priority instead: the tile uses the
+		//upper eight palettes either way, and one whose bit is clear goes in front of sprites of its
+		//layer's own priority rather than behind them. MAME keeps it as a tile category it never
+		//reads. One title screen puts the lower edge of its cloud layer over a band of cloud sprites
+		//and another its grass over the foot of its mountain sprites, as Bcan draws both; the
+		//tiles around them, with the bit set, stay behind the sprites.
 		if(tileMode & 0x0200) {
+			info.AboveSprites = (paletteBase & 8) == 0;
 			paletteBase |= 8;
 		}
 
@@ -236,7 +287,7 @@ SacPpu::SpriteViewInfo SacPpu::GetSprite(uint32_t index)
 	uint16_t w2 = VramWord(entry + 2);
 	sprite.Pointer = VramWord(entry + 3);
 
-	sprite.Enabled = (w0 & 0x4000) != 0 && sprite.Pointer != 0;
+	sprite.Enabled = sprite.Pointer != 0;
 	sprite.RawY = w0 & 0x1FF;
 	sprite.RawX = w2 & 0x1FF;
 	sprite.Y = sprite.RawY >= 0x180 ? sprite.RawY - 0x200 : sprite.RawY;
@@ -328,7 +379,7 @@ SacPpu::LayerTileInfo SacPpu::GetLayerTile(int layer, int column, int row)
 }
 
 // Sprite table entry, four words:
-// [0] -e-- ---- ---- ----  enable
+// [0] zzz- ---- ---- ----  vertical zoom, 2 = life size (MAME's "enable" is its middle bit)
 //     ---h hhh- ---- ----  height (through a table)
 //     ---- ---y yyyy yyyy  Y position
 // [1] bbbb ---- ---- ----  tile bank
@@ -336,7 +387,7 @@ SacPpu::LayerTileInfo SacPpu::GetLayerTile(int layer, int column, int row)
 //     ---- -v-- ---- ----  vertical flip
 //     ---- --mm ---- ----  mask mode
 //     ---- ---- ---- -www  width, 1 << www tiles
-// [2] zzz- ---- ---- ----  X scale (not emulated, as in MAME)
+// [2] zzzz z--- ---- ----  horizontal zoom, 5 = life size
 //     ---- -pp- ---- ----  priority
 //     ---- ---x xxxx xxxx  X position
 // [3] d--- ---- ---- ----  direct: a single tile described here rather than a table in video RAM
@@ -346,10 +397,10 @@ void SacPpu::DrawSpritesLine(int y, int width)
 	//Heights are the value plus one, except at the top of the range
 	static constexpr int ySizes[16] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 16, 20, 22, 24, 26 };
 
-	uint32_t spriteCount = (uint32_t)Reg(0x22) + 1;
-	uint32_t startWord = ((uint32_t)Reg(0x20) << 2) >> 1;
+	uint32_t spriteCount = _spriteCount;
+	uint32_t startWord = _spriteTableWord;
 	//8bpp or 4bpp, and 8bpp sprites address tiles in banks of half the size
-	int region = (Reg(0x26) & 0x01) ? 0 : 1;
+	int region = (_spriteFlags & 0x01) ? 0 : 1;
 	uint32_t bankSize = 0x100u << region;
 
 	for(uint32_t i = 0; i < spriteCount; i++) {
@@ -359,7 +410,10 @@ void SacPpu::DrawSpritesLine(int y, int width)
 		uint16_t w2 = VramWord(entry + 2);
 		uint16_t spritePtr = VramWord(entry + 3);
 
-		if(!(w0 & 0x4000) || !spritePtr) {
+		//MAME reads bit 14 of the first word as "enabled", but it is part of the vertical zoom below,
+		//which is 2 (life size) in nearly every sprite. A sprite drawn three times its size has the
+		//bit clear.
+		if(!spritePtr) {
 			continue;
 		}
 
@@ -368,7 +422,13 @@ void SacPpu::DrawSpritesLine(int y, int width)
 		if(spriteY >= 0x180) {
 			spriteY -= 0x200;
 		}
-		if(x >= 0x180) {
+		//A position past the screen is off to the right until it is far enough round to be off to the
+		//left instead, which is a sprite's width of room past the edge: 0x180 on a 256 pixel screen,
+		//0x1C0 on a 320 pixel one. MAME uses 0x180 always, so on the wider screen a sprite still off
+		//to the right is drawn at the left edge, and a logo sliding in appears at the left, vanishes,
+		//then jumps to the right.
+		int negativeFrom = SacPerfMode() == 5 ? 0x180 : (int)width + 128;
+		if(x >= negativeFrom) {
 			x -= 0x200;
 		}
 
@@ -380,74 +440,123 @@ void SacPpu::DrawSpritesLine(int y, int width)
 		int xsize = 1 << (w1 & 0x07);
 		int ysize = ySizes[(w0 >> 9) & 0x0F];
 
+		//Zoom, as a step through the sprite's own pixels per screen pixel in twelfths: bits 13-15 of
+		//the first word vertically, (z + 1) / 3, and bits 11-15 of the position word horizontally,
+		//(v + 1) / 6. Nearly every sprite has 2 and 5, life size; smaller values enlarge it (at 0,
+		//six times as wide and three times as tall) and larger ones shrink it. One cartridge's intro
+		//flies characters away from the camera through 0-6 and back in to 2, and the sizes Bcan
+		//draws them at fit these steps to a pixel or two at every stage.
+		int zoomY = 4 * ((w0 >> 13) + 1);
+		int zoomX = 2 * (w2 >> 11) + 2;
+
+		bool direct = (spritePtr & 0x8000) || (xsize == 1 && ysize == 1);
+		if(direct) {
+			xsize = 1;
+			ysize = 1;
+		}
+		int srcWidth = xsize * 8;
+		int srcHeight = ysize * 8;
+		int screenWidth = (srcWidth * 12 + zoomX - 1) / zoomX;
+		int screenHeight = (srcHeight * 12 + zoomY - 1) / zoomY;
+
 		//Nothing of this sprite on this line
-		if(y < spriteY || y >= spriteY + ysize * 8) {
+		int dy = y - spriteY;
+		if(dy < 0 || dy >= screenHeight) {
 			continue;
 		}
 
-		if((spritePtr & 0x8000) || (xsize == 1 && ysize == 1)) {
-			//A single tile described by the entry itself
-			uint32_t tile = bank * bankSize + (spritePtr & 0x03FF);
-			uint32_t palette = spritePtr >> 12;
-			bool tileXFlip = xflip ^ ((spritePtr & 0x0800) != 0);
-			bool tileYFlip = yflip ^ ((spritePtr & 0x0400) != 0);
-			if(y < spriteY + 8) {
-				DrawSpriteTileLine(y, width, region, tile, palette, tileXFlip, tileYFlip, x, spriteY, mask, priority);
-			}
-		} else {
-			for(int ytile = 0; ytile < ysize; ytile++) {
-				int ypos = yflip ? (spriteY - (ytile + 1) * 8 + ysize * 8) : (spriteY + ytile * 8);
-				if(y < ypos || y >= ypos + 8) {
-					continue;
-				}
-
-				for(int xtile = 0; xtile < xsize; xtile++) {
-					uint16_t data = VramWord(((uint32_t)spritePtr << 1) + ytile * xsize + xtile);
-					//An empty entry draws nothing
-					if(data == 0) {
-						continue;
-					}
-
-					uint32_t tile = bank * bankSize + (data & 0x03FF);
-					uint32_t palette = data >> 12;
-					int xpos = xflip ? (x - (xtile + 1) * 8 + xsize * 8) : (x + xtile * 8);
-					//MAME wraps a tile at the 512 pixel edge
-					xpos &= 0x1FF;
-
-					bool tileXFlip = xflip ^ ((data & 0x0800) != 0);
-					bool tileYFlip = yflip ^ ((data & 0x0400) != 0);
-					DrawSpriteTileLine(y, width, region, tile, palette, tileXFlip, tileYFlip, xpos, ypos, mask, priority);
-				}
+		//Mosaic, as bits 3-5 of the second word: screen blocks of n + 1 pixels, each showing the sprite
+		//at its top left corner, as the rotate/zoom layer's mosaic does. One map screen steps its town
+		//name's sprites down 5 to 0 in step with the layer, and Bcan draws the name in the same blocks
+		//as the map while the hero's sprites, left at 0, stay sharp.
+		int mosaicSize = ((w1 >> 3) & 0x07) + 1;
+		if(mosaicSize > 1) {
+			dy = (y - y % mosaicSize) - spriteY;
+			if(dy < 0) {
+				continue;
 			}
 		}
-	}
-}
 
-//One line of one 8x8 sprite tile. Mask mode 2-3 only marks where the tile has pixels, mode 1
-//draws only where an earlier sprite marked, mode 0 draws normally.
-void SacPpu::DrawSpriteTileLine(int y, int width, int region, uint32_t tile, uint32_t palette, bool xflip, bool yflip, int x, int tileY, int mask, int priority)
-{
-	int row = y - tileY;
-	if(yflip) {
-		row = 7 - row;
-	}
-
-	for(int px = 0; px < 8; px++) {
-		int screenX = x + px;
-		if(screenX < 0 || screenX >= width) {
-			continue;
+		int srcY = dy * zoomY / 12;
+		if(yflip) {
+			srcY = srcHeight - 1 - srcY;
 		}
+		int ytile = srcY / 8;
 
-		uint8_t pixel = GetTilePixel(region, tile, xflip ? 7 - px : px, row);
-		if(pixel == 0) {
-			continue;
-		}
+		int lastXTile = -1;
+		uint16_t data = 0;
+		uint32_t tile = 0;
+		uint32_t palette = 0;
+		bool tileXFlip = false;
+		int row = 0;
+		for(int sx = 0; sx < screenWidth; sx++) {
+			int screenX = x + sx;
+			if(SacPerfMode() == 5) {
+				screenX &= 0x1FF;
+			} else if(screenX >= 0x200) {
+				//Carried past the 512 pixel edge by a sprite that is still off to the right: off
+				//screen, not back at the left
+				break;
+			}
+			if(screenX < 0 || screenX >= width) {
+				continue;
+			}
 
-		if(mask > 1) {
-			_lineSpriteMask[screenX] = 1;
-		} else if(mask == 0 || _lineSpriteMask[screenX]) {
-			_lineSprite[screenX] = GetColorIndex(region, palette, pixel);
-			_linePriority[screenX] = (uint8_t)((_linePriority[screenX] & 0xF0) | priority);
+			int sampleX = mosaicSize > 1 ? (screenX - screenX % mosaicSize) - x : sx;
+			if(sampleX < 0) {
+				continue;
+			}
+			int srcX = sampleX * zoomX / 12;
+			if(xflip) {
+				srcX = srcWidth - 1 - srcX;
+			}
+			int xtile = srcX / 8;
+			if(xtile != lastXTile) {
+				lastXTile = xtile;
+				data = direct ? spritePtr : VramWord(((uint32_t)spritePtr << 1) + ytile * xsize + xtile);
+				tile = bank * bankSize + (data & 0x03FF);
+				palette = data >> 12;
+				tileXFlip = xflip ^ ((data & 0x0800) != 0);
+				bool tileYFlip = yflip ^ ((data & 0x0400) != 0);
+				row = srcY % 8;
+				if(tileYFlip != yflip) {
+					row = 7 - row;
+				}
+			}
+			//An empty entry draws nothing
+			if(!direct && data == 0) {
+				continue;
+			}
+
+			int column = srcX % 8;
+			if(tileXFlip != xflip) {
+				column = 7 - column;
+			}
+			uint8_t pixel = GetTilePixel(region, tile, column, row);
+			if(pixel == 0) {
+				continue;
+			}
+
+			//Mask mode 2-3 only marks where the sprite has pixels, mode 1 draws only where an earlier
+			//sprite marked, mode 0 draws normally. With no marking sprite in the frame, mode 1 mixes
+			//instead: each pixel comes out half its own colour and half what is beneath. One title
+			//screen drops a shadow under its falling logo this way and another puts shadows behind
+			//its portraits; every colour in Bcan's shadow is such an average. Inside the boot logo's
+			//mask the sprite stays solid, as Bcan draws it. Among sprites the priority counts as it does against
+			//the layers: a later sprite covers an earlier one only if its priority is not above it. One
+			//map screen builds its hero from a feather (priority 0) over a body (3) that comes later in
+			//the table, under a town name (1), and Bcan keeps the feather over the hair and the name
+			//over the feet.
+			bool spriteCovered = _lineSprite[screenX] != 0 && priority > (_linePriority[screenX] & 0x0F);
+			if(mask > 1) {
+				_lineSpriteMask[screenX] = 1;
+			} else if(!spriteCovered && (mask == 0 || !_spriteMasksUsed || _lineSpriteMask[screenX])) {
+				bool mix = mask == 1 && !_spriteMasksUsed;
+				_lineSpriteUnder[screenX] = mix ? _lineSprite[screenX] : 0;
+				_lineSpriteMix[screenX] = mix;
+				_lineSprite[screenX] = GetColorIndex(region, palette, pixel);
+				_linePriority[screenX] = (uint8_t)((_linePriority[screenX] & 0xF0) | priority);
+			}
 		}
 	}
 }
@@ -462,7 +571,6 @@ void SacPpu::DrawTilemapLine(int layer, int y, int width, int layerPriority, int
 
 	uint16_t flags = TilemapFlags(layer);
 	uint16_t tileMode = TilemapTileMode(layer);
-	bool wrap = (flags & 0x20) != 0;
 
 	//12-bit signed scroll values
 	int scrollX = Reg(0x104 + layer * 0x20) & 0xFFF;
@@ -482,14 +590,23 @@ void SacPpu::DrawTilemapLine(int layer, int y, int width, int layerPriority, int
 		scrollY ^= layerHeight - 1;
 	}
 
-	int mosaic = (flags & 0x001C) >> 2;
-	int mosaicMask = (int)(0xFFFFFFFF << mosaic);
+	//Mosaic: blocks of n + 1 pixels, as on the rotate/zoom layer and sprites. MAME makes them 2^n; one
+	//game's fade-in steps all three layers from 7 to 1, and Bcan's blocks measure 8, 7, 6, 5, 4, 3
+	//and 2 pixels, eight frames each.
+	int mosaicSize = ((flags & 0x001C) >> 2) + 1;
 
-	int actualY = y & mosaicMask;
-	int realY = actualY + scrollY;
-	if(!wrap && (scrollY + y < 0 || scrollY + y > layerHeight - 1)) {
+	//Without bit 5 the layer shows only once: positions count round in 2048 pixels, and the layer
+	//takes up the start of them. MAME sees a 12-bit position that is negative or past the layer as
+	//off it, but one title screen runs its logo on from the rotate/zoom layer into a 1024 pixel
+	//tilemap scrolled to $76A, which in 2048 pixels puts that tilemap's start 150 pixels in, where
+	//Bcan draws it. A picture slid in from the right ($F76) still starts 138 pixels in either way.
+	bool wrap = (flags & 0x20) != 0;
+	if(!wrap && ((scrollY + y) & 0x7FF) >= layerHeight) {
 		return;
 	}
+
+	int actualY = y - y % mosaicSize;
+	int realY = actualY + scrollY;
 
 	//Line select: each screen line names the layer line it shows
 	if(tileMode & 0x0800) {
@@ -505,22 +622,35 @@ void SacPpu::DrawTilemapLine(int layer, int y, int width, int layerPriority, int
 	}
 
 	for(int x = 0; x < width; x++) {
-		if(!wrap && (lineScrollX + x < 0 || lineScrollX + x > layerWidth - 1)) {
+		if(!wrap && ((lineScrollX + x) & 0x7FF) >= layerWidth) {
 			continue;
 		}
 
-		int realX = ((x & mosaicMask) + lineScrollX) & (layerWidth - 1);
-		uint16_t pixel = SampleTilemap(layer, region, realX, realY, xsize, ysize);
+		int realX = ((x - x % mosaicSize) + lineScrollX) & (layerWidth - 1);
+		bool aboveSprites = false;
+		uint16_t pixel = SampleTilemap(layer, region, realX, realY, xsize, ysize, &aboveSprites);
 		if((pixel & transMask) != 0 && layerPriority < (_linePriority[x] >> 4)) {
 			_lineColor[x] = pixel;
+			_lineFromRoz[x] = false;
+			_lineAboveSprites[x] = aboveSprites;
 			_linePriority[x] = (uint8_t)((_linePriority[x] & 0x0F) | (layerPriority << 4));
 		}
 	}
 }
 
-//The rotate/zoom layer, in 16.16 fixed point. Like MAME it neither checks nor sets priorities.
+//The rotate/zoom layer, in 16.16 fixed point. Like MAME it does not check priorities, but unlike
+//MAME it records its own where it draws, as a tilemap does: otherwise a sprite of lower priority
+//shows through it wherever no tilemap happened to be drawn first. One title screen puts flame
+//sprites (priority 3) behind a mask on this layer (priority 2), and a pool table's letter bands
+//cover the balls, both as Bcan shows them.
+//The boot logo's 1bpp mode is left out: its ball (priority 3, masked) must stay in front of the
+//patterned floor (priority 2). Whether that is the mode or the sprite's mask is not yet known -
+//no screen seen so far tells the two apart.
 void SacPpu::DrawRozPixels(int y, int width, int region, int transMask, uint32_t startX, uint32_t startY, int incXX, int incXY, int incYX, int incYY, bool wrap)
 {
+	uint8_t layerPriority = (uint8_t)(((RozMode() >> 13) & 0x07) << 4);
+	bool setPriority = (RozMode() & 0x03) != 0;
+
 	int xsize = 0;
 	int ysize = 0;
 	GetTilemapDimensions(3, xsize, ysize);
@@ -529,13 +659,32 @@ void SacPpu::DrawRozPixels(int y, int width, int region, int transMask, uint32_t
 	uint32_t widthShifted = (uint32_t)layerWidth << 16;
 	uint32_t heightShifted = (uint32_t)layerHeight << 16;
 
-	uint32_t cx = startX + (uint32_t)(y * incYX);
-	uint32_t cy = startY + (uint32_t)(y * incYY);
+	//Mosaic, as bits 2-4 of the mode: blocks of n + 1 pixels each showing the layer at their top left
+	//corner (the line is already moved to the block's top by DrawRozLine). One map screen opens
+	//with the layer at 7 and steps it down to 0; Bcan's blocks measure 6, 4, 3 and 2 pixels on the
+	//way - linear steps, not the powers of two MAME uses for the tilemaps.
+	int mosaicSize = ((RozMode() >> 2) & 0x07) + 1;
+
+	uint32_t lineX = startX + (uint32_t)(y * incYX);
+	uint32_t lineY = startY + (uint32_t)(y * incYY);
+	uint32_t cx = lineX;
+	uint32_t cy = lineY;
 	for(int x = 0; x < width; x++) {
+		if(mosaicSize > 1) {
+			int blockX = x - x % mosaicSize;
+			cx = lineX + (uint32_t)(blockX * incXX);
+			cy = lineY + (uint32_t)(blockX * incXY);
+		}
 		if(wrap || (cx < widthShifted && cy < heightShifted)) {
-			uint16_t pixel = SampleTilemap(3, region, (int)(cx >> 16) & (layerWidth - 1), (int)(cy >> 16) & (layerHeight - 1), xsize, ysize);
+			bool aboveSprites = false;
+			uint16_t pixel = SampleTilemap(3, region, (int)(cx >> 16) & (layerWidth - 1), (int)(cy >> 16) & (layerHeight - 1), xsize, ysize, &aboveSprites);
 			if((pixel & transMask) != 0) {
 				_lineColor[x] = pixel;
+				_lineFromRoz[x] = true;
+				if(setPriority) {
+					_linePriority[x] = (uint8_t)((_linePriority[x] & 0x0F) | layerPriority);
+					_lineAboveSprites[x] = aboveSprites;
+				}
 			}
 		}
 		cx += (uint32_t)incXX;
@@ -543,10 +692,39 @@ void SacPpu::DrawRozPixels(int y, int width, int region, int transMask, uint32_t
 	}
 }
 
+//Whether the rotate/zoom layer's per-line zoom table holds anything for the visible lines. Checked
+//once a frame: the table is written before the layer is turned on, and a line's own entry is read
+//as it is drawn.
+bool SacPpu::HasLineTable(uint32_t reg, uint32_t wordsPerLine)
+{
+	if(Reg(reg) == 0) {
+		//No base, no table: a game that needs only some of the three leaves the others at zero,
+		//where video RAM word 0 holds tile data that reads as nonsense steps and positions
+		return false;
+	}
+
+	uint32_t base = ((uint32_t)Reg(reg) << 2) >> 1;
+	uint32_t words = GetScreenHeight() * wordsPerLine;
+	for(uint32_t i = 0; i < words; i++) {
+		if(VramWord(base + i)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 void SacPpu::DrawRozLine(int y, int width, int region, int transMask)
 {
+	if(SacPerfMode() == 1) {
+		return;
+	}
+
 	uint16_t rozMode = RozMode();
 	bool wrap = (rozMode & 0x20) != 0;
+
+	//A mosaic block shows the layer as it is on the block's top line (see DrawRozPixels)
+	int mosaicSize = ((rozMode >> 2) & 0x07) + 1;
+	y -= y % mosaicSize;
 
 	auto signExtend = [](int value) { return (value & 0x8000) ? value - 0x10000 : value; };
 	int incXX = signExtend(Reg(0x18C));
@@ -556,21 +734,63 @@ void SacPpu::DrawRozLine(int y, int width, int region, int transMask)
 	uint32_t scrollX = ((uint32_t)Reg(0x184) << 16) | Reg(0x186);
 	uint32_t scrollY = ((uint32_t)Reg(0x188) << 16) | Reg(0x18A);
 
-	if(!(rozMode & 0x0200) && (rozMode & 0xF000)) {
+	//Each of the three per-line tables is turned on by its own base register - a zoom step in
+	//$198, an X scroll in $19A, a Y scroll in $19E - and a game uses whichever it needs. MAME
+	//reads all three whenever the mode register looks right, so a game that sets only the scroll
+	//tables has its zoom steps read out of tile data at video RAM word 0, which draws noise.
+	//A base that is set but whose table is still all zeroes belongs to a game zooming with the
+	//plain registers before filling the table in; MAME's "a zero step means don't draw this line"
+	//rule then skips every line and the screen stays black.
+	//MAME turns the tables on with the top nibble of the mode register, but that is where the layer's
+	//priority lives; it is the top bit of the tile mode register that does. One intro scrolls its
+	//text up a perspective plane with the layer at priority 0 and that bit set ($D540), another game
+	//spins a picture at priority 0 with it clear over tables still holding the boot ROM's leftovers,
+	//and a company logo zooms in at priority 2 with it clear, over the tables the text crawl left
+	//behind, drawn by Bcan from the plain zoom registers.
+	//SAC_PERF=5 restores MAME's exact reading throughout, to A/B against.
+	bool legacy = SacPerfMode() == 5;
+	bool zoomTable = legacy || HasLineTable(0x198, 1);
+	bool scrollXTable = legacy || HasLineTable(0x19A, 2);
+	bool scrollYTable = legacy || HasLineTable(0x19E, 2);
+	bool tablesOn = legacy ? (rozMode & 0xF000) != 0 : (Reg(0x182) & 0x8000) != 0;
+	if((zoomTable || scrollXTable || scrollYTable) && !(rozMode & 0x0200) && tablesOn) {
 		//MAME's reading of the per-line tables some intros use (it calls it untrusted): a zoom
 		//step and a scroll position for each line, with a zero step meaning the line is not drawn
 		uint32_t base0 = ((uint32_t)Reg(0x198) << 2) >> 1;
 		uint32_t base1 = ((uint32_t)Reg(0x19A) << 2) >> 1;
 		uint32_t base2 = ((uint32_t)Reg(0x19E) << 2) >> 1;
 
-		uint16_t lineStep = VramWord(base0 + y);
-		if(!lineStep) {
-			return;
+		//The table holds this line's horizontal step outright, not an offset to add to $18C. Adding
+		//them (as MAME does) doubles the zoom - 0x0226 instead of 0x0126 on the title screen - so the
+		//512-pixel map spans only 238 of the 320 columns and the right of the screen stays black.
+		//Read this way a zero entry means "no step", which is why such a line is not drawn.
+		int lineIncXX = incXX;
+		if(zoomTable) {
+			uint16_t lineStep = VramWord(base0 + y);
+			if(!lineStep) {
+				return;
+			}
+			lineIncXX = legacy ? signExtend((Reg(0x18C) + lineStep) & 0xFFFF) : signExtend(lineStep);
 		}
-		int lineIncXX = signExtend((Reg(0x18C) + lineStep) & 0xFFFF);
-		uint32_t lineScrollX = scrollX + ((uint32_t)VramWord(base1 + y * 2) << 16) + VramWord(base1 + y * 2 + 1);
-		uint32_t lineScrollY = scrollY + ((uint32_t)VramWord(base2 + y * 2) << 16) + VramWord(base2 + y * 2 + 1);
-		DrawRozPixels(y, width, region, transMask, lineScrollX << 8, lineScrollY << 8, lineIncXX << 8, incXY << 8, incYX << 8, incYY << 8, wrap);
+
+		uint32_t lineScrollX = scrollX;
+		if(scrollXTable) {
+			lineScrollX += ((uint32_t)VramWord(base1 + y * 2) << 16) + VramWord(base1 + y * 2 + 1);
+		}
+		uint32_t lineScrollY = scrollY;
+		if(scrollYTable) {
+			lineScrollY += ((uint32_t)VramWord(base2 + y * 2) << 16) + VramWord(base2 + y * 2 + 1);
+		}
+		//The tables give this line's position outright, so the per-line advance must not be added
+		//on top of them - MAME passes incYX/incYY here as well, which counts the vertical step two
+		//or three times over and is why its notes call the rotate/zoom layer misaligned on intros.
+		//Where a table gives this line's position outright the per-line advance must not be added on
+		//top of it - MAME passes incYX/incYY regardless, counting the vertical step twice over, which
+		//is why its notes call the rotate/zoom layer misaligned on intros. Where no table supplies a
+		//position the advance is still what moves from one line to the next.
+		int lineIncYX = (legacy || !scrollXTable) ? incYX : 0;
+		int lineIncYY = (legacy || !scrollYTable) ? incYY : 0;
+		DrawRozPixels(y, width, region, transMask, lineScrollX << 8, lineScrollY << 8, lineIncXX << 8, incXY << 8, lineIncYX << 8, lineIncYY << 8, wrap);
 	} else {
 		DrawRozPixels(y, width, region, transMask, scrollX << 8, scrollY << 8, incXX << 8, incXY << 8, incYX << 8, incYY << 8, wrap);
 	}
@@ -604,6 +824,8 @@ void SacPpu::DrawWindowLine(int priority, int y, int width)
 		}
 		if((x >= clipMin && x < clipMax) != reverse) {
 			_lineColor[x] = pen;
+			_lineFromRoz[x] = false;
+			_lineAboveSprites[x] = false;
 			_linePriority[x] = (uint8_t)((_linePriority[x] & 0x0F) | (windowPriority << 4));
 		}
 	}
@@ -611,6 +833,27 @@ void SacPpu::DrawWindowLine(int priority, int y, int width)
 
 void SacPpu::RenderLine(uint32_t line)
 {
+	if(SacPerfMode() == 3) {
+		return;
+	}
+
+	//The sprite setup is taken once, as the frame begins. One intro turns sprites on part way down a
+	//frame while the count still says 65536 and sets the real count only at vblank; read line by
+	//line, the rest of that frame shows all of video RAM as sprites, which Bcan does not.
+	if(line == 0) {
+		_spritesEnabled = (Reg(0x08) & 0x08) != 0;
+		_spriteCount = (uint32_t)Reg(0x22) + 1;
+		_spriteTableWord = ((uint32_t)Reg(0x20) << 2) >> 1;
+		_spriteFlags = Reg(0x26);
+
+		//Whether any sprite marks a mask this frame, which decides what mode 1 does (see DrawSpritesLine)
+		_spriteMasksUsed = false;
+		for(uint32_t i = 0; _spritesEnabled && i < _spriteCount && !_spriteMasksUsed; i++) {
+			uint32_t entry = _spriteTableWord + i * 4;
+			_spriteMasksUsed = VramWord(entry + 3) != 0 && ((VramWord(entry + 1) >> 8) & 0x03) > 1;
+		}
+	}
+
 	uint32_t firstLine = GetFirstLine();
 	uint32_t height = GetScreenHeight();
 	if(line < firstLine || line >= firstLine + height) {
@@ -619,17 +862,61 @@ void SacPpu::RenderLine(uint32_t line)
 
 	int y = (int)line;
 	int width = (int)GetScreenWidth();
+	uint16_t videoFlags = (uint16_t)((Reg(0x08) & ~0x08) | (_spritesEnabled ? 0x08 : 0));
 
+	//Bit 6 of the rotate/zoom mode mixes the layer with what is beneath it: its pixels give the upper
+	//nibble of the palette index and whatever would show without the layer gives the lower one. A
+	//game then fills the palette as a table of blends between the two - one title screen fades a
+	//mask in over black and over flame sprites that way, moving only the blend in its palette.
+	bool rozMix = (videoFlags & 0x04) && (RozMode() & 0x40) && SacPerfMode() != 6;
+	if(rozMix) {
+		ComposeLine(y, width, videoFlags & ~0x04);
+		std::copy(_lineColor, _lineColor + width, _lineUnder);
+	}
+	ComposeLine(y, width, videoFlags);
+	if(rozMix) {
+		for(int x = 0; x < width; x++) {
+			if(_lineFromRoz[x]) {
+				_lineColor[x] = (uint16_t)((_lineColor[x] & 0xF0) | (_lineUnder[x] & 0x0F));
+			}
+		}
+	}
+
+	//Through the palette as it stands now, so a palette changed mid-frame shows where it changed
+	uint16_t* out = _frameBuffer + (line - firstLine) * width;
+	for(int x = 0; x < width; x++) {
+		uint16_t index = _lineColor[x] & 0xFF;
+		uint16_t color = (uint16_t)(((_paletteRam[index * 2] << 8) | _paletteRam[index * 2 + 1]) & 0x7FFF);
+		if(_lineMix[x]) {
+			uint16_t under = _lineMixUnder[x] & 0xFF;
+			uint16_t underColor = (uint16_t)(((_paletteRam[under * 2] << 8) | _paletteRam[under * 2 + 1]) & 0x7FFF);
+			color = (uint16_t)((((color & 0x7C00) + (underColor & 0x7C00)) >> 1) & 0x7C00) |
+				(uint16_t)((((color & 0x03E0) + (underColor & 0x03E0)) >> 1) & 0x03E0) |
+				(uint16_t)(((color & 0x001F) + (underColor & 0x001F)) >> 1);
+		}
+		out[x] = color;
+	}
+}
+
+//One line's palette indexes from the sprites, layers and window the flags enable
+void SacPpu::ComposeLine(int y, int width, uint16_t videoFlags)
+{
 	for(int x = 0; x < width; x++) {
 		_lineColor[x] = 0;
 		_linePriority[x] = 0xFF;
 		_lineSprite[x] = 0;
 		_lineSpriteMask[x] = 0;
+		_lineSpriteMix[x] = false;
+		_lineMix[x] = false;
+		_lineFromRoz[x] = false;
+		_lineAboveSprites[x] = false;
 	}
 
-	DrawSpritesLine(y, width);
-
-	uint16_t videoFlags = Reg(0x08);
+	//Only when they are enabled: the sprite table can name tens of thousands of entries (one game
+	//leaves $22 at $FFFF with sprites off), and this runs per line where MAME's runs once a frame.
+	if(videoFlags & 0x08) {
+		DrawSpritesLine(y, width);
+	}
 	for(int priority = 7; priority >= 0; priority--) {
 		for(int layer = 0; layer < 4; layer++) {
 			bool enabled = layer == 3 ? (videoFlags & 0x04) != 0 : (videoFlags & (0x80 >> layer)) != 0;
@@ -656,19 +943,21 @@ void SacPpu::RenderLine(uint32_t line)
 		}
 	}
 
-	//Sprites go over any layer whose priority is not above theirs
+	//Sprites go over any layer whose priority is not above theirs, except where an equal one drew a
+	//tile marked to go above sprites (see DecodeTile)
 	if(videoFlags & 0x08) {
 		for(int x = 0; x < width; x++) {
-			if(_lineSprite[x] != 0 && (_linePriority[x] & 0x0F) <= (_linePriority[x] >> 4)) {
+			int spritePriority = _linePriority[x] & 0x0F;
+			int layerPriority = _linePriority[x] >> 4;
+			bool inFront = spritePriority < layerPriority || (spritePriority == layerPriority && !_lineAboveSprites[x]);
+			if(_lineSprite[x] != 0 && inFront) {
+				if(_lineSpriteMix[x]) {
+					_lineMix[x] = true;
+					_lineMixUnder[x] = _lineSpriteUnder[x] ? _lineSpriteUnder[x] : _lineColor[x];
+				}
 				_lineColor[x] = _lineSprite[x];
+				_lineFromRoz[x] = false;
 			}
 		}
-	}
-
-	//Through the palette as it stands now, so a palette changed mid-frame shows where it changed
-	uint16_t* out = _frameBuffer + (line - firstLine) * width;
-	for(int x = 0; x < width; x++) {
-		uint16_t index = _lineColor[x] & 0xFF;
-		out[x] = (uint16_t)(((_paletteRam[index * 2] << 8) | _paletteRam[index * 2 + 1]) & 0x7FFF);
 	}
 }

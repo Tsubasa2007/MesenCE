@@ -21,6 +21,7 @@ public:
 		uint16_t ColorBase = 0;
 		bool XFlip = false;
 		bool YFlip = false;
+		bool AboveSprites = false;
 	};
 
 	//One sprite table entry, decoded - for the debugger's sprite viewer
@@ -58,6 +59,25 @@ private:
 	uint8_t _linePriority[SacConstants::MaxScreenWidth] = {};
 	uint16_t _lineSprite[SacConstants::MaxScreenWidth] = {};
 	uint8_t _lineSpriteMask[SacConstants::MaxScreenWidth] = {};
+	//Sprite pixels to mix half and half with what is beneath them, and what that is: an earlier
+	//sprite's pixel where there is one, else the layers' (resolved as the line is composed)
+	bool _lineSpriteMix[SacConstants::MaxScreenWidth] = {};
+	uint16_t _lineSpriteUnder[SacConstants::MaxScreenWidth] = {};
+	bool _lineMix[SacConstants::MaxScreenWidth] = {};
+	uint16_t _lineMixUnder[SacConstants::MaxScreenWidth] = {};
+	//Which pixels the rotate/zoom layer supplied, and the line as it would be without that layer,
+	//for the layer's mixing mode
+	bool _lineFromRoz[SacConstants::MaxScreenWidth] = {};
+	//Whether the layer pixel drawn is from a tile marked to go in front of equal-priority sprites
+	bool _lineAboveSprites[SacConstants::MaxScreenWidth] = {};
+
+	//The sprite registers as the frame began
+	bool _spritesEnabled = false;
+	uint32_t _spriteCount = 1;
+	uint32_t _spriteTableWord = 0;
+	uint16_t _spriteFlags = 0;
+	bool _spriteMasksUsed = false;
+	uint16_t _lineUnder[SacConstants::MaxScreenWidth] = {};
 
 	uint16_t Reg(uint32_t addr) { return _regs[(addr >> 1) & 0xFF]; }
 	uint16_t VramWord(uint32_t wordIndex);
@@ -67,19 +87,21 @@ private:
 	uint16_t TilemapMode(int layer) { return Reg(0x10A + layer * 0x20); }
 	uint16_t RozMode() { return Reg(0x180); }
 
+	bool IsRozBitmap();
 	int GetTilemapRegion(int layer);
 	void GetTilemapDimensions(int layer, int& xsize, int& ysize);
 	uint8_t GetTilePixel(int region, uint32_t tile, int x, int y);
 	uint16_t GetColorIndex(int region, uint32_t palette, uint8_t pixel);
 	LayerTileInfo DecodeTile(int layer, int region, uint32_t count);
-	uint16_t SampleTilemap(int layer, int region, int x, int y, int xsize, int ysize);
+	uint16_t SampleTilemap(int layer, int region, int x, int y, int xsize, int ysize, bool* aboveSprites = nullptr);
 
 	void DrawSpritesLine(int y, int width);
-	void DrawSpriteTileLine(int y, int width, int region, uint32_t tile, uint32_t palette, bool xflip, bool yflip, int x, int tileY, int mask, int priority);
 	void DrawTilemapLine(int layer, int y, int width, int layerPriority, int region, int transMask);
+	bool HasLineTable(uint32_t reg, uint32_t wordsPerLine);
 	void DrawRozLine(int y, int width, int region, int transMask);
 	void DrawRozPixels(int y, int width, int region, int transMask, uint32_t startX, uint32_t startY, int incXX, int incXY, int incYX, int incYY, bool wrap);
 	void DrawWindowLine(int priority, int y, int width);
+	void ComposeLine(int y, int width, uint16_t videoFlags);
 
 public:
 	void Init(uint8_t* vram, uint8_t* paletteRam, uint16_t* regs, uint16_t* frameBuffer);
