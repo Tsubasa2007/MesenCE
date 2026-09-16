@@ -53,6 +53,9 @@ private:
 
 	//The cartridge's save RAM sits on the low byte lane only, so $EC0000-$ECFFFF is 32KB of it
 	uint8_t _saveRam[0x8000] = {};
+	//Whether the cartridge has written its save RAM (or brought a .sav with it): only then is there
+	//anything to keep, as most cartridges have no save RAM at all
+	bool _saveRamUsed = false;
 
 	uint16_t _videoRegs[0x100] = {};
 
@@ -62,6 +65,7 @@ private:
 	uint16_t _frcControl = 0;
 	uint16_t _frcFrequency = 0;
 	uint64_t _frcNextCycle = 0;
+	uint16_t _frcFrameCount = 0;
 	uint32_t _frcLogCount = 0;
 
 	uint32_t _dmaSource[2] = {};
@@ -163,9 +167,12 @@ public:
 	void SetApu(SacApu* apu) { _apu = apu; }
 	uint64_t GetFrcTarget() { return _frcNextCycle; }
 	void ProcessFrc(uint64_t cycle);
+	void ProcessFrcFrame();
 	void SetSoundIrqLine(uint8_t bit, bool state);
 	uint8_t* GetSoundRam() { return _soundRam; }
 	uint8_t* GetSaveRam() { return _saveRam; }
+	bool IsSaveRamUsed() { return _saveRamUsed; }
+	void MarkSaveRamUsed() { _saveRamUsed = true; }
 	bool IsSoundCpuRunning() { return _soundCpuRunning; }
 	W65C02::State GetSoundCpuState() { return _soundCpu->GetState(); }
 

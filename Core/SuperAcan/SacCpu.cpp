@@ -89,7 +89,7 @@ protected:
 	//interrupt (HOLD_LINE), so taking one is what drops it
 	void willInterrupt(moira::u8 level) override
 	{
-		_owner->ClearIrq(level);
+		_owner->AcknowledgeIrq(level);
 		_irqPending = true;
 		_irqLevel = level;
 		_irqReturnPc = reg.pc;
@@ -277,6 +277,7 @@ SacCpu::~SacCpu()
 void SacCpu::Reset()
 {
 	_irqLines = 0;
+	_nmiLatched = false;
 	_core->setIPL(0);
 	_core->reset();
 }
@@ -312,18 +313,37 @@ uint64_t SacCpu::GetCycleCount()
 
 void SacCpu::SetIrq(uint8_t level)
 {
+	if(level == 7 && !(_irqLines & 0x80)) {
+		_nmiLatched = true;
+	}
 	_irqLines |= (uint8_t)(1 << level);
 	UpdateIpl();
 }
 
+//The hardware dropping a line. Level 7 stays pending if the processor has not taken it yet: one
+//game busy-waits on the vblank flag, and its read (which drops the vblank interrupt) lands right
+//after the interrupt is raised; lost, the handler skips a frame and copies a half-built table.
 void SacCpu::ClearIrq(uint8_t level)
 {
 	_irqLines &= (uint8_t)~(1 << level);
 	UpdateIpl();
 }
 
+void SacCpu::AcknowledgeIrq(uint8_t level)
+{
+	if(level == 7) {
+		_nmiLatched = false;
+	}
+	ClearIrq(level);
+}
+
 void SacCpu::UpdateIpl()
 {
+	if(_nmiLatched) {
+		_core->setIPL(7);
+		return;
+	}
+
 	uint8_t level = 0;
 	for(int i = 7; i > 0; i--) {
 		if(_irqLines & (1 << i)) {
@@ -389,5 +409,6 @@ void SacCpu::GetOpInfo(uint16_t opCode, SacAddrMode& mode, uint8_t& size)
 void SacCpu::Serialize(Serializer& s)
 {
 	SV(_irqLines);
+	SV(_nmiLatched);
 	_core->Serialize(s);
 }

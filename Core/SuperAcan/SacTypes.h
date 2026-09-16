@@ -3,20 +3,32 @@
 #include "Shared/BaseState.h"
 #include "SuperAcan/SacCpu.h"
 
-//Timing is MAME's supracan driver: everything is derived from the one 53.693175MHz crystal.
-//The 68000 runs at /6, the pixel clock at /10, and a frame is 342x262 pixel clocks of which
-//256x224 are visible (lines 8-231).
+//Everything is derived from the one 53.693175MHz crystal. The pixel clock is /10 and a frame is
+//342x262 pixel clocks of which 256x224 are visible (lines 8-231).
+//The 68000 runs at /5 (10.74MHz), not MAME's /6: games pace their loops by vblank, and at /6 a
+//palette blend one title screen does each pass takes 278 lines, so the pass slips to every other
+//frame and its fade and the intro before it run at half speed. At /5 both match Bcan frame for frame.
+//The sound processor keeps /12, which pitch and tempo were checked against.
 class SacConstants
 {
 public:
 	static constexpr uint32_t MasterClockRate = 53693175;
-	static constexpr uint32_t CpuClockDivider = 6;
+	static constexpr uint32_t CpuClockDivider = 5;
+	//The sound processor and sound chip keep their own clock, whatever the 68000's
+	static constexpr uint32_t SoundCpuClockDivider = 12;
+	//Crystal ticks per step of the free-running counter at $A20F. MAME's rule makes a step 8192 cycles
+	//of a 68000 at a sixth of the crystal (49152 ticks), which Bcan's pacing matches at $A201 (a
+	//eighth of that per step, as MAME has it) but not here: one intro waits on it about 2250 times and
+	//its scenes last 1.21 times as long in Bcan, where 59474 ticks keep the whole intro within two
+	//frames of Bcan's recording.
+	static constexpr uint64_t FrcLongStepClocks = 59474;
 	static constexpr uint32_t PixelClockDivider = 10;
 
 	static constexpr uint32_t ClocksPerScanline = 342;
 	static constexpr uint32_t ScanlineCount = 262;
 	static constexpr uint32_t MasterClocksPerFrame = PixelClockDivider * ClocksPerScanline * ScanlineCount;
 	static constexpr uint32_t CpuCyclesPerLine = PixelClockDivider * ClocksPerScanline / CpuClockDivider;
+	static constexpr uint32_t SoundCpuCyclesPerLine = PixelClockDivider * ClocksPerScanline / SoundCpuClockDivider;
 
 	//MAME raises the vblank interrupt on line 240, and reports vblank from there on
 	static constexpr uint32_t VblankLine = 240;

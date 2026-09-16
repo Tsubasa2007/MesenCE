@@ -52,6 +52,8 @@ private:
 
 	//Interrupt lines held by the hardware, bit n for level n. The 68000 sees only the highest.
 	uint8_t _irqLines = 0;
+	//Level 7 is edge-triggered on the 68000: once raised it is taken even if the line drops again
+	bool _nmiLatched = false;
 
 	void UpdateIpl();
 
@@ -65,6 +67,7 @@ public:
 
 	void SetIrq(uint8_t level);
 	void ClearIrq(uint8_t level);
+	void AcknowledgeIrq(uint8_t level);
 	uint8_t GetIrqLines() { return _irqLines; }
 
 	//The registers, brought up to date; ApplyState writes them back after the debugger edits them

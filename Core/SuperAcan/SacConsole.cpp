@@ -14,10 +14,12 @@
 #include "Shared/EventType.h"
 #include "Shared/NotificationManager.h"
 #include "Shared/MessageManager.h"
+#include "Shared/BatteryManager.h"
 #include "Shared/Video/VideoDecoder.h"
 #include "Shared/RenderedFrame.h"
 #include "Utilities/HexUtilities.h"
 #include "Utilities/Serializer.h"
+#include "Utilities/ArchiveReader.h"
 #include "Utilities/FolderUtilities.h"
 #include "Utilities/VirtualFile.h"
 #include "Utilities/PNGHelper.h"
@@ -41,17 +43,42 @@ LoadRomResult SacConsole::LoadRom(VirtualFile& romFile)
 	romFile.ReadFile(romData);
 
 	//Every cartridge opens with the 68000's reset vectors, and the stack the first one names is
-	//always in the system's work RAM at $FC0000 - so the first word reads $00FC. Dumps come in
-	//both byte orders: some as the 68000 sees them, most with every word swapped (what MAME
-	//calls load16_word_swap). That same word says which, and a file where it says neither is
-	//not one of these - .bin is claimed by nothing else here, but it is not a format either.
+	//in the system's work RAM, which sits at $FC0000 and is mirrored to the end of the address
+	//space - so the first word reads $00FC to $00FF (several cartridges stack at $00FFFFFE). Dumps
+	//come in both byte orders: some as the 68000 sees them, most with every word swapped (what MAME
+	//calls load16_word_swap). That same word says which, and a file where it says neither is not
+	//one of these - .bin is claimed by nothing else here, but it is not a format either.
 	if(romData.size() < 8 || (romData.size() & 0x01)) {
 		return LoadRomResult::Failure;
 	}
 
-	bool swapped = romData[0] == 0xFC && romData[1] == 0x00;
-	if(!swapped && !(romData[0] == 0x00 && romData[1] == 0xFC)) {
+	auto isCartStart = [](const vector<uint8_t>& data) {
+		return data.size() >= 8 && ((data[1] == 0x00 && data[0] >= 0xFC) || (data[0] == 0x00 && data[1] >= 0xFC));
+	};
+	bool swapped = romData[1] == 0x00 && romData[0] >= 0xFC;
+	if(!isCartStart(romData)) {
 		return LoadRomResult::Failure;
+	}
+
+	//One cartridge has two ROM chips, dumped as two files - 2MB at $000000 and 1MB after it, in the
+	//same byte order - and its archive holds both. Loaded alone the first runs until its attract
+	//mode reaches data on the second, then clears a zero-length span of video RAM for ever: a flat
+	//colour, then black. The other file in the archive, if it is not a cartridge start itself, is
+	//that second chip.
+	if(romFile.IsArchive()) {
+		unique_ptr<ArchiveReader> reader = ArchiveReader::GetReader(romFile.GetFilePath());
+		if(reader) {
+			vector<string> files = reader->GetFileList();
+			if(files.size() == 2) {
+				string other = files[0] == romFile.GetFileName() ? files[1] : files[0];
+				VirtualFile secondChip(romFile.GetFilePath(), other);
+				vector<uint8_t> secondData;
+				if(other != romFile.GetFileName() && secondChip.ReadFile(secondData) && !secondData.empty() && !(secondData.size() & 0x01) && !isCartStart(secondData)) {
+					MessageManager::Log("[SAC] Second ROM chip: " + other);
+					romData.insert(romData.end(), secondData.begin(), secondData.end());
+				}
+			}
+		}
 	}
 
 	if(swapped) {
@@ -98,6 +125,14 @@ LoadRomResult SacConsole::LoadRom(VirtualFile& romFile)
 	_emu->RegisterMemory(MemoryType::SacPaletteRam, _memoryManager->GetPaletteRam(), 0x200);
 	_emu->RegisterMemory(MemoryType::SacSoundRam, _memoryManager->GetSoundRam(), 0x10000);
 	_emu->RegisterMemory(MemoryType::SacSaveRam, _memoryManager->GetSaveRam(), 0x8000);
+	//The cartridge's battery-backed RAM, kept in a .sav beside the other consoles' - the byte order
+	//Bcan uses too, one byte per word of the 68000's $EC0000 window. One game's load screen shows
+	//the hero's portrait only once a record has been saved there. Half the cartridges have no save
+	//RAM, so a .sav is only written once the game has used it or when one was already there.
+	if(_emu->GetBatteryManager()->GetBatteryFileSize(".sav") > 0) {
+		_emu->GetBatteryManager()->LoadBattery(".sav", _memoryManager->GetSaveRam(), 0x8000);
+		_memoryManager->MarkSaveRamUsed();
+	}
 	LoadSoundTables();
 	LoadBootRom();
 
@@ -178,6 +213,7 @@ void SacConsole::RunFrame()
 
 		uint8_t irqMask = _memoryManager->GetIrqMask();
 		if(line == SacConstants::VblankLine) {
+			_memoryManager->ProcessFrcFrame();
 			if(irqMask & 0x80) {
 				_cpu->SetIrq(7);
 				_memoryManager->TriggerSoundNmi();
@@ -189,11 +225,11 @@ void SacConsole::RunFrame()
 		_cpuTargetCycle += SacConstants::CpuCyclesPerLine;
 		RunCpu(_cpuTargetCycle);
 
-		_soundCpuTargetCycle += SacConstants::CpuCyclesPerLine / 2;
+		_soundCpuTargetCycle += SacConstants::SoundCpuCyclesPerLine;
 		_memoryManager->RunSoundCpu(_soundCpuTargetCycle);
 
 		//The sound chip, up to the end of the line (the sound processor's clock is 1/12 of the master)
-		_apu->Run(_soundCpuTargetCycle * SacConstants::CpuClockDivider * 2);
+		_apu->Run(_soundCpuTargetCycle * SacConstants::SoundCpuClockDivider);
 	}
 
 	SendFrame();
@@ -345,6 +381,9 @@ void SacConsole::Reset()
 
 void SacConsole::SaveBattery()
 {
+	if(_memoryManager && _memoryManager->IsSaveRamUsed()) {
+		_emu->GetBatteryManager()->SaveBattery(".sav", _memoryManager->GetSaveRam(), 0x8000);
+	}
 }
 
 BaseControlManager* SacConsole::GetControlManager()

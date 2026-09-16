@@ -123,6 +123,7 @@ void SacMemoryManager::DebugWrite(uint32_t addr, uint8_t value)
 		_soundRam[addr & 0xFFFF] = value;
 	} else if(addr >= 0xEC0000 && addr <= 0xECFFFF && (addr & 1)) {
 		_saveRam[(addr & 0xFFFF) >> 1] = value;
+		_saveRamUsed = true;
 	}
 }
 
@@ -277,6 +278,7 @@ void SacMemoryManager::WriteRegister(uint32_t addr, uint16_t value, uint16_t mas
 	} else if(addr >= 0xEC0000 && addr <= 0xECFFFF) {
 		if(mask & 0x00FF) {
 			_saveRam[(addr & 0xFFFF) >> 1] = (uint8_t)value;
+			_saveRamUsed = true;
 		}
 	} else if(addr != 0xE90B3C) {
 		LogAccess("unmapped write $" + HexUtilities::ToHex24(addr) + " = $" + HexUtilities::ToHex(value));
@@ -381,7 +383,12 @@ uint16_t SacMemoryManager::ReadHost(uint32_t offset)
 		case 0x10: return (uint16_t)((_irqMask << 8) | _irqMask);
 		case 0x14: return _frcControl;
 		case 0x16: return _frcFrequency;
-		case 0x18: return (uint16_t)(_soundCpu->GetState().CycleCount % 0xFFFF);
+		case 0x18:
+			if((_frcControl & 0xFF00) == 0xA300) {
+				return _frcFrameCount;
+			}
+			//MAME's stand-in, which one game uses as a source of random numbers
+			return (uint16_t)(_soundCpu->GetState().CycleCount % 0xFFFF);
 		case 0x1C: return _soundCpuCtrl;
 	}
 	LogAccess("UM6619 read $" + HexUtilities::ToHex24(0xE90000 + offset));
@@ -408,11 +415,13 @@ void SacMemoryManager::WriteHost(uint32_t offset, uint16_t value, uint16_t mask)
 
 		case 0x14:
 			_frcControl = (uint16_t)((_frcControl & ~mask) | (value & mask));
+			_frcFrameCount = 0;
 			UpdateFrc(_cpu->GetCycleCount());
 			break;
 
 		case 0x16:
 			_frcFrequency = (uint16_t)((_frcFrequency & ~mask) | (value & mask));
+			_frcFrameCount = 0;
 			UpdateFrc(_cpu->GetCycleCount());
 			break;
 
@@ -644,8 +653,8 @@ void SacMemoryManager::UpdateFrc(uint64_t now)
 	uint64_t period = 0;
 	switch(_frcControl & 0x0F) {
 		case 0x0: period = SacConstants::MasterClockRate / SacConstants::CpuClockDivider; break;
-		case 0x1: period = 1024ull * _frcFrequency; break;
-		case 0xF: period = 8192ull * _frcFrequency; break;
+		case 0x1: period = 1024ull * _frcFrequency * 6 / SacConstants::CpuClockDivider; break;
+		case 0xF: period = _frcFrequency * SacConstants::FrcLongStepClocks / SacConstants::CpuClockDivider; break;
 	}
 
 	if(_frcLogCount < 8) {
@@ -667,6 +676,24 @@ void SacMemoryManager::ProcessFrc(uint64_t cycle)
 	}
 }
 
+//With $A3 in the control register's high byte the counter counts frames instead: it interrupts
+//once every frequency + 1 of them, and $E90018 reads how far it has counted. One intro crawls its
+//text up by a step on each interrupt and pulls in the next page when the scroll is three steps
+//along and $E90018 reads 2; Bcan's crawl, measured against ours over 8.5 seconds, has a period of
+//9.15 +/- 0.16 frames for a frequency of 8.
+void SacMemoryManager::ProcessFrcFrame()
+{
+	if((_frcControl & 0xFF00) != 0xA300) {
+		return;
+	}
+
+	_frcFrameCount++;
+	if(_frcFrameCount > _frcFrequency) {
+		_frcFrameCount = 0;
+		_cpu->SetIrq(3);
+	}
+}
+
 //The sound chip's timer and streaming interrupts, which it raises and a read of one of its
 //registers drops
 void SacMemoryManager::SetSoundIrqLine(uint8_t bit, bool state)
@@ -684,7 +711,7 @@ void SacMemoryManager::SetSoundIrqLine(uint8_t bit, bool state)
 uint64_t SacMemoryManager::GetSoundChipTime()
 {
 	if(_inSoundCpu) {
-		return _soundCpu->GetState().CycleCount * SacConstants::CpuClockDivider * 2;
+		return _soundCpu->GetState().CycleCount * SacConstants::SoundCpuClockDivider;
 	}
 	return _cpu->GetCycleCount() * SacConstants::CpuClockDivider;
 }
@@ -784,12 +811,14 @@ void SacMemoryManager::Serialize(Serializer& s)
 	SVArray(_videoRam, sizeof(_videoRam));
 	SVArray(_paletteRam, sizeof(_paletteRam));
 	SVArray(_saveRam, sizeof(_saveRam));
+	SV(_saveRamUsed);
 	SVArray(_videoRegs, 0x100);
 	SV(_irqMask);
 	SV(_soundCpuCtrl);
 	SV(_frcControl);
 	SV(_frcFrequency);
 	SV(_frcNextCycle);
+	SV(_frcFrameCount);
 	SVArray(_dmaSource, 2);
 	SVArray(_dmaDest, 2);
 	SVArray(_dmaCount, 2);
