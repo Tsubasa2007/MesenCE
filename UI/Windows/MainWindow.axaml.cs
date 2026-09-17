@@ -486,7 +486,11 @@ namespace Mesen.Windows
 					double yScale = height * dpiScale / _prevScreenSize.Height;
 					SetScale(Math.Min(Math.Round(xScale), Math.Round(yScale)));
 				} else {
-					double xScale = ClientSize.Width * dpiScale / baseScreenSize.Width;
+					//The width is measured the way InternalSetScale made it - the height times the aspect
+					//ratio - rather than against the frame's pixel width. The two agree only when pixels
+					//are at least as wide as they are tall: with narrower ones (32:35 on the Super A'Can)
+					//a window at 6x measures 5.49x across, and every resolution change rounded it to 5x.
+					double xScale = ClientSize.Width * dpiScale / (baseScreenSize.Height * EmuApi.GetAspectRatio());
 					double yScale = height * dpiScale / baseScreenSize.Height;
 					SetScale(Math.Min(Math.Round(xScale), Math.Round(yScale)));
 				}
