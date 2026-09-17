@@ -175,10 +175,14 @@ void SacApu::MixSample()
 	//Development aid, like SAC_RAW_AUDIO: SAC_MUTE is a mask of voices to leave out of the mix, so
 	//a voice can be subtracted from a recording to find which one carries an unwanted sound
 	static const uint32_t muteMask = [] {
+#ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable: 4996)
+#endif
 		const char* value = std::getenv("SAC_MUTE");
+#ifdef _MSC_VER
 #pragma warning(pop)
+#endif
 		return value ? (uint32_t)strtoul(value, nullptr, 0) : 0u;
 	}();
 
@@ -343,10 +347,14 @@ void SacApu::PlayQueuedAudio()
 	//Development aid while there is no debugger: SAC_RAW_AUDIO=<path> writes the chip's output
 	//there as raw 16-bit stereo at SampleRate
 	static std::ofstream* rawOut = [] {
+#ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable: 4996)
+#endif
 		const char* path = std::getenv("SAC_RAW_AUDIO");
+#ifdef _MSC_VER
 #pragma warning(pop)
+#endif
 		return path ? new std::ofstream(path, std::ios::binary) : nullptr;
 	}();
 	if(rawOut) {
