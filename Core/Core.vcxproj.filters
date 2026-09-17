@@ -2898,6 +2898,75 @@
     <ClInclude Include="WS\WsDefaultVideoFilter.h">
       <Filter>WS</Filter>
     </ClInclude>
+    <ClInclude Include="SuperAcan\SacConsole.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\SacControlManager.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\SacDefaultVideoFilter.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\SacTypes.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\SacCpu.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\SacMemoryManager.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\W65C02.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\SacPpu.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\SacApu.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\SacController.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\Debugger\SacSoundDebugger.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\Debugger\SacSoundDisUtils.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\Debugger\SacSoundTraceLogger.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\Debugger\SacDebugger.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\Debugger\SacDisUtils.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\Debugger\SacAssembler.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\Debugger\SacSoundAssembler.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\Debugger\SacEventManager.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\Debugger\SacTraceLogger.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\Debugger\SacPpuTools.h">
+      <Filter>SuperAcan</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\Moira\Moira.h">
+      <Filter>SuperAcan\Moira</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\Moira\MoiraConfig.h">
+      <Filter>SuperAcan\Moira</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperAcan\Moira\MoiraTypes.h">
+      <Filter>SuperAcan\Moira</Filter>
+    </ClInclude>
     <ClInclude Include="WS\Debugger\WsDebugger.h">
       <Filter>WS\Debugger</Filter>
     </ClInclude>
@@ -3344,6 +3413,72 @@
     <ClCompile Include="WS\WsConsole.cpp">
       <Filter>WS</Filter>
     </ClCompile>
+    <ClCompile Include="SuperAcan\SacConsole.cpp">
+      <Filter>SuperAcan</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\SacDefaultVideoFilter.cpp">
+      <Filter>SuperAcan</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\SacMemoryManager.cpp">
+      <Filter>SuperAcan</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\W65C02.cpp">
+      <Filter>SuperAcan</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\SacPpu.cpp">
+      <Filter>SuperAcan</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\SacApu.cpp">
+      <Filter>SuperAcan</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Debugger\SacSoundDebugger.cpp">
+      <Filter>SuperAcan</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Debugger\SacSoundDisUtils.cpp">
+      <Filter>SuperAcan</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Debugger\SacSoundTraceLogger.cpp">
+      <Filter>SuperAcan</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Debugger\SacDebugger.cpp">
+      <Filter>SuperAcan</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Debugger\SacDisUtils.cpp">
+      <Filter>SuperAcan</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Debugger\SacAssembler.cpp">
+      <Filter>SuperAcan</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Debugger\SacSoundAssembler.cpp">
+      <Filter>SuperAcan</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Debugger\SacEventManager.cpp">
+      <Filter>SuperAcan</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Debugger\SacTraceLogger.cpp">
+      <Filter>SuperAcan</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Debugger\SacPpuTools.cpp">
+      <Filter>SuperAcan</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\SacCpu.cpp">
+      <Filter>SuperAcan</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Moira\Moira.cpp">
+      <Filter>SuperAcan\Moira</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Moira\MoiraCore68000.cpp">
+      <Filter>SuperAcan\Moira</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Moira\MoiraCore68010.cpp">
+      <Filter>SuperAcan\Moira</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Moira\MoiraCore68020.cpp">
+      <Filter>SuperAcan\Moira</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Moira\MoiraDebugger.cpp">
+      <Filter>SuperAcan\Moira</Filter>
+    </ClCompile>
     <ClCompile Include="WS\Debugger\WsDebugger.cpp">
       <Filter>WS\Debugger</Filter>
     </ClCompile>
@@ -3363,6 +3498,9 @@
       <Filter>WS</Filter>
     </ClCompile>
     <ClCompile Include="Debugger\ExpressionEvaluator.Ws.cpp">
+      <Filter>Debugger</Filter>
+    </ClCompile>
+    <ClCompile Include="Debugger\ExpressionEvaluator.Sac.cpp">
       <Filter>Debugger</Filter>
     </ClCompile>
     <ClCompile Include="WS\WsControlManager.cpp">
@@ -3594,6 +3732,12 @@
     </Filter>
     <Filter Include="WS\Input">
       <UniqueIdentifier>{5077d508-bbdf-4bab-9d03-9b3d2b05edfb}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="SuperAcan">
+      <UniqueIdentifier>{3f6c2a9e-7b1d-4e58-9a0c-5d2e8b41c7f3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="SuperAcan\Moira">
+      <UniqueIdentifier>{9b2e4d17-6a3c-4f0e-8d51-2c7a9e6b3f40}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

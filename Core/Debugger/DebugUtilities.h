@@ -23,6 +23,8 @@ public:
 			case CpuType::Sms: return MemoryType::SmsMemory;
 			case CpuType::Gba: return MemoryType::GbaMemory;
 			case CpuType::Ws: return MemoryType::WsMemory;
+			case CpuType::Sac: return MemoryType::SacMemory;
+			case CpuType::SacSound: return MemoryType::SacSoundMemory;
 		}
 
 		throw std::runtime_error("Invalid CPU type");
@@ -44,6 +46,8 @@ public:
 			case CpuType::Sms: return 4;
 			case CpuType::Gba: return 8;
 			case CpuType::Ws: return 5;
+			case CpuType::Sac: return 6;
+			case CpuType::SacSound: return 4;
 		}
 
 		throw std::runtime_error("Invalid CPU type");
@@ -181,6 +185,18 @@ public:
 			case MemoryType::WsPort:
 				return CpuType::Ws;
 
+			case MemoryType::SacMemory:
+			case MemoryType::SacPrgRom:
+			case MemoryType::SacWorkRam:
+			case MemoryType::SacVideoRam:
+			case MemoryType::SacPaletteRam:
+			case MemoryType::SacSoundRam:
+			case MemoryType::SacSaveRam:
+				return CpuType::Sac;
+
+			case MemoryType::SacSoundMemory:
+				return CpuType::SacSound;
+
 			default:
 				throw std::runtime_error("Invalid CPU type");
 		}
@@ -193,7 +209,7 @@ public:
 
 	static constexpr MemoryType GetLastCpuMemoryType()
 	{
-		return MemoryType::WsMemory;
+		return MemoryType::SacSoundMemory;
 	}
 
 	static constexpr bool IsPpuMemory(MemoryType memType)
@@ -230,6 +246,10 @@ public:
 			case MemoryType::GbaPaletteRam:
 				return true;
 
+			case MemoryType::SacVideoRam:
+			case MemoryType::SacPaletteRam:
+				return true;
+
 			default:
 				return false;
 		}
@@ -251,6 +271,7 @@ public:
 			case MemoryType::SmsPrgRom:
 			case MemoryType::GbaPrgRom:
 			case MemoryType::WsPrgRom:
+			case MemoryType::SacPrgRom:
 				return true;
 
 			default:
@@ -294,6 +315,7 @@ public:
 			case MemoryType::SmsCartRam:
 			case MemoryType::GbaSaveRam:
 			case MemoryType::WsCartRam:
+			case MemoryType::SacSaveRam:
 				return false;
 
 			default:
@@ -303,7 +325,7 @@ public:
 
 	static constexpr CpuType GetLastCpuType()
 	{
-		return CpuType::Ws;
+		return CpuType::SacSound;
 	}
 
 	static string AddressToHex(CpuType cpuType, int32_t address)

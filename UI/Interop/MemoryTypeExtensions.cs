@@ -125,6 +125,18 @@ namespace Mesen.Interop
 				case MemoryType.WsPort:
 					return CpuType.Ws;
 
+				case MemoryType.SacMemory:
+				case MemoryType.SacPrgRom:
+				case MemoryType.SacWorkRam:
+				case MemoryType.SacVideoRam:
+				case MemoryType.SacPaletteRam:
+				case MemoryType.SacSoundRam:
+				case MemoryType.SacSaveRam:
+					return CpuType.Sac;
+
+				case MemoryType.SacSoundMemory:
+					return CpuType.SacSound;
+
 				default:
 					throw new NotImplementedException("Unsupported cpu type");
 			}
@@ -161,6 +173,10 @@ namespace Mesen.Interop
 					return true;
 
 				case MemoryType.GbaVideoRam:
+					return true;
+
+				case MemoryType.SacVideoRam:
+				case MemoryType.SacPaletteRam:
 					return true;
 
 				default:
@@ -214,6 +230,9 @@ namespace Mesen.Interop
 				case MemoryType.GbaSpriteRam:
 
 				case MemoryType.WsPort:
+
+				case MemoryType.SacPaletteRam:
+				case MemoryType.SacSaveRam:
 					return false;
 			}
 
@@ -237,6 +256,8 @@ namespace Mesen.Interop
 				case MemoryType.SmsMemory:
 				case MemoryType.GbaMemory:
 				case MemoryType.WsMemory:
+				case MemoryType.SacMemory:
+				case MemoryType.SacSoundMemory:
 					return true;
 			}
 			return false;
@@ -263,6 +284,7 @@ namespace Mesen.Interop
 				case MemoryType.GbaPrgRom:
 				case MemoryType.GbaBootRom:
 				case MemoryType.WsPrgRom:
+				case MemoryType.SacPrgRom:
 					return true;
 			}
 			return false;
@@ -340,6 +362,14 @@ namespace Mesen.Interop
 				case MemoryType.WsBootRom:
 				case MemoryType.WsPort:
 					return true;
+
+				//Super A'Can
+				case MemoryType.SacMemory:
+				case MemoryType.SacPrgRom:
+				case MemoryType.SacWorkRam:
+				case MemoryType.SacSoundRam:
+				case MemoryType.SacSaveRam:
+					return true;
 			}
 
 			return false;
@@ -361,6 +391,8 @@ namespace Mesen.Interop
 				case MemoryType.SmsMemory:
 				case MemoryType.GbaMemory:
 				case MemoryType.WsMemory:
+				case MemoryType.SacMemory:
+				case MemoryType.SacSoundMemory:
 					return true;
 			}
 
@@ -394,6 +426,9 @@ namespace Mesen.Interop
 
 				case MemoryType.WsMemory:
 				case MemoryType.WsPrgRom:
+
+				case MemoryType.SacMemory:
+				case MemoryType.SacPrgRom:
 					return true;
 
 				case MemoryType.NesPpuMemory:
@@ -548,6 +583,15 @@ namespace Mesen.Interop
 				MemoryType.WsBootRom => "BOOT",
 				MemoryType.WsInternalEeprom => "IEEPROM",
 				MemoryType.WsPort => "PORT",
+
+				MemoryType.SacMemory => "CPU",
+				MemoryType.SacSoundMemory => "SCPU",
+				MemoryType.SacPrgRom => "ROM",
+				MemoryType.SacWorkRam => "WRAM",
+				MemoryType.SacVideoRam => "VRAM",
+				MemoryType.SacPaletteRam => "PAL",
+				MemoryType.SacSoundRam => "SND",
+				MemoryType.SacSaveRam => "SRAM",
 
 				MemoryType.None => "n/a",
 

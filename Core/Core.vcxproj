@@ -839,6 +839,29 @@
     <ClInclude Include="WS\WsSerial.h" />
     <ClInclude Include="WS\WsTimer.h" />
     <ClInclude Include="WS\WsTypes.h" />
+    <ClInclude Include="SuperAcan\SacConsole.h" />
+    <ClInclude Include="SuperAcan\SacControlManager.h" />
+    <ClInclude Include="SuperAcan\SacDefaultVideoFilter.h" />
+    <ClInclude Include="SuperAcan\SacTypes.h" />
+    <ClInclude Include="SuperAcan\SacCpu.h" />
+    <ClInclude Include="SuperAcan\SacMemoryManager.h" />
+    <ClInclude Include="SuperAcan\W65C02.h" />
+    <ClInclude Include="SuperAcan\SacPpu.h" />
+    <ClInclude Include="SuperAcan\SacApu.h" />
+    <ClInclude Include="SuperAcan\SacController.h" />
+    <ClInclude Include="SuperAcan\Debugger\SacDebugger.h" />
+    <ClInclude Include="SuperAcan\Debugger\SacDisUtils.h" />
+    <ClInclude Include="SuperAcan\Debugger\SacAssembler.h" />
+    <ClInclude Include="SuperAcan\Debugger\SacSoundAssembler.h" />
+    <ClInclude Include="SuperAcan\Debugger\SacEventManager.h" />
+    <ClInclude Include="SuperAcan\Debugger\SacTraceLogger.h" />
+    <ClInclude Include="SuperAcan\Debugger\SacPpuTools.h" />
+    <ClInclude Include="SuperAcan\Debugger\SacSoundDebugger.h" />
+    <ClInclude Include="SuperAcan\Debugger\SacSoundDisUtils.h" />
+    <ClInclude Include="SuperAcan\Debugger\SacSoundTraceLogger.h" />
+    <ClInclude Include="SuperAcan\Moira\Moira.h" />
+    <ClInclude Include="SuperAcan\Moira\MoiraConfig.h" />
+    <ClInclude Include="SuperAcan\Moira\MoiraTypes.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Debugger\Base6502Assembler.cpp" />
@@ -847,6 +870,7 @@
     <ClCompile Include="Debugger\DisassemblySearch.cpp" />
     <ClCompile Include="Debugger\ExpressionEvaluator.St018.cpp" />
     <ClCompile Include="Debugger\ExpressionEvaluator.Ws.cpp" />
+    <ClCompile Include="Debugger\ExpressionEvaluator.Sac.cpp" />
     <ClCompile Include="Debugger\ExpressionEvaluator.Cx4.cpp" />
     <ClCompile Include="Debugger\ExpressionEvaluator.Gameboy.cpp" />
     <ClCompile Include="Debugger\ExpressionEvaluator.Gba.cpp" />
@@ -1154,6 +1178,61 @@
     <ClCompile Include="WS\WsPpu.cpp" />
     <ClCompile Include="WS\WsSerial.cpp" />
     <ClCompile Include="WS\WsTimer.cpp" />
+    <ClCompile Include="SuperAcan\SacConsole.cpp" />
+    <ClCompile Include="SuperAcan\SacDefaultVideoFilter.cpp" />
+    <ClCompile Include="SuperAcan\SacMemoryManager.cpp" />
+    <ClCompile Include="SuperAcan\W65C02.cpp" />
+    <ClCompile Include="SuperAcan\SacPpu.cpp" />
+    <ClCompile Include="SuperAcan\SacApu.cpp" />
+    <ClCompile Include="SuperAcan\Debugger\SacDebugger.cpp" />
+    <ClCompile Include="SuperAcan\Debugger\SacDisUtils.cpp" />
+    <ClCompile Include="SuperAcan\Debugger\SacAssembler.cpp" />
+    <ClCompile Include="SuperAcan\Debugger\SacSoundAssembler.cpp" />
+    <ClCompile Include="SuperAcan\Debugger\SacEventManager.cpp" />
+    <ClCompile Include="SuperAcan\Debugger\SacTraceLogger.cpp" />
+    <ClCompile Include="SuperAcan\Debugger\SacPpuTools.cpp" />
+    <ClCompile Include="SuperAcan\Debugger\SacSoundDebugger.cpp" />
+    <ClCompile Include="SuperAcan\Debugger\SacSoundDisUtils.cpp" />
+    <ClCompile Include="SuperAcan\Debugger\SacSoundTraceLogger.cpp" />
+    <ClCompile Include="SuperAcan\SacCpu.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <DisableLanguageExtensions>false</DisableLanguageExtensions>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Moira\Moira.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <DisableLanguageExtensions>false</DisableLanguageExtensions>
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <TreatWarningAsError>false</TreatWarningAsError>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Moira\MoiraCore68000.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <DisableLanguageExtensions>false</DisableLanguageExtensions>
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <TreatWarningAsError>false</TreatWarningAsError>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Moira\MoiraCore68010.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <DisableLanguageExtensions>false</DisableLanguageExtensions>
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <TreatWarningAsError>false</TreatWarningAsError>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Moira\MoiraCore68020.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <DisableLanguageExtensions>false</DisableLanguageExtensions>
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <TreatWarningAsError>false</TreatWarningAsError>
+    </ClCompile>
+    <ClCompile Include="SuperAcan\Moira\MoiraDebugger.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <DisableLanguageExtensions>false</DisableLanguageExtensions>
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <TreatWarningAsError>false</TreatWarningAsError>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="Core.ruleset" />

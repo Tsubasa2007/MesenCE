@@ -90,6 +90,7 @@ namespace Mesen.ViewModels
 			ConfigManager.Config.PcEngine = PcEngine?.OriginalConfig ?? ConfigManager.Config.PcEngine;
 			ConfigManager.Config.Sms = Sms?.OriginalConfig ?? ConfigManager.Config.Sms;
 			ConfigManager.Config.Cv = OtherConsoles?.CvOriginalConfig ?? ConfigManager.Config.Cv;
+			ConfigManager.Config.Sac = OtherConsoles?.SacOriginalConfig ?? ConfigManager.Config.Sac;
 			ConfigManager.Config.ApplyConfig();
 			ConfigManager.Config.Save();
 		}
@@ -109,7 +110,8 @@ namespace Mesen.ViewModels
 				PcEngine?.OriginalConfig.IsIdentical(ConfigManager.Config.PcEngine) == false ||
 				Sms?.OriginalConfig.IsIdentical(ConfigManager.Config.Sms) == false ||
 				Ws?.OriginalConfig.IsIdentical(ConfigManager.Config.Ws) == false ||
-				OtherConsoles?.CvOriginalConfig.IsIdentical(ConfigManager.Config.Cv) == false
+				OtherConsoles?.CvOriginalConfig.IsIdentical(ConfigManager.Config.Cv) == false ||
+				OtherConsoles?.SacOriginalConfig.IsIdentical(ConfigManager.Config.Sac) == false
 			);
 		}
 	}

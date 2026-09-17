@@ -32,6 +32,8 @@ enum class RomFormat
 	Gba,
 
 	Ws,
+
+	SuperAcan,
 };
 
 struct DipSwitchInfo

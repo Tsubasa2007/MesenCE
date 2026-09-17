@@ -128,6 +128,9 @@ public static class OpCodeHelper
 			dict.TryGetValue(opName.Substring(0, Math.Min(opName.Length, 3)), out desc);
 			return desc;
 		};
+
+		//The Super A'Can's sound processor is a 65C02 as well
+		_data[CpuType.SacSound] = _data[CpuType.Pce];
 	}
 
 	private static void InitGbDocumentation()

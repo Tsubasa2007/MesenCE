@@ -255,7 +255,10 @@ enum class ControllerType
 	YuxingMouse,
 	YuxingKeyboard,
 	YuxingSerialMouse,
-	SuborMouse24
+	SuborMouse24,
+
+	//Super A'Can
+	SacController
 };
 
 struct KeyMapping
@@ -379,7 +382,8 @@ enum class ConsoleType
 	PcEngine = 3,
 	Sms = 4,
 	Gba = 5,
-	Ws = 6
+	Ws = 6,
+	SuperAcan = 7
 };
 
 enum class GameboyModel
@@ -853,6 +857,12 @@ struct WsConfig
 	uint32_t Channel5Vol = 100;
 };
 
+struct SacConfig
+{
+	ControllerConfig Port1;
+	ControllerConfig Port2;
+};
+
 struct AudioPlayerConfig
 {
 	uint32_t Volume = 100;
@@ -1177,4 +1187,6 @@ enum class DebuggerFlags
 	SmsDebuggerEnabled = (1 << 10),
 	GbaDebuggerEnabled = (1 << 11),
 	WsDebuggerEnabled = (1 << 12),
+	SacDebuggerEnabled = (1 << 13),
+	SacSoundDebuggerEnabled = (1 << 14),
 };

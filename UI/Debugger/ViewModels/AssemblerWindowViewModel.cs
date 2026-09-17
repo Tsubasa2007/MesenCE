@@ -179,10 +179,11 @@ namespace Mesen.Debugger.ViewModels
 
 			List<byte> bytes = new List<byte>(_bytes);
 			if(OriginalByteCount > 0) {
-				byte nopOpCode = CpuType.GetNopOpCode();
+				byte[] nopBytes = CpuType.GetNopBytes();
+				int codeSize = bytes.Count;
 				while(OriginalByteCount > bytes.Count) {
 					//Pad data with NOPs as needed
-					bytes.Add(nopOpCode);
+					bytes.Add(nopBytes[(bytes.Count - codeSize) % nopBytes.Length]);
 				}
 			}
 

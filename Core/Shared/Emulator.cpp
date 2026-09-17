@@ -37,6 +37,7 @@
 #include "SMS/SmsConsole.h"
 #include "GBA/GbaConsole.h"
 #include "WS/WsConsole.h"
+#include "SuperAcan/SacConsole.h"
 #include "Debugger/Debugger.h"
 #include "Debugger/BaseEventManager.h"
 #include "Debugger/DebugTypes.h"
@@ -581,6 +582,7 @@ void Emulator::TryLoadRom(VirtualFile& romFile, LoadRomResult& result, unique_pt
 	TryLoadRom<SmsConsole>(romFile, result, console, useFileSignature);
 	TryLoadRom<GbaConsole>(romFile, result, console, useFileSignature);
 	TryLoadRom<WsConsole>(romFile, result, console, useFileSignature);
+	TryLoadRom<SacConsole>(romFile, result, console, useFileSignature);
 }
 
 template<typename T>

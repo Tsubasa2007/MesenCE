@@ -227,10 +227,12 @@ protected:
 		EffectiveAddressInfo effectiveAddress = info.GetEffectiveAddress(_debugger, cpuState, cpuType);
 		if(effectiveAddress.Address >= 0 && effectiveAddress.ValueSize > 0) {
 			MemoryType effectiveMemType = effectiveAddress.Type == MemoryType::None ? memType : effectiveAddress.Type;
-			uint16_t value = info.GetMemoryValue(effectiveAddress, _memoryDumper, effectiveMemType);
+			uint32_t value = info.GetMemoryValue(effectiveAddress, _memoryDumper, effectiveMemType);
 			if(rowPart.DisplayInHex) {
 				output += "= $";
-				if(effectiveAddress.ValueSize == 2) {
+				if(effectiveAddress.ValueSize == 4) {
+					WriteIntValue(output, value, rowPart);
+				} else if(effectiveAddress.ValueSize == 2) {
 					WriteIntValue(output, (uint16_t)value, rowPart);
 				} else {
 					WriteIntValue(output, (uint8_t)value, rowPart);

@@ -610,6 +610,11 @@
 
 		<Form ID="OtherConsolesConfigView">
 			<Control ID="tabColecoVision">ColecoVision</Control>
+			<Control ID="tabSuperAcan">Super A'Can</Control>
+			<Control ID="grpControllers">Controllers</Control>
+			<Control ID="lblController1">Port 1:</Control>
+			<Control ID="lblController2">Port 2:</Control>
+			<Control ID="btnSetup">Setup</Control>
 		</Form>
 
 		<Form ID="CvConfigView">
@@ -2075,6 +2080,8 @@ E
 			<Value ID="SmsController">SMS Controller</Value>
 			<Value ID="SmsLightPhaser">Light Phaser</Value>
 			<Value ID="ColecoVisionController">ColecoVision Controller</Value>
+
+			<Value ID="SacController">Super A'Can Controller</Value>
 		</Enum>
 		<Enum ID="NesJissenMahjongButtons">
 			<Value ID="A">A</Value>
@@ -2958,6 +2965,8 @@ E
 			<Value ID="Sms">SMS</Value>
 			<Value ID="Gba">GBA</Value>
 			<Value ID="Ws">WS</Value>
+			<Value ID="Sac">68000</Value>
+			<Value ID="SacSound">Sound CPU (65C02)</Value>
 		</Enum>
 		
 		<Enum ID="MemoryType">
@@ -3059,6 +3068,15 @@ E
 			<Value ID="WsBootRom">Boot ROM</Value>
 			<Value ID="WsInternalEeprom">IEEPROM (Internal)</Value>
 			<Value ID="WsPort">I/O Port</Value>
+
+			<Value ID="SacMemory">CPU Memory</Value>
+			<Value ID="SacSoundMemory">Sound CPU Memory</Value>
+			<Value ID="SacPrgRom">ROM</Value>
+			<Value ID="SacWorkRam">Work RAM</Value>
+			<Value ID="SacVideoRam">Video RAM</Value>
+			<Value ID="SacPaletteRam">Palette RAM</Value>
+			<Value ID="SacSoundRam">Sound RAM</Value>
+			<Value ID="SacSaveRam">Save RAM</Value>
 
 			<Value ID="None">None</Value>
 		</Enum>
@@ -3712,6 +3730,7 @@ E
 			<Value ID="OpenAssembler">Assembler</Value>
 			<Value ID="OpenDebugger">Debugger</Value>
 			<Value ID="OpenSpcDebugger">SPC Debugger</Value>
+			<Value ID="OpenSacSoundDebugger">Sound CPU Debugger</Value>
 			<Value ID="OpenSa1Debugger">SA-1 Debugger</Value>
 			<Value ID="OpenSt018Debugger">ST018 Debugger</Value>
 			<Value ID="OpenGsuDebugger">GSU Debugger</Value>

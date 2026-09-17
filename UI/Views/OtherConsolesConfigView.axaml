@@ -29,5 +29,31 @@
 				</StackPanel>
 			</ScrollViewer>
 		</TabItem>
+		<TabItem Header="{l:Translate tabSuperAcan}">
+			<ScrollViewer AllowAutoHide="False" HorizontalScrollBarVisibility="Auto" Padding="0 0 2 0">
+				<c:OptionSection Header="{l:Translate grpControllers}" Margin="0">
+					<Grid ColumnDefinitions="Auto,Auto,*" RowDefinitions="Auto,5,Auto">
+						<TextBlock Text="{l:Translate lblController1}" VerticalAlignment="Center" />
+						<Button
+							Grid.Column="1"
+							Margin="10 0 0 0"
+							Command="{Binding SetupSacPort1}"
+							CommandParameter="{Binding $self}"
+							Content="{l:Translate btnSetup}"
+						/>
+
+						<TextBlock Text="{l:Translate lblController2}" Grid.Row="2" VerticalAlignment="Center" />
+						<Button
+							Grid.Row="2"
+							Grid.Column="1"
+							Margin="10 0 0 0"
+							Command="{Binding SetupSacPort2}"
+							CommandParameter="{Binding $self}"
+							Content="{l:Translate btnSetup}"
+						/>
+					</Grid>
+				</c:OptionSection>
+			</ScrollViewer>
+		</TabItem>
 	</TabControl>
 </UserControl>

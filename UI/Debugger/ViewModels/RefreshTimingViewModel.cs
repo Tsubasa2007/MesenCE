@@ -72,6 +72,7 @@ namespace Mesen.Debugger.ViewModels
 				ConsoleType.Sms => 192,
 				ConsoleType.Gba => 160,
 				ConsoleType.Ws => 144,
+				ConsoleType.SuperAcan => 240,
 				_ => throw new Exception("Invalid console type")
 			};
 

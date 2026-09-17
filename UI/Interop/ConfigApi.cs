@@ -29,6 +29,7 @@ namespace Mesen.Interop
 		[DllImport(DllPath)] public static extern void SetSmsConfig(InteropSmsConfig config);
 		[DllImport(DllPath)] public static extern void SetCvConfig(InteropCvConfig config);
 		[DllImport(DllPath)] public static extern void SetWsConfig(InteropWsConfig config);
+		[DllImport(DllPath)] public static extern void SetSacConfig(InteropSacConfig config);
 
 		[DllImport(DllPath)] public static extern void SetGameConfig(InteropGameConfig config);
 
@@ -76,6 +77,8 @@ namespace Mesen.Interop
 		SmsDebuggerEnabled = (1 << 10),
 		GbaDebuggerEnabled = (1 << 11),
 		WsDebuggerEnabled = (1 << 12),
+		SacDebuggerEnabled = (1 << 13),
+		SacSoundDebuggerEnabled = (1 << 14),
 	}
 
 	public struct InteropShortcutKeyInfo
