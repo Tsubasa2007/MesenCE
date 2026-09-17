@@ -1433,9 +1433,18 @@ private:
 		//eight pages onto the first 1KB of the game's tiles. That it came out linear at all
 		//is an accident of nothing having re-run this since load mode - which held for a
 		//game that only ever wants its first bank, and left the second bank unreachable.
+		//
+		//A game whose header declares CHR came off a cartridge where that CHR was ROM, so the
+		//pattern window is read-only to it. Games write there anyway and rely on the ROM
+		//ignoring them: one shooter's start-up fill clears $0000-$1FFF, and with the window
+		//writable that erased its sprite tiles, leaving the playfield without a single sprite.
+		//A header declaring none is a CHR-RAM cartridge, which has to keep drawing its own.
 		if(GameWindow()) {
+			MemoryAccessType access = GameChrBankCount() > 0 ? MemoryAccessType::Read : MemoryAccessType::ReadWrite;
 			for(int i = 0; i < 8; i++) {
-				SelectChrPage(i, (uint16_t)(_gameChrPages[i] & ChrMask1K()));
+				uint32_t page = _gameChrPages[i] & ChrMask1K();
+				SetPpuMemoryMapping((uint16_t)(i * 0x400), (uint16_t)(i * 0x400 + 0x3FF), ChrMemoryType::ChrRam,
+					(page * 0x400) & (_chrRamSize - 1), access);
 			}
 			return;
 		}
