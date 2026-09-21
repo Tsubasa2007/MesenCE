@@ -186,10 +186,10 @@ template<class T> void NesPpu<T>::UpdateTimings(ConsoleRegion region, bool overc
 			_masterClockDivider = 5;
 			break;
 		case ConsoleRegion::Dendy:
-			_nmiScanline = 291;
-			_vblankEnd = 310;
-			_standardNmiScanline = 291;
-			_standardVblankEnd = 310;
+			_nmiScanline = _mapper ? _mapper->GetDendyNmiScanline() : 291;
+			_vblankEnd = (_mapper ? _mapper->GetDendyScanlineCount() : 312) - 2;
+			_standardNmiScanline = _nmiScanline;
+			_standardVblankEnd = _vblankEnd;
 			_masterClockDivider = 5;
 			break;
 	}

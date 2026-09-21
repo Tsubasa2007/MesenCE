@@ -372,6 +372,10 @@ double NesConsole::GetFps()
 	UpdateRegion();
 	if(_region == ConsoleRegion::Ntsc) {
 		return 60.0988118623484;
+	} else if(_region == ConsoleRegion::Dendy && _mapper) {
+		//3 PPU dots to a CPU cycle and 341 dots to a line - 50.007Hz for the usual 312 lines. A mapper
+		//that declares a different frame has to be paced by it too, or the audio falls behind.
+		return (double)NesConstants::ClockRateDendy * 3.0 / (_mapper->GetDendyScanlineCount() * 341.0);
 	} else {
 		return 50.0069789081886;
 	}

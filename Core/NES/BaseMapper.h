@@ -325,6 +325,11 @@ public:
 	//14 bits; clones with a wider video bus (e.g. the UM6576) override this.
 	virtual uint32_t GetPpuAddressSpaceSize() { return 0x4000; }
 
+	//Frame geometry on Dendy timing: the total number of scanlines, and the one vblank starts on.
+	//A clone whose PPU is not an exact Dendy part can declare its own.
+	virtual int32_t GetDendyScanlineCount() { return 312; }
+	virtual int32_t GetDendyNmiScanline() { return 291; }
+
 	void CopyChrTile(uint32_t address, uint8_t* dest);
 
 	//Debugger Helper Functions

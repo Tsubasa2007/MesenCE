@@ -1914,6 +1914,25 @@ protected:
 	uint16_t GetChrRamPageSize() override { return 0x400; }
 	uint32_t GetChrRamSize() override { return 0x80000; }
 
+	//Dendy's clock and its 21-line vblank, but two fewer lines of post-render: 310 in all, vblank from
+	//289. Not measured on the machine - settled by five programs that each pin a different part of the
+	//frame and that no other geometry near Dendy satisfies together:
+	// - the system software's frame tick is the APU frame interrupt, re-synced every frame, so the
+	//   frame has to outlast the APU's 29830-cycle sequence, which NTSC's does not;
+	// - a converted title arms a cycle-counted split in vblank, and it fires on screen only with a
+	//   late vblank like this one - from line 241, as on PAL, it fires before the frame starts;
+	// - an unmodified cartridge's status-bar split, polled from sprite 0, needs the NTSC-equal 196
+	//   lines from NMI to line 175, so the vblank cannot be any shorter;
+	// - another loads with a fixed cycle count from an NMI and then banks with NMI on for ~15 lines:
+	//   at 312 lines that stretch always straddles the next vblank and the handler restores the wrong
+	//   bank, at 310 it clears it (311 does not, 309 and 308 also pass);
+	// - a 312-line frame is a whole number of CPU cycles (35464), so a $2002 poll re-anchored by each
+	//   NMI keeps one offset for ever and one title waits on a vblank flag it can never catch; 310 is not.
+	//All of that is the Kingwon machines. The Bung unit is a different product and none of it came from
+	//there, so it keeps standard Dendy.
+	int32_t GetDendyScanlineCount() override { return _romType != 0 ? 310 : 312; }
+	int32_t GetDendyNmiScanline() override { return _romType != 0 ? 289 : 291; }
+
 	//512KB of PRG-RAM plus the 32KB the BIOS calls its SRAM, in one allocation. The SRAM is
 	//NOT asked for as save RAM: BaseMapper only honours GetSaveRamSize() when the rom's
 	//battery bit is set, and this one's is not, so the request would be dropped and the
