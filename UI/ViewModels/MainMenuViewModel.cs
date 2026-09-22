@@ -879,7 +879,9 @@ namespace Mesen.ViewModels
 			return new MainMenuAction(shortcut) {
 				ActionType = ActionType.Custom,
 				CustomText = scale + "x",
-				IsSelected = () => (int)((double)MainWindow.RendererSize.Height / EmuApi.GetBaseScreenSize().Height) == scale
+				//Ticked only when the picture really is at that scale. Truncating the ratio ticked 3x for
+				//a picture drawn at 3.86x, and a picture between two scales is at neither of them.
+				IsSelected = () => Math.Abs((double)MainWindow.RendererSize.Height / EmuApi.GetBaseScreenSize().Height - scale) < 0.02
 			};
 		}
 

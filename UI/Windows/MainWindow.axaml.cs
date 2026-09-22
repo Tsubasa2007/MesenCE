@@ -55,6 +55,14 @@ namespace Mesen.Windows
 		private bool _usesSoftwareRenderer;
 
 		private FrameInfo _prevScreenSize;
+		private double _prevAspectRatio;
+
+		//The scale last chosen from the menu or a shortcut, and the picture it was chosen for.
+		//See ProcessResolutionChange.
+		private double _chosenScale;
+		private FrameInfo _chosenScreenSize;
+		private double _chosenAspectRatio;
+		private double _appliedScale;
 
 		private Size _originalSize;
 		private PixelPoint _originalPos;
@@ -488,6 +496,19 @@ namespace Mesen.Windows
 		{
 			double dpiScale = LayoutHelper.GetLayoutScale(this);
 			FrameInfo baseScreenSize = EmuApi.GetBaseScreenSize();
+
+			//A disc's video takes the screen at its own size for as long as it runs, and then gives it
+			//back. Fitting the window to it and back shrank the picture twice over: a window at 6x for
+			//the machine's 256x240 went to 4x for the 352x288 video, and the transport bar under the
+			//video - which the window's size does not count - took some of that too, so the video drew
+			//at 3.86x. The window is left as it is instead and the video fills it, and the machine's
+			//own picture comes back at exactly the scale it had. The size it was measured against is
+			//kept, since the video is not what the window is sized for.
+			if(WindowState == WindowState.Normal && EmuApi.GetNesDiscVideoStatus(out _, out _, out _)) {
+				ResizeRenderer();
+				return;
+			}
+
 			if(WindowState == WindowState.Normal) {
 				double menuHeight = ConfigManager.Config.Preferences.AutoHideMenu ? 0 : _mainMenu.Bounds.Height;
 				double height = ClientSize.Height - menuHeight - _audioPlayer.Bounds.Height;
@@ -495,15 +516,31 @@ namespace Mesen.Windows
 					//Rotation, swap sizes without changing scale
 					double xScale = ClientSize.Width * dpiScale / _prevScreenSize.Width;
 					double yScale = height * dpiScale / _prevScreenSize.Height;
-					SetScale(Math.Min(Math.Round(xScale), Math.Round(yScale)));
+					ApplyScale(Math.Min(Math.Round(xScale), Math.Round(yScale)));
 				} else {
 					//The width is measured the way InternalSetScale made it - the height times the aspect
 					//ratio - rather than against the frame's pixel width. The two agree only when pixels
 					//are at least as wide as they are tall: with narrower ones (32:35 on the Super A'Can)
 					//a window at 6x measures 5.49x across, and every resolution change rounded it to 5x.
-					double xScale = ClientSize.Width * dpiScale / (baseScreenSize.Height * EmuApi.GetAspectRatio());
+					double aspectRatio = EmuApi.GetAspectRatio();
+					double xScale = ClientSize.Width * dpiScale / (baseScreenSize.Height * aspectRatio);
 					double yScale = height * dpiScale / baseScreenSize.Height;
-					SetScale(Math.Min(Math.Round(xScale), Math.Round(yScale)));
+					double scale = Math.Min(Math.Round(xScale), Math.Round(yScale));
+
+					//Fitting the window to a picture of another size and back does not return to where
+					//it started: a machine that shows a 352x288 video in place of its own 256x240 frame
+					//took a window at 6x to 4x for the video and 5x after it, because the width and the
+					//height each round their own way. So when the picture comes back to the size a scale
+					//was chosen for, that scale is asked for again - unless the window was resized by
+					//hand meanwhile, which shows up as it no longer measuring the scale it was last given.
+					if(_chosenScale > 0 && baseScreenSize.Width == _chosenScreenSize.Width && baseScreenSize.Height == _chosenScreenSize.Height && aspectRatio == _chosenAspectRatio && _prevScreenSize.Height > 0 && _prevAspectRatio > 0) {
+						double prevXScale = ClientSize.Width * dpiScale / (_prevScreenSize.Height * _prevAspectRatio);
+						double prevYScale = height * dpiScale / _prevScreenSize.Height;
+						if(Math.Min(Math.Round(prevXScale), Math.Round(prevYScale)) == _appliedScale) {
+							scale = _chosenScale;
+						}
+					}
+					ApplyScale(scale);
 				}
 			} else if(WindowState == WindowState.Maximized || WindowState == WindowState.FullScreen) {
 				if(_rendererSize == default) {
@@ -511,13 +548,22 @@ namespace Mesen.Windows
 				} else {
 					double xScale = _rendererSize.Width * dpiScale / baseScreenSize.Width;
 					double yScale = _rendererSize.Height * dpiScale / baseScreenSize.Height;
-					SetScale(Math.Min(Math.Round(xScale, 2), Math.Round(yScale, 2)));
+					ApplyScale(Math.Min(Math.Round(xScale, 2), Math.Round(yScale, 2)));
 				}
 			}
 			_prevScreenSize = baseScreenSize;
+			_prevAspectRatio = EmuApi.GetAspectRatio();
 		}
 
 		public void SetScale(double scale)
+		{
+			_chosenScale = Math.Max(1, scale);
+			_chosenScreenSize = EmuApi.GetBaseScreenSize();
+			_chosenAspectRatio = EmuApi.GetAspectRatio();
+			ApplyScale(scale);
+		}
+
+		private void ApplyScale(double scale)
 		{
 			if(scale < 1) {
 				scale = 1;
@@ -543,6 +589,7 @@ namespace Mesen.Windows
 
 				double width = Math.Max(MinWidth, Math.Round(screenSize.Height * aspectRatio * scale) / dpiScale);
 				double height = Math.Max(MinHeight, screenSize.Height * scale / dpiScale);
+				_appliedScale = scale;
 				Width = width;
 				Height = height + menuHeight + _audioPlayer.Bounds.Height;
 				ResizeRenderer();
