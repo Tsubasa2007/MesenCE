@@ -1068,6 +1068,22 @@ private:
 	//the frame handler - which is where this machine polls its keyboard - starves.
 	bool EnablePpuNmiSuppressRace() override { return false; }
 
+	//The same part again: NMI comes as vblank begins and not when a program turns it back on inside
+	//vblank. One disc game's frame handler turns NMI off, does its palette work and turns it on again
+	//ten lines later, still in vblank. Taken as a second NMI that re-entered the handler, and when the
+	//inner one ran past the end of vblank the outer one resumed with its state gone - the next frame's
+	//nametable clear came out addressed to the pattern table, so the rows it should have cleared kept
+	//the launcher's leftover picture. Launched from a clean start the inner handler happened to finish
+	//inside vblank; launched from the disc it did not. Without the second NMI it cannot re-enter at all.
+	bool EnablePpuNmiOnEnableInVblank() override { return false; }
+
+	//Same famiclone part, same consequence as on the BBK (see BbkMapper::EnablePpuVramWriteGlitch):
+	//upstream turns a $2007 write made while rendering is active into WriteVram(busAddr,
+	//busAddr & 0xFF), behaviour its own comment marks as unconfirmed. CHR here is RAM and nothing
+	//rewrites it, so one spilled byte permanently defaces a glyph - it fills the dialog windows of
+	//the 游戏 discs with dashes. Dropping the write leaves the tile alone.
+	bool EnablePpuVramWriteGlitch() override { return false; }
+
 	//One step of the two-wire state machine, run once per CPU cycle. The lines change state
 	//every 64 cycles, which is the ~35us the real device takes.
 	//The keyboard's bit in $418F has to latch rather than mirror the interrupt line. The

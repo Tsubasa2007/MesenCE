@@ -238,6 +238,11 @@ public:
 	//suppresses that frame's NMI. Some famiclone PPUs (e.g. the BBK's) don't have this race.
 	virtual bool EnablePpuNmiSuppressRace() { return true; }
 
+	//2C02 behavior: turning NMI on ($2000 bit 7) while the vblank flag is still set pulls /NMI low
+	//again at once, so a handler that turns NMI off and back on before vblank ends takes a second NMI
+	//inside itself. Some famiclone PPUs only raise NMI as vblank begins.
+	virtual bool EnablePpuNmiOnEnableInVblank() { return true; }
+
 	//2C02 behavior: $3F10/$3F14/$3F18/$3F1C mirror onto $3F00/$3F04/$3F08/$3F0C. On some
 	//famiclone PPUs all 32 palette entries are independent, so software freely uses the
 	//sprite palette's first entry without disturbing the backdrop

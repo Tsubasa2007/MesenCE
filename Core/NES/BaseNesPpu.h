@@ -74,6 +74,7 @@ protected:
 	bool _preventVblFlag = false;
 	bool _writeToggle = false; //not used in rendering
 	bool _paletteBgHackEnabled = true; //Show palette color when V is in $3F00-$3FFF during forced blanking (2C02 quirk; some famiclone PPUs lack it)
+	bool _nmiOnEnableInVblank = true; //2C02 raises NMI when it is enabled while the vblank flag is set; some famiclone PPUs only raise it as vblank begins
 	bool _nmiSuppressRaceEnabled = true; //2C02 suppresses the NMI when $2002 is read one dot before vblank; some famiclone PPUs (BBK) lack this race
 	bool _paletteMirroringEnabled = true; //2C02 mirrors $3F10/$14/$18/$1C onto $3F00/$04/$08/$0C; on some famiclone PPUs all 32 entries are independent
 	bool _attributeLagEnabled = false; //Test switch - color a tile with the previous tile column's attribute

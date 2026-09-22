@@ -37,6 +37,7 @@ template<class T> NesPpu<T>::NesPpu(NesConsole* console)
 	_mapper = console->GetMapper();
 	_paletteBgHackEnabled = _mapper == nullptr || _mapper->EnablePpuPaletteBgHack();
 	_nmiSuppressRaceEnabled = _mapper == nullptr || _mapper->EnablePpuNmiSuppressRace();
+	_nmiOnEnableInVblank = _mapper == nullptr || _mapper->EnablePpuNmiOnEnableInVblank();
 	_paletteMirroringEnabled = _mapper == nullptr || _mapper->EnablePpuPaletteMirroring();
 	_attributeLagEnabled = _mapper != nullptr && _mapper->EnablePpuAttributeLag();
 	_vramWriteGlitchEnabled = _mapper == nullptr || _mapper->EnablePpuVramWriteGlitch();
@@ -578,7 +579,7 @@ template<class T> void NesPpu<T>::SetControlRegister(uint8_t value)
 	//"By toggling NMI_output ($2000 bit 7) during vertical blank without reading $2002, a program can cause /NMI to be pulled low multiple times, causing multiple NMIs to be generated."
 	if(!_control.NmiOnVerticalBlank) {
 		_console->GetCpu()->ClearNmiFlag();
-	} else if(_control.NmiOnVerticalBlank && _statusFlags.VerticalBlank) {
+	} else if(_control.NmiOnVerticalBlank && _statusFlags.VerticalBlank && _nmiOnEnableInVblank) {
 		_console->GetCpu()->SetNmiFlag();
 	}
 }
