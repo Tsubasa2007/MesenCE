@@ -284,8 +284,15 @@ private:
 	//rows, each taking the $1000-$1FFF half of its pattern data from its own 4KB CRAM bank.
 	//The learning-machine side of the V9.2 models draws its desktop this way; without it
 	//every band renders from the same bank and the screen shows the same strip four times.
-	bool IsSplit2Screen() { return (_reg4800 & 0x80) && !(_reg5500 & 0x80); }
-	bool IsSplit4Screen() { return (_reg4800 & 0x80) && (_reg5500 & 0x80); }
+	//Not while the MMC3 clone has the machine. The split is the machine's own way of fetching
+	//tiles for its own programs, and a converted cartridge game can write $4800 without meaning
+	//it: one game's reset code stores $FF there - a spare address on its own board - which put
+	//the whole game on the 2-screen fetch and scrambled every screen of it, though its tiles,
+	//banks and name tables were all right. The disc carries the store unpatched while the
+	//converter did patch another byte of the same game, so on the machine it cannot have done
+	//this. The reference emulator takes the split from $4800/$5500 alone and would show it too.
+	bool IsSplit2Screen() { return !_mmc3Mode && (_reg4800 & 0x80) && !(_reg5500 & 0x80); }
+	bool IsSplit4Screen() { return !_mmc3Mode && (_reg4800 & 0x80) && (_reg5500 & 0x80); }
 
 	void UpdateSplitMode()
 	{
@@ -616,6 +623,15 @@ protected:
 	//this race, so it has nothing to say here.
 	int32_t GetDendyScanlineCount() override { return 313; }
 	int32_t GetDendyNmiScanline() override { return 292; }
+
+	//The loader turns rendering off part-way down a frame before it hands over, and a game that
+	//then DMAs its sprites without writing $2003 takes whatever OAMADDR that left. On a 2C02 that
+	//is wherever sprite evaluation had reached - a different value for every phase of the frame -
+	//so one disc game's sprite 0 came out of its DMA rotated into the left edge the game hides,
+	//its sprite-0 wait never ended, and whether it hung depended on the frame's length: 310, 312
+	//and 315 lines played, 309, 311, 313, 314 and 316 did not. A game sold on this machine cannot
+	//have hung on half its power-ups; with OAMADDR left at 0 it plays at every length.
+	bool EnablePpuOamAddrEvaluationLeak() override { return false; }
 	uint32_t GetWorkRamSize() override { return PramSize + Mmc3WorkRamSize; }
 	uint32_t GetWorkRamPageSize() override { return 0x2000; }
 	bool ForceWorkRamSize() override { return true; }
@@ -891,6 +907,8 @@ protected:
 				_lastSplitBand = 0xFF;
 				//Bit 7 hands $8000-$FFFF over to the MMC3 clone
 				_mmc3Mode = (value & 0x80) != 0;
+				//The split follows the mode - see IsSplit2Screen
+				UpdateSplitMode();
 				//Both ways round, because $6000-$7FFF changes with the mode and Mmc3Sync()
 				//only owns $8000-$FFFF. Leaving that window to the previous mode is what made
 				//the two programs either side of a handover share it.

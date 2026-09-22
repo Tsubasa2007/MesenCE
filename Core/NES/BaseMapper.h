@@ -243,6 +243,12 @@ public:
 	//inside itself. Some famiclone PPUs only raise NMI as vblank begins.
 	virtual bool EnablePpuNmiOnEnableInVblank() { return true; }
 
+	//2C02 behavior: sprite evaluation steps OAMADDR through OAM, so turning rendering off during
+	//it leaves OAMADDR wherever evaluation had got to, and the next $4014 DMA lands rotated. A
+	//famiclone PPU that evaluates with a counter of its own leaves OAMADDR at the 0 it is given
+	//each line, which is what disabling rendering then leaves behind.
+	virtual bool EnablePpuOamAddrEvaluationLeak() { return true; }
+
 	//2C02 behavior: $3F10/$3F14/$3F18/$3F1C mirror onto $3F00/$3F04/$3F08/$3F0C. On some
 	//famiclone PPUs all 32 palette entries are independent, so software freely uses the
 	//sprite palette's first entry without disturbing the backdrop

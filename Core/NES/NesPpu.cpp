@@ -38,6 +38,7 @@ template<class T> NesPpu<T>::NesPpu(NesConsole* console)
 	_paletteBgHackEnabled = _mapper == nullptr || _mapper->EnablePpuPaletteBgHack();
 	_nmiSuppressRaceEnabled = _mapper == nullptr || _mapper->EnablePpuNmiSuppressRace();
 	_nmiOnEnableInVblank = _mapper == nullptr || _mapper->EnablePpuNmiOnEnableInVblank();
+	_oamAddrEvaluationLeak = _mapper == nullptr || _mapper->EnablePpuOamAddrEvaluationLeak();
 	_paletteMirroringEnabled = _mapper == nullptr || _mapper->EnablePpuPaletteMirroring();
 	_attributeLagEnabled = _mapper != nullptr && _mapper->EnablePpuAttributeLag();
 	_vramWriteGlitchEnabled = _mapper == nullptr || _mapper->EnablePpuVramWriteGlitch();
@@ -1583,7 +1584,10 @@ template<class T> void NesPpu<T>::UpdateState()
 				//When rendering is disabled midscreen, set the vram bus back to the value of 'v'
 				SetBusAddress(_videoRamAddr & 0x3FFF);
 
-				if(_cycle >= 65 && _cycle <= 256) {
+				if(!_oamAddrEvaluationLeak) {
+					//Evaluation never touched OAMADDR on this PPU, and each rendered line set it to 0
+					_spriteRamAddr = 0;
+				} else if(_cycle >= 65 && _cycle <= 256) {
 					//Disabling rendering during OAM evaluation will trigger a glitch causing the current address to be incremented by 1
 					//The increment can be "delayed" by 1 PPU cycle depending on whether or not rendering is disabled on an even/odd cycle
 					//e.g, if rendering is disabled on an even cycle, the following PPU cycle will increment the address by 5 (instead of 4)
