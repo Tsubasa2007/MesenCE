@@ -602,6 +602,20 @@ protected:
 	uint16_t GetChrPageSize() override { return 0x400; }
 	uint16_t GetChrRamPageSize() override { return 0x400; }
 	uint32_t GetChrRamSize() override { return 0x80000; } //512KB CRAM
+
+	//A 313-line frame: Dendy's clock and its 21-line vblank, with one more line after the
+	//picture. Not measured on the machine.
+	//
+	//A 312-line frame is a whole number of CPU cycles, so a program waiting in a $2002 poll
+	//while its NMI handler reads $2002 first is re-anchored by every NMI and misses the flag at
+	//the same point every frame, for ever. One game disc's tank game does exactly that and
+	//never gets past its title. Any length that is not 312 frees it; a sweep over every
+	//recording made on these machines chose between them: 311 lines left a disc game's title
+	//permanently garbled - it runs out of time to finish its screen - while 313 changed nothing
+	//else on any of them. The reference emulator steps a scanline at a time and never meets
+	//this race, so it has nothing to say here.
+	int32_t GetDendyScanlineCount() override { return 313; }
+	int32_t GetDendyNmiScanline() override { return 292; }
 	uint32_t GetWorkRamSize() override { return PramSize + Mmc3WorkRamSize; }
 	uint32_t GetWorkRamPageSize() override { return 0x2000; }
 	bool ForceWorkRamSize() override { return true; }
