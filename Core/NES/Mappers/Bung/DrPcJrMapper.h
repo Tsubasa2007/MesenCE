@@ -335,8 +335,18 @@ private:
 	//The four 8KB PRG-RAM banks the game's window is made of, and its 8KB CHR bank
 	uint8_t _gamePrgBanks[4] = { 0, 1, 2, 3 };
 	uint8_t _gameChrBank = 0;
+	//How many 8KB banks of CHR the game's header declared, taken at the hand-over. See the
+	//latch there for why it cannot be read back later.
+	uint8_t _gameChrBanks = 0;
+	//How many 8KB banks of PRG the game can actually reach, worked out once from the pair of
+	//sizes the hand-over carried - see GamePrgSpan
+	uint8_t _gamePrgSpan = 0;
 	//The window is laid out once, on the first hand-over - see StartGameMode
 	bool _gameReset = false;
+
+	//Set when the disc loader lays the game's register image down, $41A4 included, and spent by the
+	//next write to $42FC-$42FF - the loader's own exit. See that write for why it matters.
+	bool _loaderSetArrangement = false;
 	//Which controller the game asked the machine to be: 0 for a converted board that
 	//banks itself, otherwise MachineMmc1 or MachineMmc3, whose registers live in these
 	uint8_t _gameChip = 0;
@@ -361,9 +371,25 @@ private:
 	uint8_t ChrMask8K() { return (uint8_t)(((_regs[0x03] & 0x0F) << 2) | 3); }
 	uint8_t PrgMask8K() { return (uint8_t)(((_regs[0x03] >> 4) << 2) | 3); }
 	uint8_t PrgMask16K() { return (uint8_t)(((_regs[0x03] >> 4) << 1) | 1); }
-	uint8_t PrgMask32K() { return (uint8_t)(_regs[0x03] >> 4); }
+	uint8_t PrgMask32K() { return (uint8_t)((GamePrgSpan() >> 2) - 1); }
 	//How much PRG-RAM the game was given, in 8KB banks
 	uint8_t GamePrgBankCount() { return (uint8_t)((((_regs[0x03] >> 4) & 0x0F) + 1) << 2); }
+
+	//...and how much of it the whole-32KB shape can reach. A game that brought no CHR of its
+	//own is given only half, which is already why the top of its window is the middle of the
+	//image rather than its end - see StartGameMode. The bank numbers that shape is handed have
+	//to be held to the same half: one game selects its last 32KB the usual way, by writing
+	//$FF, and against the whole image that named a bank the machine had put no program in.
+	//The shape banks all 32KB, so the window the game was executing from went with it, the
+	//next instruction came out of tile data, and three frames later the processor was loose
+	//in zero page.
+	//
+	//Only that shape is narrowed. The 8KB and 16KB masks are left alone deliberately: two
+	//games off another disc, with the same two sizes in their headers and no CHR either, bank
+	//16KB at a number well past the half and draw correctly - held to it they come up as a
+	//field of repeated tiles. Whatever the half is, it is not the end of the image.
+	//Zero here means no game has started and the whole of it is reachable.
+	uint8_t GamePrgSpan() { return _gamePrgSpan ? _gamePrgSpan : GamePrgBankCount(); }
 
 	//A .CDV is a game rather than a machine: it brings its own register settings, and its
 	//PRG and CHR are what the BIOS would otherwise have loaded from a floppy. Kept from the
@@ -1495,7 +1521,7 @@ private:
 		//writable that erased its sprite tiles, leaving the playfield without a single sprite.
 		//A header declaring none is a CHR-RAM cartridge, which has to keep drawing its own.
 		if(GameWindow()) {
-			MemoryAccessType access = GameChrBankCount() > 0 ? MemoryAccessType::Read : MemoryAccessType::ReadWrite;
+			MemoryAccessType access = _gameChrBanks > 0 ? MemoryAccessType::Read : MemoryAccessType::ReadWrite;
 			for(int i = 0; i < 8; i++) {
 				uint32_t page = _gameChrPages[i] & ChrMask1K();
 				SetPpuMemoryMapping((uint16_t)(i * 0x400), (uint16_t)(i * 0x400 + 0x3FF), ChrMemoryType::ChrRam,
@@ -1584,7 +1610,27 @@ private:
 			//stayed black; it writes $A1. The mode is bits 4-6, so bit 0 is free to carry
 			//the choice, and it is the only thing that separates the two: both hand over at
 			//$42FF with $00, so the field there cannot tell them apart.
-			case 2: SetMirroringType((_regs[0x02] & 1) ? MirroringType::Vertical : MirroringType::Horizontal); break;
+			//Bit 7 says bit 0 is the one to read. The two floppy programs above set it; the disc
+			//loader does not - it writes $20 for every title it hands over, so bit 0 there is not
+			//an answer, it is just not set. Read as one anyway it named horizontal for all of
+			//them, and a game whose own board carries no mirroring register has nothing to
+			//correct it with: one drew its screen into the first page and displayed the third,
+			//which horizontal makes the other one, so the top of every frame came up as the
+			//launcher's leftover character ramp. Two more titles off the same disc want vertical
+			//as well: one never drew a readable screen at all, and a side-scroller had its stage
+			//laid out wrong and walked straight into a death. No cartridge settles any of this -
+			//the one of the three that exists here as a plain rom banks its own mirroring on the
+			//original board, which is the very register a conversion has to drop, and the header
+			//bit beside it is dead weight. The screens are the whole of the evidence. Nothing says
+			//what bit 7 means; what it does here is separate the programs that answer from the
+			//ones that never did.
+			case 2:
+				if(_regs[0x02] & 0x80) {
+					SetMirroringType((_regs[0x02] & 1) ? MirroringType::Vertical : MirroringType::Horizontal);
+				} else {
+					SetMirroringType(MirroringType::Vertical);
+				}
+				break;
 			case 3: SetMirroringType(MirroringType::Horizontal); break;
 
 			case 4:
@@ -1653,6 +1699,23 @@ private:
 			return 0;
 		}
 		return _console->GetMemoryManager()->GetInternalRam()[0x609];
+	}
+
+	//Read once, as the game starts, and kept. The count comes out of the machine's own RAM
+	//at $600, where the loader leaves the game's header - and that RAM is the program's from
+	//the moment it runs: measured, one title clears the signature three frames in, and from
+	//then on the count reads zero. Read live, as this was, the pattern window turns writable
+	//under a game whose CHR came off a cartridge as ROM, and the game's own drawing starts
+	//eating its tiles - that title's solid areas came up woven with stripes, out of writes
+	//into the pattern table that the cartridge had simply ignored.
+	//
+	//Nothing is taken until a hand-over that really starts a game: the disc menu hands over
+	//too, on its own way out, with no header in RAM to read.
+	void LatchGameChrBanks()
+	{
+		if(!_gameReset) {
+			_gameChrBanks = GameChrBankCount();
+		}
 	}
 
 	//The disc loader stamps its name into the machine's RAM at $600 as it hands over. The
@@ -1733,12 +1796,12 @@ private:
 		UpdateChrMapping();
 	}
 
-	//The whole window off the top of the PRG. A game with no CHR of its own only gets half
-	//the PRG-RAM to take it from, so the top is the middle of the image rather than its end -
-	//which is why this cannot be written out as "the last four banks".
-	void SetGameTop32K(uint8_t prgBanks, uint8_t chrBanks)
+	//The whole window off the top of the PRG - the top of what the game can reach, which for a
+	//game with no CHR of its own is the middle of the image rather than its end. That is why
+	//this cannot be written out as "the last four banks".
+	void SetGameTop32K()
 	{
-		uint8_t top = (uint8_t)(prgBanks >> ((prgBanks == 0x20 && chrBanks == 0) ? 1 : 0));
+		uint8_t top = GamePrgSpan();
 		for(int i = 0; i < 4; i++) {
 			_gamePrgBanks[i] = (uint8_t)(top - 4 + i);
 		}
@@ -1750,6 +1813,9 @@ private:
 	//copy of that header in RAM.
 	void StartGameMode(uint8_t handover, uint8_t prgBanks, uint8_t chrBanks)
 	{
+		//Half of it if the game brought no CHR, all of it otherwise. Worked out here rather
+		//than where it is used, because the two sizes are only known at the hand-over.
+		_gamePrgSpan = (uint8_t)(prgBanks >> ((prgBanks == 0x20 && chrBanks == 0) ? 1 : 0));
 
 		//Bits 5-7 name the shape; zero there leaves the machine to pick by size
 		_gameMode = (uint8_t)((handover >> 5) & 0x07);
@@ -1773,7 +1839,7 @@ private:
 		//window the stub left behind, or with the layout the other shapes start in, it does
 		//not.
 		if(_gameMode == 5 || _gameMode == 6) {
-			SetGameTop32K(prgBanks, chrBanks);
+			SetGameTop32K();
 		}
 
 		if(_gameReset) {
@@ -1789,7 +1855,7 @@ private:
 		_gamePrgBanks[3] = (uint8_t)(prgBanks - 1);
 
 		if(_gameMode == 1) {
-			SetGameTop32K(prgBanks, chrBanks);
+			SetGameTop32K();
 		} else if(_gameMode == 3) {
 			//This shape banks the high half, so the fixed half is the one that goes low
 			_gamePrgBanks[0] = (uint8_t)(prgBanks - 2);
@@ -2240,6 +2306,7 @@ protected:
 		//files pulled off a disc - only the shape that does not bank at all came up, and the
 		//two that do landed on a blank screen, one of them with the processor loose in RAM.
 		_gameLaunched = true;
+		LatchGameChrBanks();
 		if(MachineMode() == MachineMmc1 || MachineMode() == MachineMmc3) {
 			_gameReset = true;
 			_gameChip = MachineMode();
@@ -2352,7 +2419,10 @@ protected:
 		_gamePrgBanks[2] = 2;
 		_gamePrgBanks[3] = 3;
 		_gameChrBank = 0;
+		_gameChrBanks = 0;
+		_gamePrgSpan = 0;
 		_gameReset = false;
+		_loaderSetArrangement = false;
 		_gameChip = 0;
 		_mmc1.Reset();
 		_mmc3.Reset();
@@ -2736,6 +2806,9 @@ protected:
 				//as this did, the arrangement stayed at whatever the launcher left and a
 				//page that should have been the one below turned out to be the one
 				//already on screen.
+				//The loader writes this too, as part of the game's register image, just before it
+				//hands over - while its signature is still at $600.
+				_loaderSetArrangement = HasLoaderSignature();
 				//Bit 4 asks for the nametables to be banked out of CHR RAM instead
 				if((value & 0x10) && IsDiscGame()) {
 					SetGameNtRam(value);
@@ -2791,10 +2864,23 @@ protected:
 				//it - takes its arrangement from these two bits, and reading them any wider
 				//turned that game's screen into one page tiled. Most disc games overwrite the
 				//field before they draw, so a sweep of them says nothing about this.
-				_mirroring = (uint8_t)((addr & 1 ? 2 : 0) | (value & 0x10 ? 1 : 0));
+				//The address bit is an answer when the running program writes here, not when the
+				//disc loader does. The loader always leaves through the same address, $42FF, for
+				//the menu and every game alike, so on its way out that bit names nothing - and it
+				//lands one instruction after the loader has laid the game's register image down,
+				//$41A4 included, which is where the game's arrangement actually is. Taken from the
+				//address, a game from a single-screen board came up on two screens and showed the
+				//launcher's leftover picture on the page it never wrote. Only that one write is the
+				//loader's: another game's start-up code writes here itself in the very same frame,
+				//and its address bit is the arrangement it wants. Bit 4 is kept either way - a game
+				//that ends on mode 5 reads it.
+				bool fromLoader = _loaderSetArrangement;
+				_loaderSetArrangement = false;
+				_mirroring = (uint8_t)((fromLoader ? (_mirroring & 2) : (addr & 1 ? 2 : 0)) | (value & 0x10 ? 1 : 0));
 				//A game off a disc hands over here, and from this point the machine is a
 				//cartridge rather than a learning machine
 				_gameLaunched = true;
+				LatchGameChrBanks();
 				//Latched at the hand-over, the moment the reference looks: the loader has
 				//just written its signature and the program is free to overwrite $600 after.
 				if(!_bungDiskGame && HasLoaderSignature()) {
@@ -2805,7 +2891,7 @@ protected:
 				//on its own way out still has the machine in system mode, and the sizes it would
 				//be read with there are the reset values, not the game's.
 				if(CartridgeMode()) {
-					StartGameMode(value, GamePrgBankCount(), GameChrBankCount());
+					StartGameMode(value, GamePrgBankCount(), _gameChrBanks);
 				} else if(_gameLaunched && !_gameReset &&
 					(MachineMode() == MachineMmc1 || MachineMode() == MachineMmc3)) {
 					//The other two personalities are controllers rather than window shapes: the
@@ -2853,7 +2939,7 @@ protected:
 		SV(_cd);
 		SVArray(_exRamNt, 0x800); SV(_extNtAddr); SV(_extFetchCounter); SV(_diskType);
 		SV(_ntData); SV(_logoMode); SV(_autoBank); SV(_gameLaunched); SV(_bungDiskGame); SV(_mirroring);
-		SV(_gameMode); SVArray(_gamePrgBanks, 4); SV(_gameChrBank); SV(_gameReset);
+		SV(_gameMode); SVArray(_gamePrgBanks, 4); SV(_gameChrBank); SV(_gameChrBanks); SV(_gamePrgSpan); SV(_gameReset); SV(_loaderSetArrangement);
 		SV(_gameChip); SVArray(_gameChrPages, 8); SV(_mmc1); SV(_mmc3); SV(_mmc2);
 		SV(_lptData); SV(_lptCtrl); SV(_printer);
 		SV(_speechByte); SV(_speechNibbleCount); SV(_speech);
