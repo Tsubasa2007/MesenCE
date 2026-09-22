@@ -130,7 +130,8 @@ private:
 	inline static string _persistedDiscRom;
 	inline static string _persistedDiscPath;
 	//Which program on the disc was picked. Selecting one power-cycles the machine, which
-	//rebuilds the mapper - so like the disc path, this has to outlive it.
+	//rebuilds the mapper - so like the disc path, this has to outlive it. On a disc with a
+	//menu it lasts for that one power cycle - see RestoreSelectedProgram.
 	inline static int32_t _persistedProgramIndex = -1;
 
 	//Which menu keys were down last frame - see MenuKeyPressed
@@ -1236,11 +1237,22 @@ protected:
 
 	//A freshly loaded disc starts on its first program; if one was picked before the power
 	//cycle that brought us back here, go to that one instead.
+	//
+	//Only that power cycle, on a disc with a menu of its own. Picking an entry is what power
+	//cycles the machine, and the pick is carried across it; after that it is spent. Any later
+	//power cycle is the machine losing the program it loaded - its RAM is cleared - and the
+	//BIOS finds the disc again and shows the disc's menu, as the reference emulator does too.
+	//Keeping the pick sent every power cycle straight back into the game. A disc with no menu
+	//has no other way to reach its programs than the disk list, so there the pick stays.
 	void RestoreSelectedProgram()
 	{
 		if(_persistedProgramIndex >= 0 && _vcd.GetProgramCount() > 0) {
+			bool hasMenu = _vcd.HasMenu();
 			_vcd.SelectProgram((uint32_t)_persistedProgramIndex);
 			_vcd.ShowLoadingPicture();
+			if(hasMenu) {
+				_persistedProgramIndex = -1;
+			}
 			return;
 		}
 

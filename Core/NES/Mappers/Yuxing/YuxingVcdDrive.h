@@ -96,8 +96,14 @@ private:
 	static constexpr uint32_t PointerRight = 642;
 	static constexpr uint32_t PointerTop = 20;
 	static constexpr uint32_t PointerBottom = 254;
-	//Which channels the machine last asked to hear - see the $AC handler
+	//Which channels the machine last asked to hear - see the $AC handler. This records what
+	//the PROGRAM asked for and nothing else, so that what 0 means is a question about the
+	//disc rather than about us: the drive's own pictures below do not write it.
 	uint8_t _audioChannels = 3;
+	//Set for a picture the drive puts up by itself rather than one the program asked for.
+	//Those are silent because nobody asked for sound, which is a different thing from a
+	//program asking for no channels - see ShowOwnPicture.
+	bool _silentShow = false;
 
 	//How much of what was last asked for is still to run. The program asks the drive whether
 	//it has finished ($AD, bit 1 of the byte it reads back) and takes a clear bit for "done
@@ -126,6 +132,13 @@ private:
 	//replace that picture: it comes down when the last of the program has been handed over,
 	//which is when a real machine goes from it straight to the game - see ShowLoadingPicture.
 	bool _loadingPicture = false;
+	//How long since the machine last read a byte of the program. The end of the file is not
+	//always where the machine stops: the header says how much to read, and one game's file
+	//carries 256KB more than its header asks for, so the load finished and the game ran
+	//underneath its card for good. When the reading stops, the load is over.
+	double _secondsSinceRead = 0;
+	bool _readStarted = false;
+	static constexpr double LoadIdleSeconds = 1.0;
 	bool _pointerShown = false;
 	uint8_t _pointerShape = 0;
 	uint32_t _pointerX = PointerLeft;
@@ -186,6 +199,9 @@ private:
 	//for something to run - see the idle reads below. _programLeft is that having happened,
 	//held for the mapper, which keeps the choice of program across a reset.
 	bool _leaving = false;
+	//The write that releases a joypad strobe - see the $4016 write
+	uint8_t _strobeRelease = 0;
+	bool _strobeReleasePending = false;
 	bool _programLeft = false;
 	int32_t _statusBitsRead = 0;
 
@@ -473,6 +489,7 @@ private:
 	void RequestShow(uint32_t number, uint8_t channels)
 	{
 		_audioChannels = channels;
+		_silentShow = false;
 		//Whatever the program asks for is its own picture, not the one put up while it loaded
 		_loadingPicture = false;
 
@@ -568,12 +585,17 @@ public:
 		_commandPending = false;
 		_idleReads = 0;
 		_leaving = false;
+		_strobeRelease = 0;
+		_strobeReleasePending = false;
 		_statusBitsRead = 0;
 		_audioChannels = 3;
+		_silentShow = false;
 		_busySeconds = 0;
 		_busyUntilEnd = false;
 		_pictureShown = false;
 		_loadingPicture = false;
+		_secondsSinceRead = 0;
+		_readStarted = false;
 		_pointerShown = false;
 		_pointerShape = 0;
 		_pointerX = PointerLeft;
@@ -602,7 +624,7 @@ public:
 	//really pointing at, worst at the edges, so it never quite clicked what it pointed to.
 	//The travel stops inside the picture, not at its border: on a 352x288 disc it stays
 	//within the white panel the menu draws, rows 20..258 and columns 14..333.
-	uint8_t GetAudioChannels() { return _audioChannels; }
+	uint8_t GetAudioChannels() { return _silentShow ? 0 : _audioChannels; }
 	uint8_t GetPointerShape() { return _pointerShape; }
 
 	bool GetPointer(double& x, double& y)
@@ -645,6 +667,14 @@ public:
 	//What takes it down differs. A program behind a title screen replaces it the first time it
 	//asks for a picture of its own. A game never asks for one, so its card comes down when the
 	//last of the program has been handed over - see _loadingPicture.
+	//A picture the drive puts up on its own account. It carries no audio request because none
+	//was made - see _silentShow.
+	void ShowOwnPicture(uint32_t number)
+	{
+		RequestShow(number, _audioChannels);
+		_silentShow = true;
+	}
+
 	void ShowLoadingPicture()
 	{
 		if(_programIndex < 0 || _programIndex >= (int32_t)_programs.size()) {
@@ -654,7 +684,7 @@ public:
 			if(_menu.EntrySector(entry) == _programs[_programIndex].Lba) {
 				uint32_t item = _menu.EntryItem(entry);
 				if(item != 0) {
-					RequestShow(item, 0);
+					ShowOwnPicture(item);
 					_loadingPicture = !_menu.OpensOnTitle();
 					MessageManager::Log("[YuXing] Loading picture: item " + std::to_string(item));
 				}
@@ -797,6 +827,16 @@ public:
 	{
 		if(_busySeconds > 0) {
 			_busySeconds = _busySeconds > seconds ? _busySeconds - seconds : 0;
+		}
+
+		//The card for a game read in short of the end of its file - see _secondsSinceRead
+		if(_loadingPicture && _readStarted) {
+			_secondsSinceRead += seconds;
+			if(_secondsSinceRead >= LoadIdleSeconds) {
+				_loadingPicture = false;
+				_pictureShown = false;
+				MessageManager::Log("[YuXing] Program stopped reading - loading picture taken down");
+			}
 		}
 	}
 
@@ -1312,6 +1352,8 @@ public:
 				//position genuinely can sit past the end - read those as blank rather than
 				//off the end of the buffer.
 				data = _pos >= 0 && _pos < (int32_t)_disc.size() ? _disc[_pos] : 0;
+				_secondsSinceRead = 0;
+				_readStarted = true;
 				if(++_pos >= (int32_t)_disc.size()) {
 					_readComplete = true;
 					//The whole program is in, so the card shown while it loaded makes way for it
@@ -1339,6 +1381,27 @@ public:
 				return false;
 
 			case 0x4016: {
+				//Bit 0 is the joypad's strobe line and the drive's link never uses it - every
+				//command bit and clock is an even value, and the keyboard's $FF is caught
+				//below. A game that strobes with bit 1 held ($03, then $02 to release) was
+				//taken for the drive: the release looked like a clock, the drive went on the
+				//bus, and every pad read came back with the drive's status ORed over it, so
+				//the game never saw a button. An odd write is the pad being read, and the
+				//write that releases it belongs to the same strobe.
+				if(value != 0xFF && (value & 0x01)) {
+					_move = false;
+					_driveSelected = false;
+					_strobeRelease = (uint8_t)(value & ~0x01);
+					_strobeReleasePending = true;
+					return true;
+				}
+				if(_strobeReleasePending) {
+					_strobeReleasePending = false;
+					if(value == _strobeRelease) {
+						return true;
+					}
+				}
+
 				if(_move) {
 					_move = false;
 					_cmdSel = value;
@@ -1461,12 +1524,12 @@ public:
 	void Serialize(Serializer& s)
 	{
 		SVArray(_cmd, 20); SVArray(_baseSector, 3); SVArray(_statusByCmd, 0x100);
-		SV(_cmdSel); SV(_keyByteIndex); SV(_shiftIn); SV(_status); SV(_cmdIndex); SV(_audioChannels); SV(_busySeconds); SV(_busyUntilEnd); SV(_pictureShown);
+		SV(_cmdSel); SV(_keyByteIndex); SV(_shiftIn); SV(_status); SV(_cmdIndex); SV(_audioChannels); SV(_silentShow); SV(_busySeconds); SV(_busyUntilEnd); SV(_pictureShown);
 		SV(_pos); SV(_basePos); SV(_seekPos);
 		SV(_keySend); SV(_keySendBit); SV(_keySelect);
 		SV(_followUp); SV(_hasFollowUp); SV(_shiftCount);
-		SV(_move); SV(_shifting); SV(_canReadData); SV(_seekOk); SV(_commandPending); SV(_idleReads); SV(_statusBitsRead); SV(_leaving); SV(_programLeft);
-		SV(_driveSelected); SV(_keyboardSelected); SV(_readComplete); SV(_loadingPicture);
+		SV(_move); SV(_shifting); SV(_canReadData); SV(_seekOk); SV(_commandPending); SV(_idleReads); SV(_statusBitsRead); SV(_leaving); SV(_programLeft); SV(_strobeRelease); SV(_strobeReleasePending);
+		SV(_driveSelected); SV(_keyboardSelected); SV(_readComplete); SV(_loadingPicture); SV(_secondsSinceRead); SV(_readStarted);
 		SV(_programIndex);
 
 		//The disc is not part of a savestate, so the positions above only mean anything if the
