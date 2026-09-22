@@ -825,6 +825,9 @@ private:
 	//that is the shortest clean period it reads reliably.
 	static constexpr int32_t KbdClockHalfPeriod = 128;
 
+	//Set when a byte has just gone out, cleared when the machine next takes the clock line
+	//down. See the stop bit.
+	bool _kbdSendHold = false;
 	int32_t _kbdClockCount = 0;
 	int32_t _kbdLatch = 0;
 	int32_t _kbdParity = 0;
@@ -1114,6 +1117,14 @@ private:
 
 	void KbdClock()
 	{
+		if(_kbdSendHold && !(_kbdCtrl & 0x02)) {
+			//The machine has taken the clock line down, which is how it closes a byte: it is
+			//done with the one just sent, and its next release is a fresh invitation. Only
+			//now is it safe to tell it another byte is waiting.
+			_kbdSendHold = false;
+			KbdAssertIrq(_kbdQueueLen > 0);
+		}
+
 		if((_kbdCtrl & 0x01) && !(_kbdCtrl & 0x02)) {
 			_kbdState = KbdStateIdle;
 		}
@@ -1129,7 +1140,7 @@ private:
 			if((_kbdCtrl & 0x01) && !(_kbdCtrl & 0x02)) {
 				_kbdState++;
 			}
-			if((_kbdCtrl & 0x03) == 0x03 && _kbdQueueLen) {
+			if((_kbdCtrl & 0x03) == 0x03 && _kbdQueueLen && !_kbdSendHold) {
 				_kbdState = KbdStateSendStartBit;
 				_kbdClockCount = 0;
 				_kbdClock = false;
@@ -1141,7 +1152,7 @@ private:
 				_kbdClockCount = 0;
 				_kbdClock = false;
 			}
-			if((_kbdCtrl & 0x03) == 0x03 && _kbdQueueLen) {
+			if((_kbdCtrl & 0x03) == 0x03 && _kbdQueueLen && !_kbdSendHold) {
 				_kbdState = KbdStateSendStartBit;
 				_kbdClockCount = 0;
 				_kbdClock = false;
@@ -1187,8 +1198,14 @@ private:
 			} else {
 				//Falling edge - the keyboard's bits go out here
 				if(_kbdState == KbdStateSendStartBit) {
+					if(!_kbdQueueLen) {
+						_kbdState = KbdStateIdle;
+						return;
+					}
+
+					//Taken, not removed - see the stop bit
 					_kbdData = false;
-					_kbdLatch = KbdPop();
+					_kbdLatch = _kbdQueue[0];
 					_kbdParity = 0;
 					_kbdState++;
 				} else if(_kbdState >= KbdStateSendDataBit7 && _kbdState < KbdStateSendParityBit) {
@@ -1201,13 +1218,35 @@ private:
 					_kbdState++;
 				} else if(_kbdState == KbdStateSendStopBit) {
 					_kbdData = true;
-					_kbdState = _kbdQueueLen ? KbdStateSendStartBit : KbdStateIdle;
+
+					//The byte leaves the queue only now that all of it has gone out, and the
+					//next one waits for the machine to ask again.
+					//
+					//The machine reads one byte per pass: it releases both wires at the top
+					//of its receive routine and takes the clock back down at the bottom. A
+					//release is two bytes, $F0 and then the code, and starting the second on
+					//the very next edge dropped it into the gap where the machine was already
+					//on its way out - it pulled the line down one bit in, which sent this
+					//state machine home and threw away a byte that had been lifted off the
+					//queue at the start bit. The release then arrived as a bare $F0, which
+					//the machine's decoder treats as a prefix with nothing behind it, so the
+					//key's make ran again in its place. Shift and Alt latched down for good
+					//and there was no keystroke that could lift them.
+					KbdPop();
+					_kbdSendHold = true;
+					_kbdState = KbdStateIdle;
 
 					//A key sends more than one byte - a release is $F0 and then the code - and
-					//the host is told once per byte, not once per key. Announcing only the
-					//first leaves the rest sitting in the queue until the next keypress
-					//raises another interrupt, which puts every key one keystroke behind.
-					KbdAssertIrq(_kbdQueueLen > 0);
+					//the machine is told once per byte, not once per key, or the rest sit in
+					//the queue until the next keystroke raises another interrupt and every key
+					//arrives one keystroke late. But not *here*: the machine reads the stop bit
+					//a moment after it goes out, and an interrupt raised on the spot takes it
+					//away from that loop for exactly as long as the bit is on the wire. It came
+					//back to a line that had gone quiet again, called the byte a framing error
+					//and threw it away - always the $F0 of a release, because that is the only
+					//byte with another behind it. The announcement waits for the machine to
+					//close the byte itself, above.
+					KbdAssertIrq(false);
 				}
 			}
 		}
@@ -2260,21 +2299,22 @@ protected:
 		}
 	}
 
-	void InitMapper() override
+	//What the reset line puts back, on a power cycle and on a reset alike.
+	//
+	//The BIOS's own reset handler is what says the hardware does this rather than software:
+	//it writes $4186, $4182, $4180, $418E and $418C to re-establish itself, but $4180 - the
+	//window - is not written until $F0B1, several instructions after the processor has
+	//already fetched the reset vector and started running at $F09E. So the BIOS is already
+	//at the top of memory when reset fires, which only the reset line can have done. It then
+	//reads the joypad at $F0CF and branches on what is held: Select and Start together go to
+	//$E0A8, A alone runs a stub copied to $0400, Select alone takes a third path. Those are
+	//boot options for a button held while the reset is pressed.
+	//
+	//A game that has been handed the machine is therefore forgotten here - that is the only
+	//way back to the file browser, and the programs on these disks have none of their own.
+	void ResetMachineState()
 	{
-		_romInfo.System = GameSystem::Dendy;
-
 		memset(_regs, 0, sizeof(_regs));
-		memset(_mapperRam, 0, _mapperRamSize);
-
-		//$4400-$5FFF is memory, not IO - the machine keeps BIOS variables there and runs
-		//code out of it. Only $4180-$41BF and $42FC-$42FF decode as registers, so the
-		//register window stops at $43FF and the rest is mapped as ordinary pages. Claiming
-		//the whole 8KB left the debugger showing it as open bus - every byte reading back
-		//as its own address high byte - because a debug read deliberately skips
-		//ReadRegister. $4020-$43FF stays a register range: $4000-$40FF cannot be split off
-		//the APU/controller ports at 256-byte page granularity.
-		SetCpuMemoryMapping(0x4400, 0x5FFF, PrgMemoryType::MapperRam, 0x4400 - 0x4020, MemoryAccessType::ReadWrite);
 		_regs[0x03] = 0xFF;
 		_loadMode = true;
 		_irqCounter = 0;
@@ -2288,6 +2328,7 @@ protected:
 		_kbdCtrl = 0x03;
 		_kbdClock = false;
 		_kbdData = true;
+		_kbdSendHold = false;
 		_kbdClockCount = 0;
 		_kbdLatch = 0;
 		_kbdParity = 0;
@@ -2326,14 +2367,39 @@ protected:
 
 		_lptData = 0;
 		_lptCtrl = 0;
-		_printer.Reset();
 
-		_speech.reset(new BbkLpcAudio(_console, BbkLpcAudio::LpcVariant::DrPcJr));
 		_speechByte = 0;
 		_speechNibbleCount = 0;
 
-		_fdc.SetClearGeometryOnReset(true);
+		_placeUseB = false;
+		_cdvApuReady = false;
+
+		//Neither of these drops the medium - they put the controller and the link back, which
+		//is what a reset does to them. What is in the drive stays in the drive.
 		_fdc.Reset();
+		_cd.Reset();
+	}
+
+	void InitMapper() override
+	{
+		_romInfo.System = GameSystem::Dendy;
+
+		memset(_mapperRam, 0, _mapperRamSize);
+
+		//$4400-$5FFF is memory, not IO - the machine keeps BIOS variables there and runs
+		//code out of it. Only $4180-$41BF and $42FC-$42FF decode as registers, so the
+		//register window stops at $43FF and the rest is mapped as ordinary pages. Claiming
+		//the whole 8KB left the debugger showing it as open bus - every byte reading back
+		//as its own address high byte - because a debug read deliberately skips
+		//ReadRegister. $4020-$43FF stays a register range: $4000-$40FF cannot be split off
+		//the APU/controller ports at 256-byte page granularity.
+		SetCpuMemoryMapping(0x4400, 0x5FFF, PrgMemoryType::MapperRam, 0x4400 - 0x4020, MemoryAccessType::ReadWrite);
+
+		_fdc.SetClearGeometryOnReset(true);
+		ResetMachineState();
+
+		_printer.Reset();
+		_speech.reset(new BbkLpcAudio(_console, BbkLpcAudio::LpcVariant::DrPcJr));
 		_floppyChecked = false;
 
 		memset(_chrRam, 0, _chrRamSize);
@@ -2352,6 +2418,34 @@ protected:
 		UpdatePrgMapping();
 		UpdateChrMapping();
 
+	}
+
+	//The machine has a reset, and its BIOS expects to be entered through one - see
+	//ResetMachineState. Without this the mode registers survived, so the processor took its
+	//reset vector out of whatever a running program had left mapped and came straight back
+	//up inside that program: the disk titles here have no way out of their own, so there was
+	//nothing to do but power the machine off.
+	//
+	//A reset is not a power cycle. The work RAM, the video RAM and the machine's own RAM
+	//keep what they hold, the paper stays in the printer, and the disk and the disc stay in
+	//their drives - none of those are on the reset line. Only the state that decides what the
+	//processor is looking at goes back.
+	void Reset(bool softReset) override
+	{
+		//The KW machines only. The evidence above is their BIOS's reset handler, and it is
+		//theirs: the 32KB pair are a different design, and putting the mode registers back
+		//under them leaves the machine on a white screen with the processor parked, where
+		//without it a reset merely carries on in whatever was running. Nothing yet says what
+		//their reset line does, so leave them as they were until something does.
+		if(!softReset || _romType == 0) {
+			return;
+		}
+
+		ResetMachineState();
+		_console->GetCpu()->ClearIrqSource(IRQSource::External);
+		SetMirroringType(MirroringType::Vertical);
+		UpdatePrgMapping();
+		UpdateChrMapping();
 	}
 
 	uint8_t ReadRegister(uint16_t addr) override
@@ -2751,7 +2845,7 @@ protected:
 		SV(_irqEnabled);
 		SV(_lineCounter); SV(_lastIrqScanline); SV(_lineIrqPending); SV(_counterIrqPending);
 		SV(_irqStatus);
-		SV(_kbdCtrl); SV(_kbdClock); SV(_kbdData); SV(_kbdClockCount);
+		SV(_kbdCtrl); SV(_kbdClock); SV(_kbdData); SV(_kbdClockCount); SV(_kbdSendHold);
 		SV(_kbdLatch); SV(_kbdParity); SV(_kbdState); SV(_kbdRaiseIrq);
 		SVArray(_kbdQueue, 32); SV(_kbdQueueLen); SV(_kbdPollFrame);
 		SVArray(_kbdHold, Sb2kKeyboard::KeyCount);
