@@ -888,8 +888,18 @@ private:
 	static constexpr int32_t KbdClockHalfPeriod = 128;
 
 	//Set when a byte has just gone out, cleared when the machine next takes the clock line
-	//down. See the stop bit.
+	//down - or, failing that, once the line has been left alone for a byte's gap. See the
+	//stop bit.
 	bool _kbdSendHold = false;
+	int32_t _kbdHoldCycles = 0;
+
+	//How long a keyboard leaves between two bytes when nothing tells it the first has been
+	//taken. Every machine here that closes a byte does it within 170 cycles of the stop bit
+	//(measured over hundreds of bytes on both families, typing in their word processors), so
+	//this is only ever reached by a byte nobody closes: a keyboard reset the software reads by
+	//polling, whose reply never has its clock taken down. A millisecond, near enough - a real
+	//keyboard leaves a gap of that order between the bytes of one code.
+	static constexpr int32_t KbdByteGap = 2000;
 	int32_t _kbdClockCount = 0;
 	int32_t _kbdLatch = 0;
 	int32_t _kbdParity = 0;
@@ -1179,10 +1189,17 @@ private:
 
 	void KbdClock()
 	{
-		if(_kbdSendHold && !(_kbdCtrl & 0x02)) {
+		if(_kbdSendHold && (!(_kbdCtrl & 0x02) || ++_kbdHoldCycles >= KbdByteGap)) {
 			//The machine has taken the clock line down, which is how it closes a byte: it is
 			//done with the one just sent, and its next release is a fresh invitation. Only
 			//now is it safe to tell it another byte is waiting.
+			//
+			//Or it never will. The smaller machine's software resets the keyboard from a
+			//polling loop that reads the acknowledgement and never takes the clock down
+			//after it, so a hold with no way out left the self-test byte behind it for
+			//good - and every key after that queued behind the self-test byte. Without a
+			//hold at all the same machine's power-on test fails instead, because that byte
+			//then starts on the very edge the BIOS is closing the acknowledgement on.
 			_kbdSendHold = false;
 			KbdAssertIrq(_kbdQueueLen > 0);
 		}
@@ -1296,6 +1313,7 @@ private:
 					//and there was no keystroke that could lift them.
 					KbdPop();
 					_kbdSendHold = true;
+					_kbdHoldCycles = 0;
 					_kbdState = KbdStateIdle;
 
 					//A key sends more than one byte - a release is $F0 and then the code - and
@@ -2451,6 +2469,7 @@ protected:
 		_kbdClock = false;
 		_kbdData = true;
 		_kbdSendHold = false;
+		_kbdHoldCycles = 0;
 		_kbdClockCount = 0;
 		_kbdLatch = 0;
 		_kbdParity = 0;
@@ -2986,7 +3005,7 @@ protected:
 		SV(_irqEnabled);
 		SV(_lineCounter); SV(_lastIrqScanline); SV(_lineIrqPending); SV(_counterIrqPending);
 		SV(_irqStatus);
-		SV(_kbdCtrl); SV(_kbdClock); SV(_kbdData); SV(_kbdClockCount); SV(_kbdSendHold);
+		SV(_kbdCtrl); SV(_kbdClock); SV(_kbdData); SV(_kbdClockCount); SV(_kbdSendHold); SV(_kbdHoldCycles);
 		SV(_kbdLatch); SV(_kbdParity); SV(_kbdState); SV(_kbdRaiseIrq);
 		SVArray(_kbdQueue, 32); SV(_kbdQueueLen); SV(_kbdPollFrame);
 		SVArray(_kbdHold, Sb2kKeyboard::KeyCount);
