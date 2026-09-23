@@ -212,6 +212,8 @@ private:
 	uint8_t _mmc3Cmd = 0;
 	uint8_t _mmc3Prg0 = 0, _mmc3Prg1 = 1;
 	uint8_t _mmc3Chr01 = 0, _mmc3Chr23 = 2, _mmc3Chr4 = 4, _mmc3Chr5 = 5, _mmc3Chr6 = 6, _mmc3Chr7 = 7;
+	//$C001 asked for the next reload, which is the one reload that can raise the interrupt
+	bool _mmc3IrqReloadForced = false;
 	uint8_t _mmc3IrqLatch = 0xFF, _mmc3IrqCounter = 0, _mmc3IrqPreset = 0, _mmc3IrqPresetVbl = 0;
 	bool _mmc3IrqEnable = false;
 	int32_t _lastPpuScanline = -2;
@@ -385,8 +387,23 @@ private:
 			Mmc3SetChr((uint8_t)(_mmc3Chr23 + 0)), Mmc3SetChr((uint8_t)(_mmc3Chr23 + 1)),
 			Mmc3SetChr(_mmc3Chr4), Mmc3SetChr(_mmc3Chr5), Mmc3SetChr(_mmc3Chr6), Mmc3SetChr(_mmc3Chr7)
 		};
+
+		//A program that brought its own character data came off a cartridge whose CHR was ROM,
+		//and it writes into the pattern tables as freely as a cartridge game can: one clears
+		//all of $0000-$1FFF as it starts, before it has set a CHR bank, and on the cartridge
+		//that changes nothing. Here the banks it would clear are its own sprite graphics, so
+		//every sprite it drew came out empty. Such a program sees its pattern tables read-only.
+		//One that brought none builds its tiles in them and keeps them writable - the same
+		//"how much did the loader page in" that CramFoldMask goes by.
+		bool chrIsRom = _cramLoaded >= 2;
 		for(uint16_t i = 0; i < 8; i++) {
-			MapCram1k(cwrap ? (uint16_t)((i + 4) & 7) : i, c[i]);
+			uint16_t slot = cwrap ? (uint16_t)((i + 4) & 7) : i;
+			if(chrIsRom) {
+				SetPpuMemoryMapping((uint16_t)(slot * 0x400), (uint16_t)(slot * 0x400 + 0x3FF), ChrMemoryType::ChrRam,
+					(uint32_t)(c[i] & 0x1FF) * 0x400, MemoryAccessType::Read);
+			} else {
+				MapCram1k(slot, c[i]);
+			}
 		}
 	}
 
@@ -418,6 +435,7 @@ private:
 				break;
 
 			case 0xC001:
+				_mmc3IrqReloadForced = true;
 				_mmc3IrqCounter |= 0x80;
 				if(_console->GetPpu()->GetCurrentScanline() < 240) {
 					_mmc3IrqPreset = 0xFF;
@@ -438,23 +456,34 @@ private:
 		}
 	}
 
-	//Per-scanline IRQ counter, evaluated once per visible line while the display is on
+	//Per-scanline IRQ counter, evaluated once per visible line while the display is on.
+	//
+	//A counter reloaded with zero stays quiet: the interrupt comes when the counter counts
+	//down to zero, or when $C001 asked for the reload, and not on every line the latch
+	//merely puts it back to zero - the way the original MMC3s behave. A game that sets the
+	//latch to zero and turns the interrupt on in its frame handler wants one interrupt a
+	//frame; answered on every line instead, it lived with 240 of them until it cleared its
+	//RAM with the interrupt still armed, wiped the handler's address, and the next line sent
+	//it into the zero page for good.
 	void Mmc3IrqSync(int32_t scanline)
 	{
 		if(scanline < 0 || scanline > 239 || !_console->GetPpu()->IsDisplayOn()) {
 			return;
 		}
 
-		if(_mmc3IrqPresetVbl) { _mmc3IrqCounter = _mmc3IrqLatch; _mmc3IrqPresetVbl = 0; }
+		bool quietReload = false;
+		if(_mmc3IrqPresetVbl) { _mmc3IrqCounter = _mmc3IrqLatch; _mmc3IrqPresetVbl = 0; _mmc3IrqReloadForced = false; }
 		if(_mmc3IrqPreset) {
 			_mmc3IrqCounter = _mmc3IrqLatch;
 			_mmc3IrqPreset = 0;
+			quietReload = !_mmc3IrqReloadForced;
+			_mmc3IrqReloadForced = false;
 		} else if(_mmc3IrqCounter > 0) {
 			_mmc3IrqCounter--;
 		}
 
 		if(_mmc3IrqCounter == 0) {
-			if(_mmc3IrqEnable) {
+			if(_mmc3IrqEnable && !quietReload) {
 				_console->GetCpu()->SetIrqSource(IRQSource::External);
 			}
 			_mmc3IrqPreset = 0xFF;
@@ -472,6 +501,7 @@ private:
 		_mmc3IrqLatch = 0xFF;
 		_mmc3IrqPreset = 0;
 		_mmc3IrqPresetVbl = 0;
+		_mmc3IrqReloadForced = false;
 	}
 
 	void DetectMachineType()
@@ -582,16 +612,23 @@ private:
 
 		SetMirroringType((_reg5500 & 0x08) ? MirroringType::Horizontal : MirroringType::Vertical);
 
-		//$6000-$7FFF: an 8K PRAM page picked by $5500 bits 0-1, with selector 0 the odd one
-		//out at page $3C. The reference masks that page with the 16K bank mask even though
-		//it is an 8K page number - kept as-is, since the small machines rely on the value it
-		//folds down to (32KB PRAM is four pages, so selectors 0-3 cover all of it).
+		//$6000-$7FFF: one of four 8K PRAM pages, $3C-$3F, picked by $5500 bits 0-1. The
+		//reference masks the page with the 16K bank mask even though it is an 8K page number -
+		//kept as-is, since the small machines rely on the value it folds down to (32KB PRAM is
+		//four pages, so selectors 0-3 cover all of it).
 		//
 		//This window is NOT a private scratch RAM: the BIOS' own system check fills PRAM
 		//with a known pattern through the $8000 window and then reads it back here with
 		//selectors 1-3, so a separate buffer reads back as zeroes and fails the check.
+		//
+		//Nor are selectors 1-3 the bottom pages of it, which is where the loader puts the
+		//program: a disc game that pages selector 1 in as its work RAM and clears it cleared
+		//half of its own first bank, then ran into what it had cleared and walked a table that
+		//was no longer there for good. The four are one block - the loader's header page and
+		//the three above it - and on the small machines that block folds down to all of PRAM,
+		//which is what their system check reads.
 		if(_reg5500 & 0x03) {
-			MapPramPage(3, _reg5500 & 0x03);
+			MapPramPage(3, _type != YuxingType::V50 ? ((0x3C & _pramMask) | (_reg5500 & 0x03)) : (_reg5500 & 0x03));
 		} else if(_type != YuxingType::V50) {
 			MapPramPage(3, 0x3C & _pramMask);
 		}
@@ -632,6 +669,15 @@ protected:
 	//and 315 lines played, 309, 311, 313, 314 and 316 did not. A game sold on this machine cannot
 	//have hung on half its power-ups; with OAMADDR left at 0 it plays at every length.
 	bool EnablePpuOamAddrEvaluationLeak() override { return false; }
+
+	//The same as on the BBK and the Kingwon machines (see BbkMapper::EnablePpuVramWriteGlitch):
+	//upstream turns a $2007 write made while rendering is on into a write of the bus address's
+	//low byte to whatever the PPU is fetching, which its own comment marks as unconfirmed. A
+	//cartridge game carries its tiles in ROM and never sees it; here the loader has put them in
+	//CRAM. One disc game writes $2007 with the display on while it sets up its title screen, and
+	//a few hundred of those bytes landed in the tiles the title's backdrop is drawn from, which
+	//came out as columns of stray glyphs. Dropping the write leaves the tiles as loaded.
+	bool EnablePpuVramWriteGlitch() override { return false; }
 	uint32_t GetWorkRamSize() override { return PramSize + Mmc3WorkRamSize; }
 	uint32_t GetWorkRamPageSize() override { return 0x2000; }
 	bool ForceWorkRamSize() override { return true; }
@@ -661,7 +707,12 @@ protected:
 			LatchSplitBand();
 		}
 
-		if(scanline != _lastPpuScanline && cycle >= 321) {
+		//The MMC3 clone's counter is clocked where a cartridge MMC3's is, at the sprite fetches
+		//(dot 260), not in the hblank after them. One disc game re-banks its pattern data from
+		//an IRQ every eight lines, and its handler is timed for a cartridge IRQ: taken at 321
+		//the handler's last bank write landed some twenty dots into the next line, so the first
+		//tiles of every band came from the old bank and its whole perspective floor tore.
+		if(scanline != _lastPpuScanline && cycle >= (_mmc3Mode ? 260u : 321u)) {
 			_lastPpuScanline = scanline;
 			if(_mmc3Mode) {
 				Mmc3IrqSync(scanline);
@@ -1720,7 +1771,7 @@ public:
 		SV(_reg8000); SV(_mmc3Mode); SV(_cramLoaded); SV(_vcdMode); SV(_vcdKeyboardSelected);
 		SV(_mmc3Cmd); SV(_mmc3Prg0); SV(_mmc3Prg1);
 		SV(_mmc3Chr01); SV(_mmc3Chr23); SV(_mmc3Chr4); SV(_mmc3Chr5); SV(_mmc3Chr6); SV(_mmc3Chr7);
-		SV(_mmc3IrqLatch); SV(_mmc3IrqCounter); SV(_mmc3IrqPreset); SV(_mmc3IrqPresetVbl);
+		SV(_mmc3IrqLatch); SV(_mmc3IrqCounter); SV(_mmc3IrqPreset); SV(_mmc3IrqPresetVbl); SV(_mmc3IrqReloadForced);
 		SV(_mmc3IrqEnable); SV(_lastPpuScanline); SV(_lastBandScanline); SV(_lastSplitBand);
 		SV(_xtOut); SV(_xtEnabled); SV(_xtLsb); SV(_xtMsb); SV(_xtB1); SV(_xtB2);
 		SV(_xtScan); SV(_xtScanPrev);
