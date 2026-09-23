@@ -164,12 +164,18 @@ private:
 	//The attribute fetch in between is left alone - unlike MMC5 this machine takes its
 	//attributes from the normal attribute table.
 	//
-	//Not ported: the reference's `bAUTO` path (a second bank source used by one title's
-	//logo screen) and its per-title special cases, which its own comments mark as such.
-	//The splash screen ("Bung Wins 98") banks a 4KB CHR page in from the nametable address
-	//itself: while $4194 sits in $40-$43, entering $2000-$2FFF selects a page derived from
-	//it plus which nametable is being fetched. The reference calls this its LOGO case, and
-	//sets a flag that also changes which bank the latch below uses.
+	//The reference's two per-title special cases - the ones its own comments name after the
+	//programs they were written for - are not here. One was dead: the per-cell shadow this
+	//already reads holds the same banks it forced, measured over every cell of that program's
+	//screen on both machines. The other asked whether four bytes of a particular screen's text
+	//were on the nametable, to take the bank from the shadow there; the shadow is where every
+	//screen's banks come from on that branch - see ReadLatchedTile.
+	//
+	//The reference's `bAUTO` path is here, under its own flag. A desktop's splash screen banks
+	//a 4KB CHR page in from the nametable address itself: while $4194 sits in $40-$43,
+	//entering $2000-$2FFF selects a page derived from it plus which nametable is being
+	//fetched. The reference calls this its LOGO case, and sets a flag that also changes which
+	//bank the latch below uses.
 	//--- mouse -------------------------------------------------------------------------
 	//There is no serial protocol here: the machine's BIOS expects a three-byte report to
 	//have been deposited at $FFAB-$FFAD by the time it looks, so the mapper writes one
@@ -316,7 +322,6 @@ private:
 	uint8_t _lastMouseButtons = 0;
 
 	uint8_t _ntData = 0;
-	bool _logoMode = false;
 
 	//With this set the per-tile bank comes from a table the machine keeps in the top pages
 	//of CHR-RAM, rather than from the nametable-write shadow (which holds one constant value
@@ -345,8 +350,10 @@ private:
 	bool _gameReset = false;
 
 	//Set when the disc loader lays the game's register image down, $41A4 included, and spent by the
-	//next write to $42FC-$42FF - the loader's own exit. See that write for why it matters.
+	//next write to $42FC-$42FF - the loader's own exit. See that write for why it matters. The image
+	//is two writes the running program does not make: $41A4, and $4181, which the loader writes last.
 	bool _loaderSetArrangement = false;
+	bool _loaderWrote4181 = false;
 	//Which controller the game asked the machine to be: 0 for a converted board that
 	//banks itself, otherwise MachineMmc1 or MachineMmc3, whose registers live in these
 	uint8_t _gameChip = 0;
@@ -405,39 +412,6 @@ private:
 	//three machines format their per-cell tables differently.
 	//  0 = Dr. PC Jr. BIOS 1.0a/1.5a, 1 = KW2000 (KW-SC2000), 2 = KW3000
 	uint8_t _romType = 0;
-
-	//Which operating system the mounted floppy carries, from a signature in its boot
-	//area - the same three the reference machine recognises.
-	//  0 = none/unknown, 1 = BUNG EC_CE, 2 = BUNG/KW DOS, 3 = KW WINS98
-	uint8_t _diskType = 0;
-
-	void DetectDiskType()
-	{
-		_diskType = 0;
-		const vector<uint8_t>& disk = _fdc.GetDiskData();
-		if(disk.size() < 0x4200) {
-			return;
-		}
-
-		//The signature always sits in the same 7KB window past the boot sector
-		auto has = [&](const char* tag) {
-			size_t len = strlen(tag);
-			for(size_t i = 0x2600; i + len <= 0x2600 + 0x1C00 && i + len <= disk.size(); i++) {
-				if(memcmp(disk.data() + i, tag, len) == 0) {
-					return true;
-				}
-			}
-			return false;
-		};
-
-		if(has("FCEC_CE")) {
-			_diskType = 1;
-		} else if(has("SMDOS") && has("MCCDOS")) {
-			_diskType = 2;
-		} else if(has("JR_WINFD") && has("BUNGWINS")) {
-			_diskType = 3;
-		}
-	}
 
 	//Cycles 257-320 are the sprite pattern fetches. They run through the same read hook
 	//as the background, but the latch must not touch them - substituting a background
@@ -626,7 +600,6 @@ private:
 			}
 			if(_fdc.LoadDiskImage(_persistedDiskPath)) {
 				MessageManager::Log("[Dr.PC Jr.] Re-inserted disk: " + _persistedDiskPath);
-				DetectDiskType();
 				RememberDiskIndex(_persistedDiskPath);
 				return;
 			}
@@ -637,7 +610,6 @@ private:
 			string diskPath = FolderUtilities::CombinePath(folder, baseName + ext);
 				if(_fdc.LoadDiskImage(diskPath)) {
 				MessageManager::Log("[Dr.PC Jr.] Mounted disk image: " + diskPath);
-				DetectDiskType();
 				RememberDiskIndex(diskPath);
 				return;
 			}
@@ -800,7 +772,6 @@ public:
 			MessageManager::DisplayMessage("Dr.PC Jr.", "Disk ejected: " +
 				FolderUtilities::GetFilename(_fdc.GetDiskFilename(), true));
 			_fdc.EjectDisk(); //Saves pending changes first
-			_diskType = 0;
 			_diskIndex = -1;
 			_persistedDiskRom = _emu->GetRomInfo().RomFile.GetFilePath();
 			_persistedDiskPath = "";
@@ -833,7 +804,6 @@ public:
 		//disk-change line and the BIOS picks the new disk up on its next access.
 		_fdc.SaveDiskImage();
 		if(_fdc.LoadDiskImage(disks[index])) {
-			DetectDiskType();
 			_floppyChecked = true;
 			_diskIndex = (int32_t)index;
 			_persistedDiskRom = _emu->GetRomInfo().RomFile.GetFilePath();
@@ -1001,19 +971,14 @@ private:
 			return;
 		}
 
+		//Every key sends its release as well as its press. The machine's own software, which
+		//once looked as though it wanted presses only, is simply not ready for the release
+		//yet - it says so on $418E bit 2, and KbdClock waits for it.
 		bool release = (keyEvent & 0x100) != 0;
-		if(release && _diskType == 1) {
-			//Running its own software, the machine's keyboard reports presses and nothing
-			//else. Sending the release pair as well puts three bytes and three interrupts
-			//behind every keystroke, and the program then acts on the release rather than
-			//the press - which is what put it a keystroke behind the typist.
-			return;
-		}
 
 		//The fake shift is lifted straight after the code rather than held until the key
-		//comes back up. The machine reads the pair in one go either way, and while it is
-		//running its own software the keyboard reports no releases at all - holding the
-		//shift there would leave one down that nothing could ever lift.
+		//comes back up. The machine reads the pair in one go either way, and holding it
+		//would leave a shift down across whatever the typist does next.
 		bool fakeShift = !release && KbdFakeShiftWanted(raw);
 		if(fakeShift) {
 			KbdPushKey(KbdLeftShift, false);
@@ -1101,12 +1066,6 @@ private:
 
 	void KbdRepeatKeys()
 	{
-		//Running its own software the machine reports presses only, and does not repeat
-		//them either - see KbdPollKeys.
-		if(_diskType == 1) {
-			return;
-		}
-
 		NesControlManager* controls = (NesControlManager*)_console->GetControlManager();
 		shared_ptr<Sb2kKeyboard> kbd = controls->GetControlDevice<Sb2kKeyboard>();
 		if(!kbd) {
@@ -1179,6 +1138,15 @@ private:
 	//key press there put the machine in that loop for good.
 	bool KbdIrqAllowed() { return (_kbdCtrl & 0x03) == 0x03; }
 
+	//A byte starts only while the host is in its receive routine. Both wires released is
+	//not enough: bit 2 of $418E is set whenever the software is anywhere else. Ignoring it
+	//put the machine's own programs a keystroke behind the typist, acting on each release
+	//instead of its press, and keys used to be sent to them as presses only - no release,
+	//no repeat - chosen by sniffing the floppy for their operating system. Honouring the
+	//bit, every recording typed under the presses-only rule comes out the same with the
+	//releases sent.
+	bool KbdHostReceiving() { return (_kbdCtrl & 0x07) == 0x03; }
+
 	void KbdAssertIrq(bool raise)
 	{
 		_kbdRaiseIrq = raise;
@@ -1219,7 +1187,7 @@ private:
 			if((_kbdCtrl & 0x01) && !(_kbdCtrl & 0x02)) {
 				_kbdState++;
 			}
-			if((_kbdCtrl & 0x03) == 0x03 && _kbdQueueLen && !_kbdSendHold) {
+			if(KbdHostReceiving() && _kbdQueueLen && !_kbdSendHold) {
 				_kbdState = KbdStateSendStartBit;
 				_kbdClockCount = 0;
 				_kbdClock = false;
@@ -1231,7 +1199,7 @@ private:
 				_kbdClockCount = 0;
 				_kbdClock = false;
 			}
-			if((_kbdCtrl & 0x03) == 0x03 && _kbdQueueLen && !_kbdSendHold) {
+			if(KbdHostReceiving() && _kbdQueueLen && !_kbdSendHold) {
 				_kbdState = KbdStateSendStartBit;
 				_kbdClockCount = 0;
 				_kbdClock = false;
@@ -1744,27 +1712,24 @@ private:
 		}
 	}
 
-	//The size of the game's CHR, in 8KB banks. The loader leaves the game's header in the
-	//machine's own RAM at $600 and reads it back from there itself, so that is where the
-	//two shapes that ask about CHR have to look for it.
+	//Whether the game brought CHR of its own. $4182 bit 7 says it did not: the loader
+	//writes it from the game's header along with the rest of the register image, and over
+	//every hand-over in the recordings it is set exactly when the header's CHR count is
+	//zero. The count itself only ever answers "any at all", which is all this is asked.
+	//
+	//It used to be read out of the machine's RAM at $609, where the loader leaves the
+	//header - and that RAM is the program's from the moment it runs: one title clears it
+	//three frames in, and read live the pattern window turned writable under a game whose
+	//CHR came off a cartridge as ROM, so its own drawing ate its tiles.
 	uint8_t GameChrBankCount()
 	{
-		if(!HasLoaderSignature()) {
-			return 0;
-		}
-		return _console->GetMemoryManager()->GetInternalRam()[0x609];
+		return (_regs[0x02] & 0x80) ? 0 : 1;
 	}
 
-	//Read once, as the game starts, and kept. The count comes out of the machine's own RAM
-	//at $600, where the loader leaves the game's header - and that RAM is the program's from
-	//the moment it runs: measured, one title clears the signature three frames in, and from
-	//then on the count reads zero. Read live, as this was, the pattern window turns writable
-	//under a game whose CHR came off a cartridge as ROM, and the game's own drawing starts
-	//eating its tiles - that title's solid areas came up woven with stripes, out of writes
-	//into the pattern table that the cartridge had simply ignored.
+	//Read once, as the game starts, and kept, because the game may rewrite $4182.
 	//
 	//Nothing is taken until a hand-over that really starts a game: the disc menu hands over
-	//too, on its own way out, with no header in RAM to read.
+	//too, on its own way out.
 	void LatchGameChrBanks()
 	{
 		if(!_gameReset) {
@@ -1772,42 +1737,29 @@ private:
 		}
 	}
 
-	//The disc loader stamps its name into the machine's RAM at $600 as it hands over. The
-	//reference looks for exactly this to decide a disk carries one of the disc games.
-	bool HasLoaderSignature()
-	{
-		uint8_t* ram = _console->GetMemoryManager()->GetInternalRam();
-		static const char* Magic = "FC GAMES";
-		for(int i = 0; i < 8; i++) {
-			if(ram[0x600 + i] != (uint8_t)Magic[i]) {
-				return false;
-			}
-		}
-		return true;
-	}
-
 	//A game that banks its nametables out of CHR RAM. Two things qualify, and neither of
 	//them is "a program started": the machine must be running a disc image, or be one of
-	//the two 32KB machines that has seen the disc loader's signature go into RAM. Bit 6 of
+	//the two 32KB machines that has had a game handed over by the disc loader. Bit 6 of
 	//$4181 then excludes the machine's own games, which keep the ordinary nametables.
 	//
 	//Keying this on _gameLaunched instead - any program at all - is what destroyed the
 	//floppy desktop: JR_WINFD/BUNGWINS launches a program with bit 6 clear, so every
 	//nametable fetch was redirected into CHR RAM and the screen came out as a grid of
-	//repeated glyphs. A learning machine has no way to reach the signature branch, so
-	//there the disc image is the only thing that qualifies.
+	//repeated glyphs.
 	//
 	//Any change here needs a disc AND a floppy in the machine at once to be worth anything.
 	//Every version of this test that came out too wide had passed a sweep that used one
 	//medium at a time.
 	bool IsDiscGame()
 	{
-		//A floppy the drive recognised is what the program came off, whatever is sitting in
-		//the disc drive alongside it. Without that test, putting a disc in while the floppy
-		//desktop was up made the desktop a disc game - it launches a program like anything
-		//else - so its nametables went to CHR RAM and it drew nothing at all. The floppy
-		//takes priority for booting, and it takes priority here.
-		bool viaDisc = _gameLaunched && _cd.IsMounted() && _diskType == 0;
+		//With a disc in the drive, the floppy desktop's own programs must still not count:
+		//they launch like anything else, and made into a disc game the desktop drew nothing
+		//at all. What tells them apart is the CHR size the program was given, the low nibble
+		//of $4183. The machine's own software - the disc menu, the floppy desktop and its
+		//programs, DOS - is always given the whole CHR RAM, $F, which no converted cartridge
+		//declares; a game gets what its header asks for. This used to be decided by sniffing
+		//the floppy image for the name of its operating system.
+		bool viaDisc = _gameLaunched && _cd.IsMounted() && (_regs[0x03] & 0x0F) != 0x0F;
 		return (IsCdv() || viaDisc || (_romType == 0 && _bungDiskGame)) && !(_regs[0x01] & 0x40);
 	}
 
@@ -2023,7 +1975,6 @@ protected:
 			uint32_t bank = (uint32_t)(_regs[0x14] + _ntData - 2);
 			SetPpuMemoryMapping(0x1000, 0x1FFF, ChrMemoryType::ChrRam,
 				(bank * 0x1000) & (_chrRamSize - 1), MemoryAccessType::ReadWrite);
-			_logoMode = true;
 		}
 	}
 
@@ -2127,56 +2078,24 @@ protected:
 		uint32_t bank;
 		if(sameTable) {
 			bank = _autoBank ? autoBank : exBank;
-
-			//BUNGMINE draws from a second table one page further up
-			if(_regs[0x14] == 0x60 && _regs[0x18] == 0x30) {
-				uint32_t mineIndex = (0x1FAu + ((ntIndex & 1) | 4u)) * 1024u + ntOffset;
-				bank = _chrRam[mineIndex & (_chrRamSize - 1)];
-			}
-
-			//Only these three combinations redirect the fetch at all - anything else
-			//draws the tile from the ordinary CHR banking.
-			if(!(_romType == 1 || _romType == 2 || (_romType == 0 && _diskType == 1))) {
-				return InternalReadVram(addr);
-			}
 		} else {
-			//Nothing keys this substitution when the machine came up off a disc. The type is
-			//sniffed out of the floppy's system area, so with no floppy in the drive it is
-			//simply unknown, and the bank built here is the one a floppy-loaded program would
-			//have wanted. The machine's own text mode is the case that reaches this: it draws
-			//from the ordinary CHR banking, and substituting a bank under it left every cell
-			//pointing at blank memory - a DOS screen that had its font loaded, its palette set
-			//and its text on the nametable, and still came out black.
-			if(_cd.IsPresent() && _diskType == 0) {
-				//The glyph is the second half of the pair and it is the only plane the
-				//screen has: the first half is filler, all ones. Read as an ordinary two
-				//plane tile it comes out inverted - every cell at least colour 1, so the
-				//page is white and the text is the darker entry, and the black the palette
-				//keeps in entry 0 is never reached at all.
-				return (addr & 0x08) ? 0x00 : InternalReadVram((uint16_t)(addr | 0x08));
-			}
-
-			bank = (uint32_t)((_regs[0x18] << 1) | autoBank);
-			if(_logoMode || (_romType == 0 && _diskType == 1) ||
-				((_romType == 1 || _romType == 2) && _diskType == 3) || IsBwinBanner(ntOffset)) {
-				bank = exBank;
-			}
+			//The tile comes from the per-cell shadow: the bank the machine recorded for the cell
+			//as it wrote it, which is how its text gets its font. The reference emulator works
+			//the bank out from $4198 and the auto table instead, then lists the systems it had
+			//seen using the shadow - and for the one it had not, the DOS status line, it looks
+			//for four bytes of that line's text on the screen. Measured over every cell of every
+			//screen in the recordings for all three machines, the two agree wherever the auto
+			//table and the shadow agree, and the status line is the only place they do not: its
+			//cells were written with the font bank selected, while the auto table still names
+			//the screen's. So the shadow is the rule, and neither the list nor the text test is
+			//needed. The same holds for the DOS a disc boots into, which once had a glyph-plane
+			//branch of its own, taken when no floppy operating system had been recognised: the
+			//shadow draws every one of those screens identically.
+			bank = exBank;
 		}
 
 		uint32_t offset = (bank & ChrMask4K()) * 0x1000 + (addr & 0x0FFF);
 		return _chrRam[offset & (_chrRamSize - 1)];
-	}
-
-	//BUNG Windows draws its banner from the shadow while the rest of the screen comes
-	//from the per-cell table. It is recognised by the text already on the nametable
-	//rather than by any register, so the test is a look at what is on screen.
-	bool IsBwinBanner(uint16_t ntOffset)
-	{
-		if(!((ntOffset > 0x360 && ntOffset < 0x37F) || (ntOffset > 0x380 && ntOffset < 0x39F))) {
-			return false;
-		}
-		return InternalReadVram(0x2367) == 0x53 && InternalReadVram(0x2377) == 0x20 &&
-			InternalReadVram(0x2387) == 0x6E && InternalReadVram(0x2397) == 0x31;
 	}
 
 	void MapperWriteVram(uint16_t addr, uint8_t value) override
@@ -2338,12 +2257,10 @@ protected:
 		}
 		_loadMode = false;
 
-		//The loader leaves the game's own header in the machine's RAM at $600 as it hands over,
-		//and the machine reads it back from there - the CHR bank count comes from $609, and the
-		//name at the front is what marks a disc game at all. Measured at the hand-over of a game
-		//booted off its disc: every register matches what this reconstruction already sets, and
-		//this block is the only thing that differed. Without it the signature check fails and
-		//the count reads zero.
+		//The loader leaves the game's own header in the machine's RAM at $600 as it hands over.
+		//Measured at the hand-over of a game booted off its disc: every register matches what
+		//this reconstruction already sets, and this block is the only thing that differed. The
+		//mapper no longer reads it, but the RAM should hold what the disc would have left.
 		uint8_t* ram = _console->GetMemoryManager()->GetInternalRam();
 		for(int i = 0; i < 0x10; i++) {
 			ram[0x600 + i] = _cdvHeader[i];
@@ -2427,12 +2344,9 @@ protected:
 			}
 		}
 
-		//$4194 bit 6 says the game is one of the machine's own rather than a plain cartridge
-		//conversion. Those keep the machine's tile latch and its screen arrangement, and are
-		//treated as though its own operating system were in the drive - which is what decides
-		//the two latch branches, since a game carries no BIOS to be recognised by.
+		//$4181 bit 6 says the game is one of the machine's own rather than a plain cartridge
+		//conversion. Those keep the machine's tile latch and its screen arrangement.
 		if(_regs[0x01] & 0x40) {
-			_diskType = 1;
 			SetMirroringType(MirroringType::Vertical);
 		} else {
 			SetMirroringType(MirroringType::ScreenAOnly);
@@ -2483,7 +2397,6 @@ protected:
 		_mouseFrame = 0;
 		_ntData = 0;
 		_mirroring = 0;
-		_logoMode = false;
 		_autoBank = false;
 		_gameLaunched = false;
 		_bungDiskGame = false;
@@ -2497,6 +2410,7 @@ protected:
 		_gamePrgSpan = 0;
 		_gameReset = false;
 		_loaderSetArrangement = false;
+		_loaderWrote4181 = false;
 		_gameChip = 0;
 		_mmc1.Reset();
 		_mmc3.Reset();
@@ -2504,7 +2418,6 @@ protected:
 		for(int i = 0; i < 8; i++) {
 			_gameChrPages[i] = (uint16_t)i;
 		}
-		_diskType = 0;
 		memset(_exRamNt, 0, sizeof(_exRamNt));
 		_extNtAddr = 0;
 		_extFetchCounter = 0;
@@ -2881,8 +2794,8 @@ protected:
 				//page that should have been the one below turned out to be the one
 				//already on screen.
 				//The loader writes this too, as part of the game's register image, just before it
-				//hands over - while its signature is still at $600.
-				_loaderSetArrangement = HasLoaderSignature();
+				//hands over. Whether it was the loader is settled at the hand-over itself.
+				_loaderSetArrangement = true;
 				//Bit 4 asks for the nametables to be banked out of CHR RAM instead
 				if((value & 0x10) && IsDiscGame()) {
 					SetGameNtRam(value);
@@ -2913,12 +2826,9 @@ protected:
 				break;
 
 			case 0x4181:
-				//Bit 6 says the machine is running one of its own games, which puts it on
-				//the same footing as having its operating system in the drive - and the
-				//keyboard is quieter in that mode, see KbdPollKeys.
-				if(value & 0x40) {
-					_diskType = 1;
-				}
+				//The last register of the image the disc loader lays down before a hand-over:
+				//$4182-$41BF in order, then this one
+				_loaderWrote4181 = true;
 				UpdatePrgMapping();
 				break;
 
@@ -2948,16 +2858,21 @@ protected:
 				//loader's: another game's start-up code writes here itself in the very same frame,
 				//and its address bit is the arrangement it wants. Bit 4 is kept either way - a game
 				//that ends on mode 5 reads it.
-				bool fromLoader = _loaderSetArrangement;
+				//The hand-over is the loader's when both $41A4 and $4181 were written since the last
+				//one. Over every hand-over in the recordings that tells the loader's from a game's own
+				//exactly - no running game writes $4181, and a disc DOS writes $4181 but not $41A4 -
+				//as the loader's "FC GAMES" stamp in RAM at $600 did before, and a chip cannot see RAM.
+				bool fromLoader = _loaderSetArrangement && _loaderWrote4181;
 				_loaderSetArrangement = false;
+				_loaderWrote4181 = false;
 				_mirroring = (uint8_t)((fromLoader ? (_mirroring & 2) : (addr & 1 ? 2 : 0)) | (value & 0x10 ? 1 : 0));
 				//A game off a disc hands over here, and from this point the machine is a
 				//cartridge rather than a learning machine
 				_gameLaunched = true;
 				LatchGameChrBanks();
-				//Latched at the hand-over, the moment the reference looks: the loader has
-				//just written its signature and the program is free to overwrite $600 after.
-				if(!_bungDiskGame && HasLoaderSignature()) {
+				//A game the disc loader handed over. The reference looks for the loader's stamp
+				//in RAM here instead; the loader's register image says the same thing.
+				if(fromLoader) {
 					_bungDiskGame = true;
 				}
 				//Which shape of cartridge it is, and the window it starts in. Only a hand-over
@@ -3011,9 +2926,9 @@ protected:
 		SVArray(_kbdHold, Sb2kKeyboard::KeyCount);
 		SV(_fdc);
 		SV(_cd);
-		SVArray(_exRamNt, 0x800); SV(_extNtAddr); SV(_extFetchCounter); SV(_diskType);
-		SV(_ntData); SV(_logoMode); SV(_autoBank); SV(_gameLaunched); SV(_bungDiskGame); SV(_mirroring);
-		SV(_gameMode); SVArray(_gamePrgBanks, 4); SV(_gameChrBank); SV(_gameChrBanks); SV(_gamePrgSpan); SV(_gameReset); SV(_loaderSetArrangement);
+		SVArray(_exRamNt, 0x800); SV(_extNtAddr); SV(_extFetchCounter);
+		SV(_ntData); SV(_autoBank); SV(_gameLaunched); SV(_bungDiskGame); SV(_mirroring);
+		SV(_gameMode); SVArray(_gamePrgBanks, 4); SV(_gameChrBank); SV(_gameChrBanks); SV(_gamePrgSpan); SV(_gameReset); SV(_loaderSetArrangement); SV(_loaderWrote4181);
 		SV(_gameChip); SVArray(_gameChrPages, 8); SV(_mmc1); SV(_mmc3); SV(_mmc2);
 		SV(_lptData); SV(_lptCtrl); SV(_printer);
 		SV(_speechByte); SV(_speechNibbleCount); SV(_speech);
