@@ -536,7 +536,28 @@ static uint32_t MsfToSectors(uint32_t msf)
 
 uint32_t* NesConsole::GetDiscVideoFrame()
 {
-	return _discVideo && _discVideo->IsPlaying() ? _discVideo->GetFrameBuffer() : nullptr;
+	return IsDiscVideoOnScreen() ? _discVideo->GetFrameBuffer() : nullptr;
+}
+
+//What the machine asks for right now. The setting is a register the program can write at any
+//point in a frame, so this changes between one frame and the next.
+bool NesConsole::WantsDiscVideoOnScreen()
+{
+	if(!_discVideo || !_discVideo->IsPlaying()) {
+		return false;
+	}
+	DrPcJrMapper* pcjr = dynamic_cast<DrPcJrMapper*>(_mapper.get());
+	return !pcjr || !pcjr->IsOwnScreenOverVideo();
+}
+
+//What the screen shows. It can go to the machine's screen at once, since the video's filter
+//draws a frame that is not its own picture as black. It can only go to the video once the
+//filter has been told to change, which ClockDiscVideo does before the frame runs. Following
+//the register mid-frame instead sent the video's picture to the machine's filter, which read
+//it as palette indices and ran off the end of the buffer.
+bool NesConsole::IsDiscVideoOnScreen()
+{
+	return _discVideoOnScreen && WantsDiscVideoOnScreen();
 }
 
 //Moved on once per emulated frame, beside the sound it belongs to. Driving it from the frame
@@ -598,6 +619,30 @@ void NesConsole::ClockDiscVideo()
 		_emu->GetVideoDecoder()->ForceFilterUpdate();
 	}
 
+	//The same for a video the drive was told to stop. The KW player's stop key, and the disc
+	//loader on its way into a game, end the play at the drive, and nothing on this side would
+	//otherwise hear of it until the video had run its whole length.
+	DrPcJrMapper* pcjr = dynamic_cast<DrPcJrMapper*>(_mapper.get());
+	if(pcjr && _discVideo && _discVideo->IsPlaying()) {
+		if(!pcjr->IsVideoPlaying()) {
+			_discVideo->Stop();
+			_emu->GetVideoDecoder()->ForceFilterUpdate();
+		} else {
+			//And the play/pause key holds the picture where it is, or lets it go on. The panel's
+			//clock stands still with it, which the drive answers for itself.
+			_discVideo->SetDrivePaused(pcjr->IsVideoPaused());
+		}
+	}
+
+	//And a flip between the video and the machine's own screen in front of it, while the video
+	//plays on. The picture sent each frame and the filter that draws it both follow
+	//IsDiscVideoOnScreen, which only changes here, together with the filter.
+	bool onScreen = WantsDiscVideoOnScreen();
+	if(onScreen != _discVideoOnScreen) {
+		_discVideoOnScreen = onScreen;
+		_emu->GetVideoDecoder()->ForceFilterUpdate();
+	}
+
 	if(!_discVideo) {
 		_discVideo.reset(new CdVideoPlayer());
 	}
@@ -642,7 +687,7 @@ void NesConsole::ClockDiscVideo()
 			//Only the disc's video tracks. The pages a menu is made of are segment items, and
 			//a machine whose pages do not appear cannot be used at all.
 			if(track == 0xFF || !GetNesConfig().DisableDiscVideoPlayback) {
-				if(DrPcJrMapper* pcjr = dynamic_cast<DrPcJrMapper*>(_mapper.get())) {
+				if(pcjr) {
 					image = &pcjr->GetDiscImage();
 					tracks = &pcjr->GetDiscTracks();
 				} else if(yuxing) {
@@ -712,7 +757,9 @@ void NesConsole::ClockDiscVideo()
 		}
 	}
 
-	if(!_discVideo->ClockFrame(GetFps())) {
+	//Each picture is held back by the audio latency, so it is on screen when its sound is heard
+	double pictureDelay = _emu->GetSettings()->GetAudioConfig().AudioLatency / 1000.0;
+	if(!_discVideo->ClockFrame(GetFps(), pictureDelay)) {
 		//Ran to the end, so the machine has its screen back and knows the video finished
 		_emu->GetVideoDecoder()->ForceFilterUpdate();
 		EndVideoPlayback(true);
@@ -826,7 +873,7 @@ BaseVideoFilter* NesConsole::GetVideoFilter(bool getDefaultFilter)
 {
 	//A disc's video is already colour and is not the machine's size, so while one is on
 	//screen it needs a filter of its own rather than the palette one - see CdVideoFilter.
-	if(!getDefaultFilter && _discVideo && _discVideo->IsPlaying()) {
+	if(!getDefaultFilter && IsDiscVideoOnScreen()) {
 		return new CdVideoFilter(_emu, _discVideo.get());
 	}
 

@@ -298,7 +298,9 @@ extern "C"
 	{
 		NesConsole* nes = dynamic_cast<NesConsole*>(_emu->GetConsole().get());
 		CdVideoPlayer* player = nes ? nes->GetDiscVideoPlayer() : nullptr;
-		if(!player || !player->IsPlaying()) {
+		//Only while it is what the screen shows: with the machine's own screen up in front,
+		//the window is the machine's again and the transport has nothing to point at
+		if(!player || !nes->IsDiscVideoOnScreen()) {
 			return false;
 		}
 		*paused = player->IsPaused();

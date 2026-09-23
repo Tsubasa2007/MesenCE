@@ -1,6 +1,7 @@
 #pragma once
 #include "pch.h"
 #include <atomic>
+#include <deque>
 #include "NES/Mappers/CdImageFile.h"
 #include "NES/Mappers/CdVideoDecoder.h"
 #include "NES/Mappers/CdSegmentIndex.h"
@@ -62,6 +63,13 @@ private:
 	//meanwhile, so silence is handed over at the video's rate rather than letting the mixer
 	//fall back to the machine's - changing rate mid-play resets the filter that resamples it.
 	std::atomic<bool> _paused{ false };
+	//The machine's own hold on the video - the Kingwon drive's play/pause key - kept apart from
+	//the one above, which belongs to the transport bar under the picture. They used to be one
+	//flag, and the console copies the drive's state into its half every frame: the bar's
+	//button then held the video for one frame and let it go again, so it seemed to do nothing.
+	//Either one holds the video.
+	std::atomic<bool> _drivePaused{ false };
+	bool Held() { return _paused || _drivePaused; }
 	//Asked to end early, or to move. Both are answered on the machine's own thread at the top
 	//of the next frame, so the decoder is only ever touched from the one thread that decodes.
 	std::atomic<bool> _skipRequested{ false };
@@ -104,6 +112,24 @@ private:
 	vector<uint32_t> _withPointer;
 	vector<uint32_t> _shown;
 	vector<uint32_t> _spare;
+
+	//Pictures decoded but not shown yet, each with the stream time it belongs to. The sound
+	//goes out through the audio buffer and reaches the speakers that much later than it is
+	//handed over, while a picture is on the screen the moment it is swapped in - so shown as
+	//decoded, the video ran visibly ahead of its own sound, by the audio latency setting. Each
+	//picture waits here for as long as its sound does. Capped, so a very long latency setting
+	//cannot pile up pictures without end.
+	std::deque<std::pair<double, vector<uint32_t>>> _delayed;
+	static constexpr size_t MaxDelayedPictures = 16;
+
+	void ShowDelayed(double upTo)
+	{
+		while(!_delayed.empty() && _delayed.front().first <= upTo) {
+			_spare = std::move(_delayed.front().second);
+			_delayed.pop_front();
+			_shown.swap(_spare);
+		}
+	}
 
 public:
 	//The stretch of disc to play, counted the way the drive counts it
@@ -182,8 +208,10 @@ public:
 		_owed = 0;
 		_shown.clear();
 		_spare.clear();
+		_delayed.clear();
 		_playing = false;
 		_paused = false;
+		_drivePaused = false;
 		_hold = false;
 		_holding = false;
 		_withPointer.clear();
@@ -227,6 +255,7 @@ public:
 	//anything: it waits either way, and hears about the end once, from ClockFrame.
 	bool IsPaused() { return _playing && _paused; }
 	void SetPaused(bool paused) { _paused = paused; }
+	void SetDrivePaused(bool paused) { _drivePaused = paused; }
 	void RequestSkip() { _skipRequested = true; }
 	//Counted from the beginning of the stretch that was asked for, which is what a viewer
 	//sees, rather than from the start of the track the stretch was cut out of.
@@ -413,7 +442,7 @@ public:
 
 		//Held: the stream has not moved, so nothing is owed against it. Silence at its own
 		//rate keeps the mixer on one rate across the pause.
-		if(_paused) {
+		if(Held()) {
 			_owed = 0;
 			size_t want = (size_t)((double)elapsedSamples * rate / elapsedRate);
 			_block.assign(want * 2, 0);
@@ -475,7 +504,7 @@ public:
 
 	//One emulated frame's worth of the stream. False once it has run out, which is the
 	//machine's cue to take its screen back.
-	bool ClockFrame(double consoleFps)
+	bool ClockFrame(double consoleFps, double pictureDelay = 0)
 	{
 		if(!_playing) {
 			return false;
@@ -497,11 +526,12 @@ public:
 			_fifoPos = 0;
 			_block.clear();
 			_owed = 0;
+			_delayed.clear();
 			_elapsed = _seekElapsed.load();
 			_position = _elapsed.load();
 		}
 
-		if(_paused || _holding.load()) {
+		if(Held() || _holding.load()) {
 			return true;
 		}
 
@@ -513,10 +543,13 @@ public:
 		_decoder.Advance(tick);
 
 		if(_decoder.HasPicture()) {
-			//Into the buffer nothing is reading, then swapped in
-			_spare = _decoder.GetPicture();
-			_shown.swap(_spare);
+			//Into the buffer nothing is reading, then swapped in once its sound is being heard
+			if(_delayed.size() >= MaxDelayedPictures) {
+				ShowDelayed(_delayed.front().first);
+			}
+			_delayed.emplace_back(_elapsed.load(), _decoder.GetPicture());
 		}
+		ShowDelayed(_elapsed.load() - pictureDelay);
 
 		//What has gone joins what is waiting only once it is worth the move
 		if(_fifoPos > 0 && _fifoPos * 2 >= _fifo.size()) {
@@ -536,6 +569,9 @@ public:
 		//end, and the sound for the pictures shown has already gone out.
 		if(_duration > 0 && _elapsed.load() >= _duration.load()) {
 			if(_hold) {
+				//Whatever is still waiting goes up now: nothing more is coming to push it out
+				ShowDelayed(_elapsed.load());
+
 				//Stand here showing the last picture. The machine is not told, because as far
 				//as it is concerned nothing has happened: it asked for a still and the still
 				//is up. What ends this is the next thing it asks for - see

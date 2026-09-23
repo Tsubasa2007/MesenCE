@@ -33,6 +33,10 @@ class NesPpu : public BaseNesPpu
 private:
 	static constexpr int32_t OamDecayCycleCount = 4500; //About 40 scanlines.
 
+	//Whether the last frame sent was a disc's video rather than the machine's own picture -
+	//see SendFrame
+	bool _discVideoSent = false;
+
 protected:
 	void UpdateStatusFlag();
 

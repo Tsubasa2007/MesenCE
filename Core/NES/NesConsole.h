@@ -47,6 +47,9 @@ private:
 	unique_ptr<NesControlManager> _controlManager;
 	unique_ptr<NesSoundMixer> _mixer;
 	unique_ptr<CdVideoPlayer> _discVideo;
+	//What the last frame showed, so a flip between the video and the machine's own screen
+	//gets the filter changed - see IsDiscVideoOnScreen
+	bool _discVideoOnScreen = false;
 
 	safe_ptr<HdPackData> _hdData;
 	unique_ptr<HdAudioDevice> _hdAudioDevice;
@@ -97,6 +100,10 @@ public:
 	//frame, which is not the same clock as the one the stream runs on
 	uint32_t* GetDiscVideoFrame();
 	CdVideoPlayer* GetDiscVideoPlayer() { return _discVideo.get(); }
+	//Whether a video is playing AND is what the screen shows. A machine can put its own
+	//screen up in front of one that keeps playing - see DrPcJrMapper::IsOwnScreenOverVideo.
+	bool IsDiscVideoOnScreen();
+	bool WantsDiscVideoOnScreen();
 
 	//The sound belonging to a video that is on screen, if one is - see NesSoundMixer
 	bool TakeDiscAudio(int16_t*& samples, uint32_t& sampleCount, uint32_t& sampleRate, uint32_t elapsedSamples, uint32_t elapsedRate);

@@ -94,6 +94,11 @@ private:
 	//packet names a stretch of one video and stops at the end of it.
 	bool _panelPlay = false;
 
+	//Whether the play/pause key is holding the play, and whether the eject key has the tray
+	//open - see TakePanelKey
+	bool _playPaused = false;
+	bool _trayOpen = false;
+
 	//The last byte handed over, and whether nothing has been written since. $595E will not
 	//start a command while a byte is waiting: it reads whatever is there and echoes it
 	//straight back with STA $41AE, so the drive sees its own byte arrive as if it were a
@@ -150,6 +155,10 @@ public:
 
 	bool IsMounted() { return _image.IsOpen(); }
 
+	//What the machine is answered about the disc: a tray the eject key has opened has nothing
+	//in it, whatever is mounted behind it.
+	bool DiscReady() { return IsMounted() && !_trayOpen; }
+
 	//The drive has a transfer to carry out itself. The mapper owns the memory, so it does
 	//the placing; this only says what and how much.
 	bool TakePlacedTransfer(const uint8_t*& data, uint32_t& len)
@@ -175,6 +184,14 @@ public:
 	//says only whether there is a disc in the tray.
 	bool IsPresent() { return _present; }
 	void SetPresent(bool present) { _present = present; }
+
+	//Whether a play is asked for or running. The stop key ends one without it having run out,
+	//so whoever is showing the picture has to ask rather than wait to be told.
+	bool IsPlaying() { return _playPending || _playBusy; }
+
+	//...and whether the play/pause key is holding it. The picture stands and the drive's
+	//position stops where it is, which is what the panel's clock shows.
+	bool IsPaused() { return _playPaused; }
 	string GetDiscPath() { return _discPath; }
 	uint32_t GetSectorCount() { return (uint32_t)_image.SectorCount(); }
 
@@ -402,7 +419,7 @@ public:
 		//Bits 7 and 6 are the tray and the disc, bit 0 the ready flag. Nothing set at all
 		//with an empty tray: bit 0 on its own reads as 碟仓打开 and then has the machine try
 		//to load what it takes to be a bad disc.
-		Queue(IsMounted() ? 0xC1 : 0x00);
+		Queue(DiscReady() ? 0xC1 : 0x00);
 
 		//$C5 is where the machine asks how far in it is, and the answer is two positions:
 		//block[10..12] is where what is playing starts, block[13..15] is where the drive is
@@ -441,7 +458,7 @@ public:
 		//($6E44 counts it down a second at a time, $6E8A up) before handing it back as the
 		//start of a fresh $D0. All three want it counted from the start of the track, which
 		//is what those tables hold.
-		Queue((_cmd == 0xA1 && IsMounted()) ? 0x08 : (_cmd == 0xA0 ? pos[1] : 0x00));
+		Queue((_cmd == 0xA1 && DiscReady()) ? 0x08 : (_cmd == 0xA0 ? pos[1] : 0x00));
 
 		//block[10] and block[11] are the kind of disc, and the player front end reads the two
 		//as one field - it tests four bits in a fixed order and draws a different label for
@@ -468,7 +485,7 @@ public:
 		//
 		//Only for this command: block[13] is the drive's "finished" flag for the others, and
 		//$6671 spins on bit 7 of it after an $A0.
-		if(_cmd == 0xA1 && IsMounted()) {
+		if(_cmd == 0xA1 && DiscReady()) {
 			uint32_t seconds = (GetSectorCount() + 150) / 75;
 			Queue((uint8_t)_trackCount);
 			Queue((uint8_t)(seconds / 60));
@@ -506,8 +523,45 @@ public:
 	//Only the keys whose meaning follows from that order are acted on. The rest are left
 	//alone: the loader sends $1C on its way into a game, so these bytes are not the panel's
 	//alone, and there is nothing to check a guess against.
+	//
+	//The three keys beside the display are widgets 12, 13 and 14 - the rectangles at x=123,
+	//139 and 155, which are the play/pause, stop and eject the panel draws there. They send
+	//$04, $1C and $0D. ($0C belongs to the key beside the ten numbers, the one marked 10+.)
+	//
+	//Play/pause is also what the left mouse button sends while the picture belongs to the
+	//decoder ($6289: device $0D bit 1, then LDA #$04 / JSR $672A), which is the only way of
+	//touching a video from there: one press holds it, the next lets it go on.
+	//
+	//Stop ends the play outright. The disc loader sends it too, on its way into a game, which
+	//is the same thing meant: whatever the drive was playing is finished with.
 	void TakePanelKey(uint8_t key)
 	{
+		if(key == 0x04) {
+			if(_playPending || _playBusy) {
+				_playPaused = !_playPaused;
+			} else {
+				//Nothing to hold, so it is the play half of the key: the video the drive is
+				//sitting on, which is the one the panel has been showing the number of.
+				PlayVideo(_playTrack);
+			}
+			return;
+		}
+
+		if(key == 0x1C) {
+			_playPaused = false;
+			EndPlayback(false);
+			return;
+		}
+
+		//Eject opens the tray, and pressing it again closes it. An open tray is a drive with
+		//nothing in it as far as every answer goes, and the player draws it as such.
+		if(key == 0x0D) {
+			_trayOpen = !_trayOpen;
+			_playPaused = false;
+			EndPlayback(false);
+			return;
+		}
+
 		//The ten number keys, in the order the panel draws them
 		static constexpr uint8_t NumberKeys[10] = { 0x16, 0x15, 0x39, 0x09, 0x0F, 0x0E, 0x0B, 0x23, 0x24, 0x49 };
 		for(int i = 0; i < 10; i++) {
@@ -529,7 +583,7 @@ public:
 	//the $D0 packet makes, so whoever plays those plays these.
 	void PlayVideo(uint8_t track)
 	{
-		if(!IsMounted() || _trackCount < 2) {
+		if(!DiscReady() || _trackCount < 2) {
 			return;
 		}
 
@@ -548,6 +602,7 @@ public:
 		_playBusy = true;
 		_playOffered = 0;
 		_playElapsed = 0;
+		_playPaused = false;
 	}
 
 	//$D0 asks for a stretch of one video track to be played, and the machine then waits on
@@ -587,6 +642,7 @@ public:
 		_playBusy = true;
 		_playOffered = 0;
 		_playElapsed = 0;
+		_playPaused = false;
 	}
 
 public:
@@ -599,9 +655,9 @@ public:
 				//sitting in its playback loop for the rest of the run
 				EndPlayback();
 			}
-		} else if(_playBusy) {
+		} else if(_playBusy && !_playPaused) {
 			//Somebody took the request, so the picture is running somewhere and the drive
-			//has a position to report
+			//has a position to report - unless it is being held, when it stands where it is
 			_playElapsed++;
 		}
 	}
@@ -723,5 +779,7 @@ private:
 		SV(_lastRead);
 		SV(_echoPossible);
 		SV(_panelPlay);
+		SV(_playPaused);
+		SV(_trayOpen);
 	}
 };

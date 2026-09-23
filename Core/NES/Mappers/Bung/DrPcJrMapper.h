@@ -680,6 +680,42 @@ public:
 	}
 
 	void EndVideoPlayback(bool completed) { _cd.EndPlayback(completed); }
+	bool IsVideoPlaying() { return _cd.IsPlaying(); }
+	bool IsVideoPaused() { return _cd.IsPaused(); }
+
+	//Whether the machine's own screen is up in front of a video that is still playing. The
+	//player's right mouse button flips between the two ($6300), and the flip goes out through
+	//the BIOS's $83 call in bits 7-6 - $00 for the video, $80 for the player's panel - while
+	//the video carries on underneath, its clock still running on the panel. The two BIOSes
+	//keep the setting in different registers: the KW2000's $83 merges it into $41AF (whose low
+	//bits are the BIOS group), the KW3000's writes it to $41AB.
+	//
+	//A title uses the same setting on purpose. One teaching disc asks for $80 right
+	//after each of its plays and draws the dialogue's transcript on the machine's screen, so
+	//the lesson is read while its sound plays. Others ask for $00 and are watched.
+	//
+	//$C0 is not the same as $80 while a video plays - it depends on whether the video is being
+	//held. A teaching disc's right button flips between $00 and $C0: it pauses its lesson video
+	//and writes $C0, then draws that section's exercises on the machine's screen - a question,
+	//its answers and next/demonstrate/answer buttons, all worked with the left button. A game
+	//disc asks for a preview with $C0 still set, the value both machines keep while nothing
+	//plays, waits some forty frames and only then writes $00 - and the preview is shown from
+	//its start, so a playing video is on screen under $C0. Taken as the video always, as it
+	//was, the exercises were never seen and the right button seemed only to stop the left one
+	//pausing; taken as the machine always, the preview lost its first second. So $C0 shows the
+	//machine while the video is held and the video while it runs. That covers every recording
+	//for both machines; what the chip itself does with bit 6 is not known - the game disc's
+	//wait looks sized for a drive that takes that long to start, which this one does not.
+	bool IsOwnScreenOverVideo()
+	{
+		uint8_t setting = VideoScreenSetting() & 0xC0;
+		return setting == 0x80 || (setting == 0xC0 && _cd.IsPaused());
+	}
+
+	uint8_t VideoScreenSetting()
+	{
+		return _romType == 1 ? _regs[0x2F] : (_romType == 2 ? _regs[0x2B] : 0xC0);
+	}
 
 	static bool IsDiscImage(const string& path)
 	{

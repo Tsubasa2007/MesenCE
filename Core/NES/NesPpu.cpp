@@ -1355,6 +1355,18 @@ template<class T> void NesPpu<T>::SendFrame()
 	//nothing of its own meanwhile - so it is sent in place of the PPU's frame, at its own
 	//size. See NesConsole::ClockDiscVideo.
 	uint32_t* discVideo = _console->GetDiscVideoFrame();
+
+	//Whenever the kind of frame changes, the filter is told to change with it, here. The
+	//request the console makes when a video comes and goes is taken up by the decoding
+	//thread, which can still be finishing the frame before and answer it from the state as
+	//it was then - after which the video's first picture reached the machine's own filter,
+	//which reads it as palette indices and runs off the end of its palette. Asked for here,
+	//the answer is read with the frame it is for.
+	if((discVideo != nullptr) != _discVideoSent) {
+		_discVideoSent = discVideo != nullptr;
+		_emu->GetVideoDecoder()->ForceFilterUpdate();
+	}
+
 	if(discVideo) {
 		CdVideoPlayer* player = _console->GetDiscVideoPlayer();
 		RenderedFrame video((uint16_t*)discVideo, player->GetWidth(), player->GetHeight(), 1.0, _frameCount, _console->GetControlManager()->GetPortStates(), videoPhase);
