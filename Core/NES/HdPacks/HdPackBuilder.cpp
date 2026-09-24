@@ -83,7 +83,23 @@ void HdPackBuilder::AddTile(HdPackTileInfo* tile, uint32_t usageCount)
 		}
 	} else {
 		if(tile->TileIndex >= 0) {
-			paletteMap[palette][tile->TileIndex % 256] = tile;
+			//A slot holds one tile, and only what the slots hold is saved. With CHR RAM, the bank
+			//id is a hash of the bank's contents taken on $2007 writes, so it goes stale when the
+			//mapper switches CHR RAM pages or data arrives some other way, and a different tile
+			//can then come here for a slot already taken - which used to replace the first one,
+			//losing it. It goes to an overflow group instead. The group only decides which PNG
+			//the tile is drawn in: a CHR RAM tile is matched by its pixels and palette.
+			uint32_t groupId = (uint32_t)chrBankId;
+			vector<HdPackTileInfo*>* slots = &paletteMap[palette];
+			for(uint32_t overflow = 1; (*slots)[tile->TileIndex % 256] && (*slots)[tile->TileIndex % 256] != tile; overflow++) {
+				groupId = (uint32_t)chrBankId ^ (overflow * 0x9E3779B9u);
+				std::map<uint32_t, vector<HdPackTileInfo*>>& groupMap = _tilesByChrBankByPalette[groupId];
+				if(groupMap.find(palette) == groupMap.end()) {
+					groupMap[palette] = vector<HdPackTileInfo*>(256, nullptr);
+				}
+				slots = &groupMap[palette];
+			}
+			(*slots)[tile->TileIndex % 256] = tile;
 		} else {
 			//FIXME: This will result in data loss if more than 256 tiles of the same palette exist in the hires.txt file
 			//Currently this way to prevent issues when loading a CHR RAM HD pack into the recorder (because TileIndex is -1 in that case)
