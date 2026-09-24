@@ -161,8 +161,10 @@ bool WasapiSoundManager::Initialize(uint32_t sampleRate, bool isStereo)
 
 	if(!device) {
 		hr = enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device);
-		if(FAILED(hr)) {
+		if(FAILED(hr) || !device) {
+			//No output device at all (e.g. a remote desktop session with audio off)
 			LogError("IMMDeviceEnumerator::GetDefaultAudioEndpoint failed.", hr);
+			return false;
 		}
 	}
 
@@ -286,6 +288,9 @@ void WasapiSoundManager::PlayBuffer(int16_t* soundBuffer, uint32_t sampleCount, 
 		Release();
 		if(!Initialize(sampleRate, isStereo)) {
 			Release();
+		}
+		if(!_audioClient) {
+			return;
 		}
 	}
 
