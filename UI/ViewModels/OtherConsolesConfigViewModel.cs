@@ -48,8 +48,14 @@ namespace Mesen.ViewModels
 			}
 
 			AddDisposable(CvInput);
-			AddDisposable(ReactiveHelper.RegisterRecursiveObserver(CvConfig, (s, e) => { CvConfig.ApplyConfig(); }));
-			AddDisposable(ReactiveHelper.RegisterRecursiveObserver(SacConfig, (s, e) => { SacConfig.ApplyConfig(); }));
+			AddDisposable(ReactiveHelper.RegisterRecursiveObserver(CvConfig, (s, e) => {
+				CvConfig.ApplyConfig();
+				ConfigManager.Config.Video.ApplyConfig();
+			}));
+			AddDisposable(ReactiveHelper.RegisterRecursiveObserver(SacConfig, (s, e) => {
+				SacConfig.ApplyConfig();
+				ConfigManager.Config.Video.ApplyConfig();
+			}));
 		}
 
 		private async void OpenSacSetup(Button btn, int port)

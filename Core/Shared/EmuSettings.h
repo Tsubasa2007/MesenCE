@@ -22,6 +22,7 @@ private:
 	DebugConfig _debug;
 
 	GameConfig _game;
+	ShaderConfig _shader;
 
 	SnesConfig _snes;
 	GameboyConfig _gameboy;
@@ -45,6 +46,7 @@ private:
 	std::unordered_map<uint32_t, vector<KeyCombination>> _shortcutSupersets[3];
 
 	SimpleLock _updateShortcutsLock;
+	SimpleLock _shaderCfgLock;
 
 	void ProcessString(string& str, const char** strPointer);
 
@@ -63,6 +65,10 @@ public:
 
 	void SetVideoConfig(VideoConfig& config);
 	VideoConfig& GetVideoConfig();
+
+	void SetShaderConfig(InteropShaderConfig& config);
+	ShaderConfig GetShaderConfig();
+	bool NeedsShaderUpdate(uint32_t version);
 
 	void SetAudioConfig(AudioConfig& config);
 	AudioConfig& GetAudioConfig();

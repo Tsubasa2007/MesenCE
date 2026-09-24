@@ -134,6 +134,13 @@ namespace Mesen.Config
 				Sac.InitializeDefaults(DefaultKeyMappings);
 			}
 
+			if(ConfigUpgrade < (int)ConfigUpgradeHint.WindowsAudioLatency) {
+				//Set audio back down to 30ms when upgrading from DirectSound to WASAPI
+				if(OperatingSystem.IsWindows()) {
+					Audio.AudioLatency = 30;
+				}
+			}
+
 			ConfigUpgrade = (int)ConfigUpgradeHint.NextValue - 1;
 			Version = EmuApi.GetMesenVersion().ToString(3);
 		}
@@ -329,6 +336,7 @@ namespace Mesen.Config
 		CvInput,
 		WsInput,
 		SacInput,
+		WindowsAudioLatency,
 		NextValue,
 	}
 }
