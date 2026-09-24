@@ -899,7 +899,9 @@ template<class T> uint8_t NesPpu<T>::GetPixelColor()
 		//If the dot is skipped, all sprite shifters are active on the first dot of the scanline.
 		uint8_t remainingShifters = _dotSkipped ? 0xFF : _activeSpriteShifters;
 
-		_lastSprite = &_spriteTiles[BitUtilities::GetHighestBitIndex(_activeSpriteShifters)];
+		//Only while a shifter is active: GetHighestBitIndex(0) is undefined, and the HD PPUs
+		//dereference this pointer, so a stray index took them out of bounds.
+		_lastSprite = _activeSpriteShifters ? &_spriteTiles[BitUtilities::GetHighestBitIndex(_activeSpriteShifters)] : nullptr;
 
 		//Output+shift all active sprite shifters.
 		while(remainingShifters) {
