@@ -51,6 +51,13 @@ private:
 	//gets the filter changed - see IsDiscVideoOnScreen
 	bool _discVideoOnScreen = false;
 
+	//The video's place in a saved state, and putting it back on load - see CdVideoPlayer::Restore
+	void SerializeDiscVideo(Serializer& s);
+	bool RestoreDiscVideo();
+	//A loaded state's video, waiting for a disc to play it from - see RestoreDiscVideo
+	CdVideoPlayer::PlayState _pendingDiscVideo;
+	bool _discVideoRestorePending = false;
+
 	safe_ptr<HdPackData> _hdData;
 	unique_ptr<HdAudioDevice> _hdAudioDevice;
 	unique_ptr<HdPackBuilder> _hdPackBuilder;

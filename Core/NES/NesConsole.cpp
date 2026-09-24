@@ -132,6 +132,11 @@ void NesConsole::Serialize(Serializer& s)
 
 	SV(_controlManager);
 
+	if(s.GetFormat() != SerializeFormat::Map) {
+		//After the mapper, whose drive this has to agree with
+		SerializeDiscVideo(s);
+	}
+
 	if(!s.IsSaving()) {
 		UpdateRegion(true);
 	}
@@ -564,6 +569,97 @@ bool NesConsole::IsDiscVideoOnScreen()
 //the PPU sends instead looked equivalent and was not: that runs on its own schedule, and the
 //stream then advanced fewer times than the sound was drawn from it, so every frame's worth
 //of sound came up short and the whole thing played fast.
+void NesConsole::SerializeDiscVideo(Serializer& s)
+{
+	//Written with every state, so a state that lacks it - one saved before it existed - is
+	//told apart from one saved with no video playing, and leaves the player alone.
+	bool discVideoSaved = s.IsSaving();
+	CdVideoPlayer::PlayState state;
+	if(s.IsSaving()) {
+		//One still waiting to be put back is where the video is, whatever the player says
+		if(_discVideoRestorePending) {
+			state = _pendingDiscVideo;
+		} else if(_discVideo) {
+			state = _discVideo->GetPlayState();
+		}
+	}
+
+	bool discVideoPlaying = state.Playing;
+	uint32_t discVideoItemLba = state.ItemLba;
+	uint32_t discVideoItemSectors = state.ItemSectors;
+	uint32_t discVideoFromSector = state.FromSector;
+	uint32_t discVideoToSector = state.ToSector;
+	bool discVideoHold = state.Hold;
+	double discVideoElapsed = state.Elapsed;
+	SV(discVideoSaved);
+	SV(discVideoPlaying);
+	SV(discVideoItemLba);
+	SV(discVideoItemSectors);
+	SV(discVideoFromSector);
+	SV(discVideoToSector);
+	SV(discVideoHold);
+	SV(discVideoElapsed);
+
+	if(s.IsSaving() || !discVideoSaved || GetNesConfig().UseExternalVideoPlayer) {
+		return;
+	}
+
+	state.Playing = discVideoPlaying;
+	state.ItemLba = discVideoItemLba;
+	state.ItemSectors = discVideoItemSectors;
+	state.FromSector = discVideoFromSector;
+	state.ToSector = discVideoToSector;
+	state.Hold = discVideoHold;
+	state.Elapsed = discVideoElapsed;
+
+	_pendingDiscVideo = state;
+	_discVideoRestorePending = true;
+	RestoreDiscVideo();
+}
+
+//Put a loaded state's video back, if there is a disc to play it from yet. Normally there is,
+//and it happens as the state is loaded. A state loaded before the machine has run at all - the
+//first thing a run does - finds no disc: the drive mounts its disc on the machine's first bus
+//access, because the emulator cannot say which rom it loaded any earlier. Then this waits and
+//is tried again at the end of each frame, with nothing left on screen meanwhile.
+bool NesConsole::RestoreDiscVideo()
+{
+	if(!_discVideoRestorePending) {
+		return false;
+	}
+	if(GetNesConfig().UseExternalVideoPlayer) {
+		_discVideoRestorePending = false;
+		return false;
+	}
+
+	//The disc is the one mounted now - a state carries where the video was, not the disc itself
+	CdImageFile* image = nullptr;
+	if(DrPcJrMapper* pcjr = dynamic_cast<DrPcJrMapper*>(_mapper.get())) {
+		image = &pcjr->GetDiscImage();
+	} else if(YuxingMapper* yuxing = dynamic_cast<YuxingMapper*>(_mapper.get())) {
+		image = &yuxing->GetDiscImage();
+	}
+
+	if(!_discVideo) {
+		_discVideo.reset(new CdVideoPlayer());
+	}
+	bool wasPlaying = _discVideo->IsPlaying();
+	if(_pendingDiscVideo.Playing && (!image || !image->IsOpen())) {
+		if(wasPlaying) {
+			_discVideo->Stop();
+			_emu->GetVideoDecoder()->ForceFilterUpdate();
+		}
+		return false;
+	}
+
+	_discVideoRestorePending = false;
+	_discVideo->Restore(image, _pendingDiscVideo);
+	if(wasPlaying || _discVideo->IsPlaying()) {
+		_emu->GetVideoDecoder()->ForceFilterUpdate();
+	}
+	return true;
+}
+
 void NesConsole::ClockDiscVideo()
 {
 	//A disc that carries its own menu walks it here, before anything is asked for, so that a
@@ -590,6 +686,9 @@ void NesConsole::ClockDiscVideo()
 		}
 		return;
 	}
+
+	//A loaded state whose video could not be put back yet - see RestoreDiscVideo
+	RestoreDiscVideo();
 
 	//The pointer the machine asked for, onto whatever picture is up. It belongs to the disc's
 	//program rather than to any one picture, so it is set every frame and not at the moment a

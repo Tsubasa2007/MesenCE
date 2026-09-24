@@ -95,6 +95,13 @@ private:
 	//standing still wherever there was nothing to decode.
 	std::atomic<double> _elapsed{ 0 };
 
+	//The stretch being played, as it was named to Start. Nothing here needs it while playing;
+	//it is kept so that a saved state can name the same stretch again - see GetPlayState.
+	uint32_t _itemLba = 0;
+	uint32_t _itemSectors = 0;
+	uint32_t _fromSector = 0;
+	uint32_t _toSector = 0;
+
 
 	//The pointer, and the picture with it drawn on. The decoded picture is left untouched:
 	//a still is held for as long as the machine likes and the pointer moves over it, so
@@ -194,9 +201,76 @@ public:
 		_duration = (toSector - fromSector) / 75.0;
 		_elapsed = 0;
 		_position = 0;
+		_itemLba = itemLba;
+		_itemSectors = itemSectors;
+		_fromSector = fromSector;
+		_toSector = toSector;
 		_playing = true;
 
 		return true;
+	}
+
+	//What a saved state has to carry for the video to come back with the machine. The player is
+	//not part of the machine, so without this a state loaded in the middle of a video - which is
+	//what rewinding does, over and over - brought the machine back and left the video where it
+	//was: the picture ran on ahead, and since running out is what tells the machine a video is
+	//over, it was told so early by however far it had been taken back.
+	struct PlayState
+	{
+		bool Playing = false;
+		uint32_t ItemLba = 0;
+		uint32_t ItemSectors = 0;
+		uint32_t FromSector = 0;
+		uint32_t ToSector = 0;
+		bool Hold = false;
+		double Elapsed = 0;
+	};
+
+	PlayState GetPlayState()
+	{
+		PlayState state;
+		if(_playing) {
+			state.Playing = true;
+			state.ItemLba = _itemLba;
+			state.ItemSectors = _itemSectors;
+			state.FromSector = _fromSector;
+			state.ToSector = _toSector;
+			state.Hold = _hold;
+			//A move asked for and not yet made is where the stream is about to be
+			state.Elapsed = _seekRequested ? _seekElapsed.load() : _elapsed.load();
+		}
+		return state;
+	}
+
+	//Put the player where a loaded state says it was. The same stretch is opened again and the
+	//stream moved to the saved point, which lands on the next frame the same way a drag on the
+	//transport bar does; the machine's clock for the stretch is restored exactly, so it hears
+	//the video end on the same frame it would have. A picture that stands (a still the machine
+	//put up and left) is simply shown again from its start: nothing waits on it ending.
+	//The transport bar's pause belongs to whoever is watching rather than to the machine, so it
+	//is kept as it is.
+	void Restore(CdImageFile* image, const PlayState& state)
+	{
+		if(!state.Playing || !image) {
+			if(_playing) {
+				Stop();
+			}
+			return;
+		}
+
+		if(_playing && !_seekRequested && _hold == state.Hold && _itemLba == state.ItemLba && _itemSectors == state.ItemSectors &&
+			_fromSector == state.FromSector && _toSector == state.ToSector && _elapsed.load() == state.Elapsed) {
+			return;
+		}
+
+		bool paused = _paused;
+		if(!Start(*image, state.ItemLba, state.ItemSectors, state.FromSector, state.ToSector, state.Hold)) {
+			return;
+		}
+		_paused = paused;
+		if(!state.Hold && state.Elapsed > 0) {
+			RequestSeek(state.Elapsed);
+		}
 	}
 
 	void Stop()
@@ -222,6 +296,10 @@ public:
 		_streamOpen = 0;
 		_streamStart = 0;
 		_elapsed = 0;
+		_itemLba = 0;
+		_itemSectors = 0;
+		_fromSector = 0;
+		_toSector = 0;
 	}
 
 	bool IsPlaying() { return _playing; }
@@ -529,6 +607,14 @@ public:
 			_delayed.clear();
 			_elapsed = _seekElapsed.load();
 			_position = _elapsed.load();
+
+			//The picture the move landed on goes up at once. Queued behind the sound like any
+			//other, the screen had nothing on it for the frames the queue holds - a blank
+			//flash after every drag, and after every state loaded mid-video.
+			if(_decoder.HasPicture()) {
+				_spare = _decoder.GetPicture();
+				_shown.swap(_spare);
+			}
 		}
 
 		if(Held() || _holding.load()) {
