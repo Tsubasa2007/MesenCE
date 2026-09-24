@@ -433,6 +433,52 @@ private:
 	//the low half. Any other value resets the decoder, which is how one phrase is separated
 	//from the next.
 	unique_ptr<BbkLpcAudio> _speech;
+
+	//The Kingwon machines' voice recorder: a one-bit codec on $41AB, bit-serial. The software selects
+	//recording with bit 2 or playback with bit 1, and then moves one bit per tick of the
+	//codec's own clock, which it reads on bit 1 - it waits for the clock to go high and then
+	//low for every bit. Playback puts the bit on bit 0; recording takes it from bit 0. The same
+	//recorder runs on both machines and speaks the same protocol; it keeps the register's top
+	//bits from the BIOS's copy of it, which is how the KW3000's screen setting in bits 7-6
+	//survives beside it.
+	//
+	//Read back as the last value written, the clock never moved: a clip started playing and
+	//the recorder sat on its "playing" box for good, with the machine spinning on that one
+	//read. Only the clock is modelled. Which codec it is has not been identified, so nothing
+	//is decoded, and with no microphone behind it there is nothing to record either -
+	//recording reads the pattern such a codec gives for silence, alternating bits. The rate is
+	//the recorder's own: it shows a clip of 384 pages (98,304 bytes) as 32 seconds long, which
+	//is 3,072 bytes - 24,576 bits - a second.
+	static constexpr uint32_t VoiceBitRate = 24576;
+	uint8_t _voiceMode = 0; //0 idle, 1 playback, 2 recording
+	uint32_t _voiceClockAcc = 0;
+	bool _voiceClock = false;
+	uint8_t _voiceInBit = 0;
+
+	void VoiceWrite(uint8_t value)
+	{
+		_voiceMode = (value & 0x04) ? 2 : ((value & 0x02) ? 1 : 0);
+		if(_voiceMode == 0) {
+			_voiceClock = false;
+			_voiceClockAcc = 0;
+		}
+	}
+
+	void VoiceClock()
+	{
+		if(_voiceMode == 0) {
+			return;
+		}
+		_voiceClockAcc += VoiceBitRate * 2;
+		uint32_t clockRate = NesConstants::GetClockRate(_console->GetRegion());
+		if(_voiceClockAcc >= clockRate) {
+			_voiceClockAcc -= clockRate;
+			_voiceClock = !_voiceClock;
+			if(!_voiceClock) {
+				_voiceInBit ^= 1;
+			}
+		}
+	}
 	uint8_t _speechByte = 0;
 	uint8_t _speechNibbleCount = 0;
 
@@ -2156,6 +2202,7 @@ protected:
 		KbdClock();
 		MousePoll();
 		_speech->Clock();
+		VoiceClock();
 		_printer.Clock();
 		_fdc.Clock();
 
@@ -2602,7 +2649,13 @@ protected:
 			//$41AB bit 4 and $41AF bit 0 are the drive's presence lines, reported the way the
 			//reference reports them - set only once an image is actually mounted. The machine
 			//boots to its own screen either way; it does not wait for a disk.
-			case 0x41AB: return _fdc.IsDiskInserted() ? (_regs[0x2B] | 0x10) : _regs[0x2B];
+			case 0x41AB: {
+				uint8_t value = _fdc.IsDiskInserted() ? (_regs[0x2B] | 0x10) : _regs[0x2B];
+				if(_romType != 0 && _voiceMode != 0) {
+					value = (uint8_t)((value & ~0x03) | (_voiceClock ? 0x02 : 0x00) | (_voiceMode == 2 ? _voiceInBit : (value & 0x01)));
+				}
+				return value;
+			}
 			case 0x41AF: {
 				uint8_t value = _fdc.IsDiskInserted() ? (_regs[0x2F] | 0x01) : _regs[0x2F];
 				if(_cd.IsPresent()) {
@@ -2749,6 +2802,11 @@ protected:
 				break;
 
 			case 0x41AC: WriteSpeech(value); break;
+			case 0x41AB:
+				if(_romType != 0) {
+					VoiceWrite(value);
+				}
+				break;
 
 			case 0x4198: case 0x4199: case 0x419A: case 0x419B:
 			case 0x419C: case 0x419D: case 0x419E: case 0x419F:
@@ -2932,6 +2990,7 @@ protected:
 		SV(_gameChip); SVArray(_gameChrPages, 8); SV(_mmc1); SV(_mmc3); SV(_mmc2);
 		SV(_lptData); SV(_lptCtrl); SV(_printer);
 		SV(_speechByte); SV(_speechNibbleCount); SV(_speech);
+		SV(_voiceMode); SV(_voiceClockAcc); SV(_voiceClock); SV(_voiceInBit);
 		SV(_mouseEnabled); SV(_mouseFrame); SV(_cdvApuReady);
 		SVArray(_mouseReport, 3); SV(_lastMouseButtons);
 
