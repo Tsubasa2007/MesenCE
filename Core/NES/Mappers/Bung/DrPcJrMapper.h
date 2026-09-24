@@ -422,8 +422,24 @@ private:
 		return cycle <= 256 || cycle >= 321;
 	}
 
-	//The shadow is two 1KB pages, picked by the low bit of the nametable index
-	static uint16_t ExRamIndex(uint16_t addr) { return (uint16_t)((((addr >> 10) & 1) << 10) | (addr & 0x3FF)); }
+	//The shadow is two 1KB pages, one beside each of the machine's two nametable pages, and a
+	//cell's entry is the one beside the nametable byte it belongs to. So the page is picked
+	//the way the nametable is, through the current arrangement - not by address bit 10 alone,
+	//which is only right while the arrangement is vertical. Taken from that bit, a screen
+	//scrolling vertically between $2000 and $2800 kept both nametables' entries in the same
+	//page: the credits written into one set the banks for the picture in the other, and the
+	//picture's lower rows came out as pieces of the font.
+	uint16_t ExRamIndex(uint16_t addr)
+	{
+		uint16_t page;
+		switch(GetMirroringType()) {
+			case MirroringType::Horizontal: page = (addr >> 11) & 1; break;
+			case MirroringType::ScreenAOnly: page = 0; break;
+			case MirroringType::ScreenBOnly: page = 1; break;
+			default: page = (addr >> 10) & 1; break;
+		}
+		return (uint16_t)((page << 10) | (addr & 0x3FF));
+	}
 
 	//--- speech ------------------------------------------------------------------------
 	//The same LPC-10 synthesizer the other learning machines here carry, in its plainest
