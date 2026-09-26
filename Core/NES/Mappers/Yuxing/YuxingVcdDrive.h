@@ -557,10 +557,22 @@ private:
 		MessageManager::Log("[YuXing] Program asked for track " + std::to_string(number));
 	}
 
+	//The word ends with its last bit, and the next select starts a fresh one. Leaving the
+	//byte index set once the bits had run out is what made the keyboard go dead: the disc
+	//menu reads the port 24-48 times after each select, for the mouse, and so reads past
+	//the end of the word. If a program was started just then, it inherited a keyboard
+	//whose every select was refused as "still in the middle of a word". A program that
+	//reads the keys with $4016 first never cleared that, and no key reached it again.
 	uint8_t KeyRead()
 	{
-		if(--_keySendBit <= 0) {
+		if(_keySendBit <= 0) {
 			_keyboardSelected = false;
+			_keyByteIndex = 0;
+			return 0;
+		}
+		if(--_keySendBit == 0) {
+			_keyboardSelected = false;
+			_keyByteIndex = 0;
 		}
 		return (uint8_t)((_keySend >> _keySendBit) & 1);
 	}
