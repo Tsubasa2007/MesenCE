@@ -197,10 +197,15 @@ public:
 				//step, finds a data bit where the stop bit should be and throws the report
 				//away. That is what it did to all but one of 1230 of them, which is why the
 				//pointer once did not move at all.
+				//
+				//One idle bit, no more. A report is then 28 bits against the 16 clocks of a
+				//frame, so it lands at a different point of the frame each time. A YuXing VCD
+				//disc program waiting on a clip polls the drive's status on alternate frames and
+				//throws away any report it decoded on the frame before; with four idle bits (31
+				//in all) the report drifted only a bit every two frames and sat in that losing
+				//phase for 30-50 frames at a time, so the pointer froze during video.
 				Fold();
-				for(int i = 0; i < 4; i++) {
-					Push(true);
-				}
+				Push(true);
 				LoadReport();
 			} else {
 				_queueHead = (_queueHead + 1) % QueueSize;
