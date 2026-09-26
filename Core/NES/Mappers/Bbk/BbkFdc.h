@@ -494,23 +494,30 @@ public:
 		switch(port) {
 			case 0: //FDCDMADackIO
 			case 1: //FDCDMATcIO
-				//Only a write command's execution phase moves bytes onto the disk. While a read
-				//is executing the controller is driving the bus, so real hardware ignores a write
+				//Only a write command's transfer moves bytes onto the disk. While a read is
+				//executing the controller is driving the bus, so real hardware ignores a write
 				//to the DACK port - the same guard port 5 already applies. Without it, software
 				//that stores to its own DRAM at an 8-aligned $FF8x address has the write routed
 				//here by the mapper ($FF00-$FFFF writes always hit IO) and every such store
 				//stamps a byte into the mounted image at the current transfer position, silently
 				//corrupting the disk. A `INC $FF88` in the BBK's DOS did exactly that, writing
 				//"EE EF" over the first two bytes of whichever sector was mid-transfer.
-				if(_phase == FdcPhase::Execution && (_lastCommand == 0x05 || _lastCommand == 0x09)) {
+				//
+				//The test is on the command and the bytes still owed, not on the phase: in DMA
+				//mode a write command is already in the result phase when its data arrives (the
+				//execution phase belongs to the non-DMA path), so requiring it dropped every
+				//byte of every DMA write and no save reached the disk. Terminal count ends the
+				//transfer, as it does for a read, so a stray store after it cannot land either.
+				if((_lastCommand == 0x05 || _lastCommand == 0x09) && _dataBytes > 0) {
 					WriteDiskByte(value);
-					if(_dataBytes > 0) {
-						_dataBytes--;
-						if(_dataBytes == 0) {
-							_cycle = 0;
-							_phase = FdcPhase::Result;
-							_mainStatus |= MsDataIn;
-						}
+					_dataBytes--;
+					if(port == 1) {
+						_dataBytes = 0;
+					}
+					if(_dataBytes == 0) {
+						_cycle = 0;
+						_phase = FdcPhase::Result;
+						_mainStatus |= MsDataIn;
 					}
 				}
 				break;
