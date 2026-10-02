@@ -948,8 +948,12 @@ protected:
 				MapCram8k(_reg5501 & _cramMask);
 				//How much character data this program brought - see CramFoldMask. Bit 7 is the
 				//mode flag rather than part of the bank, so a write that only hands the window
-				//to the clone says nothing about the size.
-				if((value & 0x80) == 0) {
+				//to the clone says nothing about the size. Nor does one made once the clone
+				//has it: that is the program at work, not the loader paging it in. One that
+				//builds its own tiles drops out of the mode for a moment just after starting,
+				//to point the window at a bank, and counted as loaded data its pattern tables
+				//went read-only and every tile it wrote was lost.
+				if((value & 0x80) == 0 && !_mmc3Mode) {
 					uint8_t loaded = (uint8_t)(Swap5((uint8_t)(value & _cramMask)) + 1);
 					if(loaded > _cramLoaded) {
 						_cramLoaded = loaded;
