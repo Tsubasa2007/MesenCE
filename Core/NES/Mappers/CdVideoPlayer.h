@@ -162,6 +162,19 @@ public:
 	//real drive does anyway: it seeks past that part of the disc.
 	bool Start(CdImageFile& image, uint32_t itemLba, uint32_t itemSectors, uint32_t fromSector, uint32_t toSector, bool hold = false)
 	{
+		//The picture already up stays there until the new stretch has one of its own. The first
+		//picture of a stream waits behind its sound like every other, so clearing the screen as
+		//the request came in left it empty for those frames - a black flash every time a menu
+		//page was clicked over to the next.
+		vector<uint32_t> previous;
+		uint32_t previousWidth = 0;
+		uint32_t previousHeight = 0;
+		if(_playing && !_shown.empty()) {
+			previous.swap(_shown);
+			previousWidth = GetWidth();
+			previousHeight = GetHeight();
+		}
+
 		Stop();
 		_hold = hold;
 		if(toSector <= fromSector) {
@@ -206,6 +219,12 @@ public:
 		_fromSector = fromSector;
 		_toSector = toSector;
 		_playing = true;
+
+		//Only a picture of the same size: what draws the screen and the pointer go by the new
+		//stream's dimensions
+		if(!previous.empty() && GetWidth() == previousWidth && GetHeight() == previousHeight) {
+			_shown.swap(previous);
+		}
 
 		return true;
 	}
