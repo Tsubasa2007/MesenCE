@@ -6,9 +6,13 @@
 #include "NES/NesControlManager.h"
 #include "NES/NesMemoryManager.h"
 #include "NES/Input/Sb2kKeyboard.h"
+#include "NES/Input/Sb2kMouse.h"
 #include "NES/Mappers/Bung/DrPcJrGameChips.h"
 #include "NES/Mappers/Bbk/BbkLpcAudio.h"
 #include "Utilities/Serializer.h"
+#include "Utilities/FolderUtilities.h"
+#include "Utilities/VirtualFile.h"
+#include "Shared/MessageManager.h"
 
 //灵童 (LingTong) SMART-128B / SMART-128C learning machines - Power Software's "POWER-BIOS
 //v3.0". The iNES files in circulation carry mapper 174, which is an unrelated NTDEC
@@ -65,8 +69,8 @@
 //to scanning the matrix whenever that one has sent nothing.
 //
 //MMC3 games (the 128C's game menu): the four 8KB banks at $50 are ($55C0-$55C3 & $5580) |
-//(bank position & ~$5580), on top of $5400 x 4 - so with $5580 = 0, as the BIOS leaves it,
-//the page is straight. The games are patched: PRG R6/R7 go to $55C0/$55C1, the counter to
+//(($5400 x 4 + bank position) & ~$5580) - so with $5580 = 0, as the BIOS leaves it, the page
+//is straight. The games are patched: PRG R6/R7 go to $55C0/$55C1, the counter to
 //$5280-$5283 (an MMC3's $C000/$C001/$E000/$E001), mirroring to $5300, and the CHR registers
 //to a helper the launcher leaves at $7800 - see GameChrMode.
 //
@@ -78,10 +82,40 @@
 //reference emulator instead feeds this port four bits per $5x write, which suits its 中索
 //disc games but turns WPS's bytes into resets.)
 //
+//Mouse: a serial device on $4017 bit 2, beside the key matrix's bit 1, clocked by the same
+//strobes - each fall of $4016 bit 0 loads its next byte and the following reads shift it out
+//from the top. The format is read from the only software that drives it, the 中索 discs' menu,
+//which takes one byte per matrix row (bits 7-6 are the buttons in every byte, $40 left and
+//$80 right; bits 5-4 say what the byte is):
+//  00   a single step: bits 3-2 vertical (01 up, 11 down), bits 1-0 horizontal (01 left,
+//       11 right); a byte of 0 means nothing happened
+//  01   first of three: bit 3 down, bit 2 vertical bit 4, bit 1 right, bit 0 horizontal bit 4
+//  10   vertical distance, bits 3-0
+//  11   horizontal distance, bits 3-0 - the packet is complete
+//The 128C's own software never reads it.
+//
 //Floppy: an Apple II style Disk II controller - $5600-$560F are its sixteen soft switches
 //(stepper phases, motor, drive select, Q6/Q7), read-only, and the BIOS decodes 6-and-2 GCR
 //itself. $5300 bit 3 reads high when no disk is in the drive, which the BIOS checks before
 //every boot attempt. No disk images exist for this machine, so the drive is always empty.
+//
+//中索 (Zoson) disc games: the VCD machine these discs came with is this hardware, and each game
+//.CDV is 2KB of code followed by the game (see ZosonCdvLoader). Opened on its own, there is no
+//BIOS: at every power-on and reset the game goes into DRAM from its start, the code into the
+//RAM at $6200, and the CPU starts at $6200 - which is all the machine's own disc loader does
+//before jumping there. The code sets everything else up from the real registers.
+//
+//STAND-IN, not the machine's code: the disc menu starts a program by putting its number in
+//$5FFF and jumping to $4800, into the machine's resident loader, which no dump has. In its
+//place the mapper leaves a few bytes at $4800 that hand $5FFF to it (a write to $57FF), and
+//then loads that program the way it loaded the first one and jumps to $6200. The number is
+//the program's place in the disc's sorted file list - the menu itself is 0 - which is how
+//every icon of the menus lines up with a file, gaps in the ST10xx names included; the files
+//are read from the folder the opened file came from. Anything the real loader did besides
+//(its own messages, a CD drive's timing, the BIOS entry points the menu also jumps to at
+//$F600/$F780) is not there. ($6200, not
+//$6000: the codes that leave a helper at $7800 copy it from $6250 on, and what sits at offset
+//$50 of the file is the helper's jump table - the games call $7803 and $7806.)
 class LingTongMapper : public BaseMapper
 {
 private:
@@ -92,7 +126,7 @@ private:
 	//holds the pattern it wrote into an earlier one, which is where the address wrapped, shows
 	//the total and picks the layout for it (256KB/512KB/1MB/2MB+ = $53/$54/$56/$51). A real
 	//SMART-128C reports 2048KB at power-on. Nothing says what a 128B carries, so it keeps the
-	//1MB the reference emulator gives both.
+	//1MB the reference emulator gives both; the 中索 disc games fit in either.
 	static constexpr uint32_t MaxDramSize = 0x200000;
 	static constexpr uint32_t DramOffset = 0x2000;
 	uint32_t _dramSize = 0x100000;
@@ -130,6 +164,79 @@ private:
 
 	uint8_t _status5300 = 0;
 
+	//The mouse, and the bytes it has queued: a single step, or a three-byte packet
+	shared_ptr<Sb2kMouse> _mouse;
+	uint8_t _mousePacket[3] = {};
+	uint8_t _mousePacketSize = 0;
+	uint8_t _mousePacketPos = 0;
+	uint8_t _mouseShift = 0;
+	bool _mouseStrobe = false;
+	int32_t _mouseX = 0;
+	int32_t _mouseY = 0;
+
+	//The next byte for the shift register, starting a new report when the last is used up
+	uint8_t NextMouseByte()
+	{
+		if(_mousePacketPos < _mousePacketSize) {
+			return _mousePacket[_mousePacketPos++];
+		}
+
+		int8_t dx = 0, dy = 0;
+		uint8_t buttons = 0;
+		if(_mouse) {
+			_mouse->TakeDelta(dx, dy, buttons);
+		}
+		_mouseX += dx;
+		_mouseY += dy;
+		uint8_t buttonBits = ((buttons & 0x01) ? 0x40 : 0) | ((buttons & 0x02) ? 0x80 : 0);
+
+		_mousePacketPos = 0;
+		if(std::abs(_mouseX) <= 1 && std::abs(_mouseY) <= 1) {
+			_mousePacket[0] = buttonBits |
+				(_mouseY < 0 ? 0x04 : (_mouseY > 0 ? 0x0C : 0)) |
+				(_mouseX < 0 ? 0x01 : (_mouseX > 0 ? 0x03 : 0));
+			_mousePacketSize = 1;
+			_mouseX = _mouseY = 0;
+		} else {
+			//Up to 31 a packet; the rest waits for the next one
+			int32_t x = std::clamp(_mouseX, -31, 31);
+			int32_t y = std::clamp(_mouseY, -31, 31);
+			_mouseX -= x;
+			_mouseY -= y;
+			uint8_t ax = (uint8_t)std::abs(x);
+			uint8_t ay = (uint8_t)std::abs(y);
+			_mousePacket[0] = buttonBits | 0x10 | (y > 0 ? 0x08 : 0) | ((ay & 0x10) ? 0x04 : 0) | (x > 0 ? 0x02 : 0) | ((ax & 0x10) ? 0x01 : 0);
+			_mousePacket[1] = buttonBits | 0x20 | (ay & 0x0F);
+			_mousePacket[2] = buttonBits | 0x30 | (ax & 0x0F);
+			_mousePacketSize = 3;
+		}
+		return _mousePacket[_mousePacketPos++];
+	}
+
+	uint8_t ReadMouseBit()
+	{
+		uint8_t bit = (_mouseShift & 0x80) ? 0x04 : 0;
+		_mouseShift <<= 1;
+		return bit;
+	}
+
+	void WriteMouseStrobe(uint8_t value)
+	{
+		bool strobe = (value & 0x01) != 0;
+		if(_mouseStrobe && !strobe) {
+			_mouseShift = NextMouseByte();
+		}
+		_mouseStrobe = strobe;
+	}
+
+	//A 中索 disc game opened on its own: its start code and the game
+	static constexpr uint16_t CdvStubAddress = 0x6200;
+	static constexpr uint16_t LoaderAddress = 0x4800;
+	static constexpr uint16_t LoaderRequestRegister = 0x57FF;
+	vector<uint8_t> _cdvStub;
+	vector<uint8_t> _cdvImage;
+	bool IsCdv() { return !_cdvStub.empty(); }
+
 	NesControlManager* NesControls() { return (NesControlManager*)_console->GetControlManager(); }
 
 	void UpdatePrgMapping()
@@ -140,10 +247,13 @@ private:
 			if(mode == 0x00) {
 				//$50, what the memory test and the game launcher use: $5400 names a 32KB page,
 				//cut into four 8KB banks. The bits of $5580 pick which bits of each bank number
-				//come from $55C0-$55C3 rather than from the bank's own position - all of them for
-				//an MMC3 game (whose patched code writes those registers), none for the BIOS.
+				//come from $55C0-$55C3 rather than from the page and the bank's own position - all
+				//of them for an MMC3 game (whose patched code writes those registers), none for the
+				//BIOS. They replace the page's bits too: a 中索 disc game's start code leaves $5400
+				//on the page it copied its graphics from, sets $5580 = $7F and starts the game from
+				//$55C0-$55C3 alone.
 				for(int i = 0; i < 4; i++) {
-					uint32_t bank = (uint32_t)_reg5400 * 4 + ((_prgBank[i] & _reg5580) | (i & ~_reg5580 & 0xFF));
+					uint32_t bank = (((uint32_t)_reg5400 * 4 | i) & ~(uint32_t)_reg5580) | (_prgBank[i] & _reg5580);
 					MapDram((uint16_t)(0x8000 + i * 0x2000), (uint16_t)(0x9FFF + i * 0x2000), bank * 0x2000, true);
 				}
 			} else if(mode == 0x08) {
@@ -152,9 +262,11 @@ private:
 				cartRegs = true;
 			} else if(mode == 0x0A || mode == 0x0B) {
 				//UNROM, 128KB or 256KB: writes to the window pick the 16KB at $8000, and the
-				//last 16KB of the game stays at $C000
-				MapDram(0x8000, 0xBFFF, (uint32_t)_cartBank * 0x4000, false);
-				MapDram(0xC000, 0xFFFF, (mode == 0x0A ? 0x20000 : 0x40000) - 0x4000, false);
+				//last 16KB of the game stays at $C000. The bank number wraps at the game's size -
+				//the 中索 discs' conversions write their bank with bit 4 set ($10-$17).
+				uint32_t size = mode == 0x0A ? 0x20000 : 0x40000;
+				MapDram(0x8000, 0xBFFF, ((uint32_t)_cartBank * 0x4000) & (size - 1), false);
+				MapDram(0xC000, 0xFFFF, size - 0x4000, false);
 				cartRegs = true;
 			} else {
 				//Configured for a memory size - the BIOS's own setting after the memory test
@@ -325,6 +437,12 @@ protected:
 	bool EnableVramAddressHook() override { return true; }
 	bool EnableCpuClockHook() override { return true; }
 
+	//No 2C02 "read one dot before vblank" race, as with the other learning machines' clone PPUs.
+	//The 中索 discs' CHR helper waits on $2002 in an 8-cycle loop (its branch crosses a page),
+	//which divides Dendy's 106392-dot frame exactly: the read lands on that one dot every frame
+	//and the flag never comes.
+	bool EnablePpuNmiSuppressRace() override { return false; }
+
 	void ProcessCpuClock() override
 	{
 		BaseProcessCpuClock();
@@ -350,6 +468,71 @@ protected:
 		romData.Info.System = GameSystem::Dendy;
 		_dramSize = romData.Info.Hash.PrgCrc32 == Crc128C ? 0x200000 : 0x100000;
 		UpdatePrgMapping();
+		if(!romData.CdvHeader.empty()) {
+			_cdvStub = romData.CdvHeader;
+			_cdvImage = romData.PrgRom;
+		}
+	}
+
+	void OnAfterResetPowerOn() override
+	{
+		if(!IsCdv()) {
+			return;
+		}
+
+		//What the disc loader leaves behind: the machine as it powers up, the game in DRAM from
+		//its start, the start code at $6200, and a jump to it. A reset does the same again, so
+		//a game that wrote over its own DRAM starts clean.
+		ResetRegisters();
+		LayDownCdv(_cdvStub, _cdvImage);
+		_console->GetCpu()->GetState().PC = CdvStubAddress;
+
+		//The stand-in loader (see the class comment): SEI / LDA $5FFF / STA $57FF / JMP $6200
+		static constexpr uint8_t loader[] = {
+			0x78,
+			0xAD, 0xFF, 0x5F,
+			0x8D, LoaderRequestRegister & 0xFF, LoaderRequestRegister >> 8,
+			0x4C, CdvStubAddress & 0xFF, CdvStubAddress >> 8
+		};
+		memcpy(_mapperRam + (LoaderAddress - 0x4000), loader, sizeof(loader));
+	}
+
+	void LayDownCdv(const vector<uint8_t>& stub, const vector<uint8_t>& image)
+	{
+		memcpy(_workRam + DramOffset, image.data(), std::min((size_t)_dramSize, image.size()));
+		memcpy(_workRam + CdvStubAddress - 0x6000, stub.data(), std::min((size_t)(0x8000 - CdvStubAddress), stub.size()));
+	}
+
+	//Program n of the disc - the folder's .CDV files in name order, the menu being 0. Falls
+	//back to starting the opened file again when there is no such program.
+	void LoadDiscProgram(uint8_t n)
+	{
+		vector<uint8_t> file;
+		string path;
+		string folder = FolderUtilities::GetFolderName(_emu->GetRomInfo().RomFile.GetFilePath());
+		vector<string> files = FolderUtilities::GetFilesInFolder(folder, { ".cdv" }, false);
+		std::sort(files.begin(), files.end(), [](const string& a, const string& b) {
+			string ua = FolderUtilities::GetFilename(a, true);
+			string ub = FolderUtilities::GetFilename(b, true);
+			std::transform(ua.begin(), ua.end(), ua.begin(), ::toupper);
+			std::transform(ub.begin(), ub.end(), ub.begin(), ::toupper);
+			return ua < ub;
+		});
+		if(n < files.size()) {
+			path = files[n];
+			VirtualFile(path).ReadFile(file);
+		}
+
+		ResetRegisters();
+		if(file.size() > 0x800 && ((file.size() - 0x800) & 0x3FFF) == 0 && file.size() - 0x800 <= _dramSize) {
+			MessageManager::Log("[CDV] Stand-in loader: program " + std::to_string(n) + " = " + FolderUtilities::GetFilename(path, true));
+			vector<uint8_t> stub(file.begin(), file.begin() + 0x800);
+			vector<uint8_t> image(file.begin() + 0x800, file.end());
+			LayDownCdv(stub, image);
+		} else {
+			MessageManager::Log("[CDV] Stand-in loader: no program " + std::to_string(n) + " beside the opened file - starting it again");
+			LayDownCdv(_cdvStub, _cdvImage);
+		}
 	}
 
 	void InitMapper() override
@@ -367,6 +550,17 @@ protected:
 		SetPpuMemoryMapping(0x0000, 0x1FFF, ChrMemoryType::ChrRam, 0, MemoryAccessType::ReadWrite);
 		SetMirroringType(MirroringType::Vertical);
 
+		_speech.reset(new BbkLpcAudio(_console, BbkLpcAudio::LpcVariant::LingTong));
+		ResetRegisters();
+
+		//Its own port, so both joypads stay plugged in; the buttons come from the physical
+		//mouse, so it needs no key setup
+		_mouse.reset(new Sb2kMouse(_emu, BaseControlDevice::MapperInputPort, KeyMappingSet()));
+		_console->GetControlManager()->AddSystemControlDevice(_mouse);
+	}
+
+	void ResetRegisters()
+	{
 		_reg5000 = 0;
 		_reg5080 = 0;
 		_reg5100 = 0x1F;
@@ -379,7 +573,6 @@ protected:
 		memset(_prgBank, 0, sizeof(_prgBank));
 		memset(_chrBank, 0, sizeof(_chrBank));
 		_mmc3.Reset();
-		_speech.reset(new BbkLpcAudio(_console, BbkLpcAudio::LpcVariant::LingTong));
 		_speech->Reset();
 		_ntQuarter = 0;
 		_kbdRow = 0;
@@ -416,7 +609,7 @@ protected:
 	uint8_t ReadRegister(uint16_t addr) override
 	{
 		if(addr == 0x4017) {
-			return (NesControls()->ReadRam(addr) & ~0x12) | ReadKeyMatrix();
+			return (NesControls()->ReadRam(addr) & ~0x16) | ReadKeyMatrix() | ReadMouseBit();
 		}
 
 		switch(addr) {
@@ -449,6 +642,7 @@ protected:
 		if(addr == 0x4016) {
 			NesControls()->WriteRam(addr, value);
 			WriteKeyMatrix(value);
+			WriteMouseStrobe(value);
 			return;
 		}
 
@@ -478,6 +672,15 @@ protected:
 			case 0x5388:
 			case 0x538C:
 				_reg5388 = value;
+				if(GameChrMode()) {
+					//A 4KB unit for one pattern table - its four slots at once. The 中索 discs'
+					//MMC1 conversions bank CHR this way ($5388 for $0000, $538C for $1000);
+					//the 128C itself only ever writes $5388 with the slots off.
+					uint8_t first = (addr & 0x04) ? 4 : 0;
+					for(int i = 0; i < 4; i++) {
+						_chrBank[first + i] = (uint8_t)(value * 4 + i);
+					}
+				}
 				break;
 
 			case 0x5380: case 0x5381: case 0x5382: case 0x5383:
@@ -488,6 +691,12 @@ protected:
 			case 0x5580: _reg5580 = value; UpdatePrgMapping(); break;
 
 			case 0x5700: WriteSpeech(value); break;
+
+			case LoaderRequestRegister:
+				if(IsCdv()) {
+					LoadDiscProgram(value);
+				}
+				break;
 
 			case 0x55C0: case 0x55C1: case 0x55C2: case 0x55C3:
 				_prgBank[addr & 0x03] = value;
@@ -521,6 +730,13 @@ protected:
 		SV(_kbdRow);
 		SV(_kbdColumn);
 		SV(_status5300);
+		SVArray(_mousePacket, 3);
+		SV(_mousePacketSize);
+		SV(_mousePacketPos);
+		SV(_mouseShift);
+		SV(_mouseStrobe);
+		SV(_mouseX);
+		SV(_mouseY);
 
 		if(!s.IsSaving()) {
 			_cartRegs = false;

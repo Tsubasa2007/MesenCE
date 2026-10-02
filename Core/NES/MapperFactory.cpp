@@ -508,8 +508,9 @@ BaseMapper* MapperFactory::GetMapperFromID(RomData& romData)
 			}
 			return new Txc22211C();
 		case 174:
-			if(LingTongMapper::IsLingTong(romData.Info.Hash.PrgCrc32)) {
-				//The LingTong learning machines' BIOS files carry this number too - see the class comment.
+			if(LingTongMapper::IsLingTong(romData.Info.Hash.PrgCrc32) || !romData.CdvHeader.empty()) {
+				//The LingTong learning machines' BIOS files carry this number too - see the class comment -
+				//and so does a 中索 disc game, which ZosonCdvLoader marks by its start code.
 				//Asking for the input type here is what gets the auto-configure step to run at all.
 				romData.Info.InputType = GameInputType::SuborKeyboardMouse1;
 				return new LingTongMapper();

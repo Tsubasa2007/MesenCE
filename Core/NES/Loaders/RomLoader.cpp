@@ -14,6 +14,7 @@
 #include "NES/Loaders/UnifLoader.h"
 #include "NES/Loaders/StudyBoxLoader.h"
 #include "NES/Loaders/CdvLoader.h"
+#include "NES/Loaders/ZosonCdvLoader.h"
 #include "NES/NesHeader.h"
 #include "NES/GameDatabase.h"
 
@@ -60,6 +61,10 @@ bool RomLoader::LoadFile(VirtualFile& romFile, RomData& romData, bool databaseEn
 		loader.LoadRom(romData, fileData, databaseEnabled);
 	} else if(memcmp(fileData.data(), "FC GAMES", 8) == 0) {
 		CdvLoader loader;
+		loader.LoadRom(romData, fileData);
+	} else if(FolderUtilities::GetExtension(filename) == ".cdv") {
+		//No header of its own - the 中索 discs' games start with their own code instead
+		ZosonCdvLoader loader;
 		loader.LoadRom(romData, fileData);
 	} else if(memcmp(fileData.data(), "STBX", 4) == 0) {
 		StudyBoxLoader loader;
