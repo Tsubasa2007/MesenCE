@@ -732,6 +732,7 @@
 		<Form ID="PreferencesConfigView">
 			<Control ID="tpgGeneral">General</Control>
 			<Control ID="lblTheme">Theme:</Control>
+			<Control ID="lblLanguage">Language:</Control>
 			<Control ID="lblRequiresRestart">(requires restart)</Control>
 			
 			<Control ID="lblDisplayLanguage">Display Language:</Control>
@@ -2668,6 +2669,10 @@ E
 		<Enum ID="MesenTheme">
 			<Value ID="Light">Light</Value>
 			<Value ID="Dark">Dark</Value>
+		</Enum>
+		<Enum ID="DisplayLanguage">
+			<Value ID="English">English</Value>
+			<Value ID="ChineseSimplified">简体中文</Value>
 		</Enum>
 		<Enum ID="SnesHighResBlendMode">
 			<Value ID="None">None (default)</Value>

@@ -1,4 +1,5 @@
-﻿using Mesen.Interop;
+﻿using Mesen.Config;
+using Mesen.Interop;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -19,42 +20,64 @@ namespace Mesen.Localization
 		public static void LoadResources()
 		{
 			try {
-				Assembly assembly = Assembly.GetExecutingAssembly();
+				_resources = LoadDocument("Mesen.Localization.resources.en.xml")!;
+				ReadStrings(_resources, true);
 
-				using(StreamReader reader = new StreamReader(assembly.GetManifestResourceStream("Mesen.Localization.resources.en.xml")!)) {
-					_resources.LoadXml(reader.ReadToEnd());
-				}
-
-				foreach(XmlNode node in _resources.SelectNodes("/Resources/Messages/Message")!) {
-					_messageCache[node.Attributes!["ID"]!.Value] = node.InnerText;
-				}
-
-#pragma warning disable IL2026 // Members annotated with 'RequiresUnreferencedCodeAttribute' require dynamic access otherwise can break functionality when trimming application code
-				Dictionary<string, Type> enumTypes = Assembly.GetExecutingAssembly().GetTypes().Where(t => t.IsEnum).ToDictionary(t => t.Name);
-#pragma warning restore IL2026 // Members annotated with 'RequiresUnreferencedCodeAttribute' require dynamic access otherwise can break functionality when trimming application code
-
-				foreach(XmlNode node in _resources.SelectNodes("/Resources/Enums/Enum")!) {
-					string enumName = node.Attributes!["ID"]!.Value;
-					if(enumTypes.TryGetValue(enumName, out Type? enumType)) {
-						foreach(XmlNode enumNode in node.ChildNodes) {
-							if(Enum.TryParse(enumType, enumNode.Attributes!["ID"]!.Value, out object? value)) {
-								_enumLabelCache[(Enum)value!] = enumNode.InnerText;
-							}
-						}
-					} else {
-						throw new Exception("Unknown enum type: " + enumName);
-					}
-				}
-
-				foreach(XmlNode node in _resources.SelectNodes("/Resources/Forms/Form")!) {
-					string viewName = node.Attributes!["ID"]!.Value;
-					foreach(XmlNode formNode in node.ChildNodes) {
-						if(formNode is XmlElement elem) {
-							_viewLabelCache[viewName + "_" + elem.Attributes!["ID"]!.Value] = elem.InnerText;
-						}
+				//A translation only has to hold what it translates - anything it leaves out stays in English
+				if(ConfigManager.Config.Preferences.Language == DisplayLanguage.ChineseSimplified) {
+					XmlDocument? zh = LoadDocument("Mesen.Localization.resources.zh.xml");
+					if(zh != null) {
+						ReadStrings(zh, false);
 					}
 				}
 			} catch {
+			}
+		}
+
+		private static XmlDocument? LoadDocument(string name)
+		{
+			Stream? stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(name);
+			if(stream == null) {
+				return null;
+			}
+
+			XmlDocument doc = new XmlDocument();
+			using(StreamReader reader = new StreamReader(stream)) {
+				doc.LoadXml(reader.ReadToEnd());
+			}
+			return doc;
+		}
+
+		private static void ReadStrings(XmlDocument doc, bool isBase)
+		{
+			foreach(XmlNode node in doc.SelectNodes("/Resources/Messages/Message")!) {
+				_messageCache[node.Attributes!["ID"]!.Value] = node.InnerText;
+			}
+
+#pragma warning disable IL2026 // Members annotated with 'RequiresUnreferencedCodeAttribute' require dynamic access otherwise can break functionality when trimming application code
+			Dictionary<string, Type> enumTypes = Assembly.GetExecutingAssembly().GetTypes().Where(t => t.IsEnum).ToDictionary(t => t.Name);
+#pragma warning restore IL2026 // Members annotated with 'RequiresUnreferencedCodeAttribute' require dynamic access otherwise can break functionality when trimming application code
+
+			foreach(XmlNode node in doc.SelectNodes("/Resources/Enums/Enum")!) {
+				string enumName = node.Attributes!["ID"]!.Value;
+				if(enumTypes.TryGetValue(enumName, out Type? enumType)) {
+					foreach(XmlNode enumNode in node.ChildNodes) {
+						if(enumNode is XmlElement && Enum.TryParse(enumType, enumNode.Attributes!["ID"]!.Value, out object? value)) {
+							_enumLabelCache[(Enum)value!] = enumNode.InnerText;
+						}
+					}
+				} else if(isBase) {
+					throw new Exception("Unknown enum type: " + enumName);
+				}
+			}
+
+			foreach(XmlNode node in doc.SelectNodes("/Resources/Forms/Form")!) {
+				string viewName = node.Attributes!["ID"]!.Value;
+				foreach(XmlNode formNode in node.ChildNodes) {
+					if(formNode is XmlElement elem) {
+						_viewLabelCache[viewName + "_" + elem.Attributes!["ID"]!.Value] = elem.InnerText;
+					}
+				}
 			}
 		}
 
