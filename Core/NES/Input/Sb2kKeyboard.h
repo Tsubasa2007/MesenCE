@@ -27,6 +27,8 @@ protected:
 		return "ABCDEFGHIJKLMNOPQRSTUVWXYZ01234567891234567890120123456789edpmdmncdsasbemglrcpcsasbteeehidududlr123";
 	}
 
+public:
+	//Public so a mapper that runs its own key matrix can name the keys it reads
 	enum Buttons
 	{
 		A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
@@ -47,6 +49,8 @@ protected:
 		Up, Down, Left, Right,
 		RightShift, RightCtrl, RightAlt, None
 	};
+
+protected:
 
 	//Scan-code set 1 make codes per button, indexed by the Buttons enum. Extended keys
 	//(navigation cluster, numpad enter/divide, right Ctrl/Alt) carry bit 7 set.

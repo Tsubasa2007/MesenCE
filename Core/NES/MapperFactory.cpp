@@ -56,6 +56,7 @@
 #include "NES/Mappers/Sb2k/Sb2kMapper.h"
 #include "NES/Mappers/Yuxing/YuxingMapper.h"
 #include "NES/Mappers/Subor/SuborWindows2002.h"
+#include "NES/Mappers/LingTong/LingTongMapper.h"
 #include "NES/Mappers/Bung/DrPcJrMapper.h"
 #include "NES/Mappers/Konami/VRC1.h"
 #include "NES/Mappers/Konami/VRC2_4.h"
@@ -506,7 +507,14 @@ BaseMapper* MapperFactory::GetMapperFromID(RomData& romData)
 				return new DrPcJrMapper();
 			}
 			return new Txc22211C();
-		case 174: return new Mapper174();
+		case 174:
+			if(LingTongMapper::IsLingTong(romData.Info.Hash.PrgCrc32)) {
+				//The LingTong learning machines' BIOS files carry this number too - see the class comment.
+				//Asking for the input type here is what gets the auto-configure step to run at all.
+				romData.Info.InputType = GameInputType::SuborKeyboardMouse1;
+				return new LingTongMapper();
+			}
+			return new Mapper174();
 		case 175: return new Kaiser7022();
 		case 176: return new Fk23C();
 		case 177:

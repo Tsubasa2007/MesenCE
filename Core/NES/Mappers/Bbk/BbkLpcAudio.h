@@ -27,7 +27,10 @@ public:
 		Bbk = 0,
 		Sb2k = 1,
 		Yuxing = 2,
-		DrPcJr = 3
+		DrPcJr = 3,
+		//The LingTong machines: a plain stream like the two above, but each phrase ends in
+		//stop frames that must silence the chip rather than hold its last sound
+		LingTong = 4
 	};
 
 private:
@@ -300,7 +303,7 @@ private:
 	bool IsSb2k() { return _variant == LpcVariant::Sb2k; }
 
 	//No stream header and the PE coefficient set - see the note on LpcVariant
-	bool IsPlainStream() { return _variant == LpcVariant::Yuxing || _variant == LpcVariant::DrPcJr; }
+	bool IsPlainStream() { return _variant == LpcVariant::Yuxing || _variant == LpcVariant::DrPcJr || _variant == LpcVariant::LingTong; }
 
 	//Byte FIFO fed by $FF18 writes
 	//Where the block being decoded ends, for the boundary above
@@ -329,6 +332,10 @@ private:
 	int8_t _bitsLeft = 0;
 	uint16_t _dataCache = 0;
 	bool _magicFound = false;
+
+	//LingTong: looking for the $FC that ends a record's header (see TryDecodeStep)
+	bool _seekSync = false;
+	uint16_t _tmsRng = 0x1FFF;
 
 	//Decoded frame being played back
 	int16_t _pcmBuffer[SamplesPerFrame] = {};
@@ -404,6 +411,12 @@ private:
 	//Returns -1 on end of stream
 	int GetFrame(LpcFrame& dst, LpcFrame& ref)
 	{
+		if(_seekSync) {
+			//LingTong, between records: silence until the next one starts
+			dst = {};
+			return 0;
+		}
+
 		int16_t energyIdx = GetBits(4);
 		if(energyIdx == 0) {
 			//Silent frame
@@ -415,6 +428,12 @@ private:
 
 		if(energyIdx == 15) {
 			//End of stream
+			if(_variant == LpcVariant::LingTong) {
+				//LingTong: the record is over - go back to looking for the next one's header
+				_bitsLeft = 0;
+				_dataCache = 0;
+				_seekSync = true;
+			}
 			return -1;
 		}
 
@@ -480,6 +499,8 @@ private:
 		_frameNext = {};
 		_needInterp = false;
 		_randomSeed = -1;
+		_tmsRng = 0x1FFF;
+		ResetTms();
 		_currPitch = 0;
 		_sampleIndex = 0;
 		memset(_x, 0, sizeof(_x));
@@ -487,6 +508,7 @@ private:
 		_bitsLeft = 0;
 		_dataCache = 0;
 		_magicFound = false;
+		_seekSync = _variant == LpcVariant::LingTong;
 		_state = LpcState::Startup;
 	}
 
@@ -558,6 +580,15 @@ private:
 
 	int16_t RandomGen()
 	{
+		if(_variant == LpcVariant::LingTong) {
+			//The TMS5220's own 13-bit generator. The one below, from the reference emulators,
+			//falls into a 7905-step cycle that is only 20% ones from its starting state, so a
+			//long "sh" comes out as a buzzing pulse train instead of a hiss.
+			uint16_t out = ((_tmsRng >> 12) ^ (_tmsRng >> 3) ^ (_tmsRng >> 2) ^ _tmsRng) & 1;
+			_tmsRng = (uint16_t)(((_tmsRng << 1) | out) & 0x1FFF);
+			return (int16_t)(_tmsRng & 1);
+		}
+
 		int16_t seed = _randomSeed << 1;
 		int16_t r = ((seed >> 12) ^ (seed >> 13)) & 1;
 		_randomSeed = seed | r;
@@ -565,9 +596,122 @@ private:
 	}
 
 	//Synthesizes one 200-sample frame into _pcmBuffer, then decodes the next frame's parameters
+	//TMS5220 synthesis, after MAME's model of the decapped chip (sound/tms5220.cpp): the real
+	//52-step chirp and a pitch counter in whole samples, the 10-bit by 14-bit multiplier with
+	//its wrap-around, the 10-bit analog output clip, and parameters that step toward the next
+	//frame eight times a frame by fixed shifts. The fanoble decoder above keeps the voiced
+	//excitation to the first 10 samples of each period, which at a high voice's 22-24 sample
+	//period is half of what the chip plays, and changes the vowel.
+	static constexpr int8_t _tmsChirp[52] = {
+		0x00, 0x03, 0x0f, 0x28, 0x4c, 0x6c, 0x71, 0x50, 0x25, 0x26, 0x4c, 0x44, 0x1a, 0x32, 0x3b, 0x13,
+		0x37, 0x1a, 0x25, 0x1f, 0x1d, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+	};
+	static constexpr uint8_t _tmsInterpShift[8] = { 0, 3, 3, 3, 2, 2, 1, 1 };
+
+	int32_t _tmsEnergy = 0;
+	int32_t _tmsPitch = 0;
+	int32_t _tmsK[LpcOrder] = {};
+	int32_t _tmsPrevEnergy = 0;
+	int32_t _tmsPitchCount = 0;
+	int32_t _tmsX[LpcOrder] = {};
+	bool _tmsOldUnvoiced = true;
+	bool _tmsOldSilence = true;
+
+	static int32_t TmsMultiply(int32_t a, int32_t b)
+	{
+		while(a > 511) { a -= 1024; }
+		while(a < -512) { a += 1024; }
+		while(b > 16383) { b -= 32768; }
+		while(b < -16384) { b += 32768; }
+		return (a * b) >> 9;
+	}
+
+	void ResetTms()
+	{
+		_tmsEnergy = _tmsPitch = _tmsPrevEnergy = _tmsPitchCount = 0;
+		memset(_tmsK, 0, sizeof(_tmsK));
+		memset(_tmsX, 0, sizeof(_tmsX));
+		_tmsOldUnvoiced = true;
+		_tmsOldSilence = true;
+	}
+
+	void SynthesizeFrameTms()
+	{
+		//The frame being moved toward, in the chip's own units (the tables here hold them
+		//scaled: energy x256, pitch x16, k x64)
+		int32_t energy = _frameNext.Energy / 256;
+		int32_t pitch = _frameNext.Pitch / 16;
+		int32_t k[LpcOrder];
+		for(int i = 0; i < LpcOrder; i++) {
+			k[i] = _frameNext.K[i] / 64;
+		}
+		bool newSilence = energy == 0;
+		bool newUnvoiced = pitch == 0;
+
+		bool inhibit = (!_tmsOldUnvoiced && newUnvoiced) || (_tmsOldUnvoiced && !newUnvoiced) ||
+			(_tmsOldSilence && !newSilence) || (_tmsOldUnvoiced && newSilence);
+
+		int sample = 0;
+		for(int period = 1; period <= 8; period++) {
+			int ip = period & 7;
+			bool hold = inhibit && ip != 0;
+			uint8_t shift = _tmsInterpShift[ip];
+
+			_tmsEnergy = newSilence ? 0 : _tmsEnergy + (hold ? 0 : (energy - _tmsEnergy) >> shift);
+			_tmsPitch = newSilence ? 0 : _tmsPitch + (hold ? 0 : (pitch - _tmsPitch) >> shift);
+			for(int i = 0; i < LpcOrder; i++) {
+				bool zero = newSilence || (i >= 4 && newUnvoiced);
+				_tmsK[i] = zero ? 0 : _tmsK[i] + (hold ? 0 : (k[i] - _tmsK[i]) >> shift);
+			}
+
+			//The voicing flag is latched from the new frame only at the end of the seventh step
+			bool unvoiced = ip == 0 ? newUnvoiced : _tmsOldUnvoiced;
+
+			for(int n = 0; n < 25; n++, sample++) {
+				int32_t excitation;
+				if(unvoiced) {
+					excitation = RandomGen() ? -64 : 64;
+				} else {
+					excitation = _tmsChirp[_tmsPitchCount >= 51 ? 51 : _tmsPitchCount];
+				}
+
+				int32_t u[LpcOrder + 1];
+				u[10] = TmsMultiply(_tmsPrevEnergy, excitation << 6);
+				for(int i = LpcOrder - 1; i >= 0; i--) {
+					u[i] = u[i + 1] - TmsMultiply(_tmsK[i], _tmsX[i]);
+				}
+				for(int i = LpcOrder - 1; i >= 1; i--) {
+					_tmsX[i] = _tmsX[i - 1] + TmsMultiply(_tmsK[i - 1], u[i - 1]);
+				}
+				_tmsX[0] = u[0];
+				_tmsPrevEnergy = _tmsEnergy;
+
+				int32_t out = u[0];
+				while(out > 16383) { out -= 32768; }
+				while(out < -16384) { out += 32768; }
+				if(out > 2047) { out = 2047; } else if(out < -2048) { out = -2048; }
+
+				//Same output scale as the other decoder: its full range is +/-27500
+				_pcmBuffer[sample] = (int16_t)(out * 12);
+
+				_tmsPitchCount++;
+				if(_tmsPitchCount >= _tmsPitch) {
+					_tmsPitchCount = 0;
+				}
+				_tmsPitchCount &= 0x1FF;
+			}
+		}
+
+		_tmsOldUnvoiced = newUnvoiced;
+		_tmsOldSilence = newSilence;
+	}
+
 	void SynthesizeFrame()
 	{
-		for(int i = 0; i < SamplesPerFrame; i++) {
+		if(_variant == LpcVariant::LingTong) {
+			SynthesizeFrameTms();
+		} else for(int i = 0; i < SamplesPerFrame; i++) {
 			_sampleIndex = (int16_t)i;
 			_currPitch -= 16;
 
@@ -618,6 +762,11 @@ private:
 				_dataCache = 0;
 				_state = LpcState::Finished;
 				_speechEnd = true;
+			} else if(_variant == LpcVariant::LingTong) {
+				//LingTong: the software pads every phrase with stop frames, and the chip falls
+				//silent there. Repeating the last frame instead holds the end of the word as a
+				//flat tone until the next phrase resets the decoder.
+				_frameNext = {};
 			}
 		}
 
@@ -637,6 +786,24 @@ private:
 		}
 
 		uint32_t count = GetFifoCount();
+
+		if(_seekSync) {
+			//LingTong: the stream is a chain of records, each a header ended by $FC and then
+			//frames up to a stop code, with $FF padding after the last one. Decoding a header
+			//as frames puts noise in front of every word, so it is skipped byte by byte.
+			while(count > 0) {
+				uint8_t value = _fifo[_fifoReadPos];
+				_fifoReadPos = (_fifoReadPos + 1) & (FifoSize - 1);
+				count--;
+				if(value == 0xFC) {
+					_seekSync = false;
+					break;
+				}
+			}
+			if(_seekSync) {
+				return;
+			}
+		}
 
 		if(_state == LpcState::Finished) {
 			//SB-2000: scan for the $F0 restart command, one byte per tick. On restart the
@@ -703,7 +870,8 @@ public:
 		//8 interpolation substeps per 10KHz sample (80KHz output steps); the original
 		//player relied on the OS resampler to smooth the 10KHz output, so plain
 		//zero-order hold here sounds noticeably harsher
-		_cycleAcc += SampleRate * SubSteps;
+		//The reference emulator plays the LingTong chip at 8KHz, the others at 10KHz
+		_cycleAcc += (_variant == LpcVariant::LingTong ? 8000 : SampleRate) * SubSteps;
 		uint32_t clockRate = NesConstants::GetClockRate(_console->GetRegion());
 		if(_cycleAcc >= clockRate) {
 			_cycleAcc -= clockRate;
@@ -761,6 +929,11 @@ protected:
 		SV(_cycleAcc); SV(_regFF10); SV(_lastOutput);
 		SV(_subStep); SV(_prevSample); SV(_currSample);
 		SV(_speechEnd);
+		SV(_seekSync);
+		SV(_tmsRng);
+		SV(_tmsEnergy); SV(_tmsPitch); SV(_tmsPrevEnergy); SV(_tmsPitchCount);
+		SVArray(_tmsK, LpcOrder); SVArray(_tmsX, LpcOrder);
+		SV(_tmsOldUnvoiced); SV(_tmsOldSilence);
 	}
 
 public:

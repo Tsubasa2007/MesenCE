@@ -29,6 +29,7 @@
 #include "NES/Mappers/Bbk/BbkMapper.h"
 #include "NES/Mappers/Bbk/Bbk928Mapper.h"
 #include "NES/Mappers/Subor/SuborWindows2002.h"
+#include "NES/Mappers/LingTong/LingTongMapper.h"
 #include "NES/Mappers/Bung/DrPcJrMapper.h"
 #include "NES/Mappers/Bbk/Yuyin2Mapper.h"
 #include "NES/Mappers/Yuxing/YuxingMapper.h"
@@ -1188,6 +1189,11 @@ void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem syst
 			//takes it, and nothing on $4016/$4017.
 			log("[Input] mouse connected");
 			port2 = ControllerType::Sb2kMouse;
+		} else if(dynamic_cast<LingTongMapper*>(mapper)) {
+			//A key matrix scanned over $4016/$4017, but in its own layout - LingTongMapper reads
+			//the matrix, and this device only says which keys are down. Both pads stay plugged in.
+			log("[Input] LingTong keyboard connected");
+			expDevice = ControllerType::Sb2kKeyboard;
 		} else if(dynamic_cast<SuborWindows2002*>(mapper)) {
 			//The mouse takes the first port so it answers $4016 and leaves $4017 to the keyboard,
 			//which is the split this machine's BIOS scans - one 24-bit packet per latch on $4016,
