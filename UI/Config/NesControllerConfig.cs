@@ -359,7 +359,7 @@ namespace Mesen.Config
 						InputApi.GetKeyCode("Numpad 4"), InputApi.GetKeyCode("Numpad 5"), InputApi.GetKeyCode("Numpad 6"), InputApi.GetKeyCode("Numpad 7"),
 						InputApi.GetKeyCode("Numpad 8"), InputApi.GetKeyCode("Numpad 9"),
 
-						0, InputApi.GetKeyCode("Numpad ."),
+						InputApi.GetKeyCode("Numpad Enter"), InputApi.GetKeyCode("Numpad ."),
 						InputApi.GetKeyCode("Numpad +"), InputApi.GetKeyCode("Numpad *"),
 						InputApi.GetKeyCode("Numpad /"), InputApi.GetKeyCode("Numpad -"),
 
@@ -410,7 +410,7 @@ namespace Mesen.Config
 						InputApi.GetKeyCode("Numpad 4"), InputApi.GetKeyCode("Numpad 5"), InputApi.GetKeyCode("Numpad 6"), InputApi.GetKeyCode("Numpad 7"),
 						InputApi.GetKeyCode("Numpad 8"), InputApi.GetKeyCode("Numpad 9"),
 
-						0, InputApi.GetKeyCode("Numpad ."),
+						InputApi.GetKeyCode("Numpad Enter"), InputApi.GetKeyCode("Numpad ."),
 						InputApi.GetKeyCode("Numpad +"), InputApi.GetKeyCode("Numpad *"),
 						InputApi.GetKeyCode("Numpad /"), InputApi.GetKeyCode("Numpad -"),
 
