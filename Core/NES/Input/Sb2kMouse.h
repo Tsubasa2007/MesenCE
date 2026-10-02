@@ -21,6 +21,23 @@ private:
 	int32_t _accumY = 0;
 	uint8_t _lastButtons = 0;
 
+	//How much of this poll's movement has already been folded in. A script sets movement in
+	//the input-polled event, which runs after OnAfterSetState, so a device that folded only
+	//there would drop everything a script had to say; folding again when a mapper takes the
+	//movement picks it up, and remembering what was taken keeps it from counting twice. (The
+	//same fix YuxingMouse needed.)
+	int16_t _foldedX = 0;
+	int16_t _foldedY = 0;
+
+	void Fold()
+	{
+		MousePosition pos = GetCoordinates();
+		_accumX += pos.X - _foldedX;
+		_accumY += pos.Y - _foldedY;
+		_foldedX = pos.X;
+		_foldedY = pos.Y;
+	}
+
 protected:
 	bool HasCoordinates() override { return true; }
 	enum Buttons { Left = 0, Right, Middle };
@@ -32,7 +49,7 @@ protected:
 	void Serialize(Serializer& s) override
 	{
 		BaseControlDevice::Serialize(s);
-		SV(_accumX); SV(_accumY); SV(_lastButtons);
+		SV(_accumX); SV(_accumY); SV(_lastButtons); SV(_foldedX); SV(_foldedY);
 	}
 
 	void InternalSetStateFromInput() override
@@ -51,9 +68,9 @@ protected:
 		//Runs after any input provider replaced the state, so a replayed movie accumulates the
 		//same movement the recording captured. Reads the coordinates without clearing them -
 		//the input recorder runs after this and needs to see them.
-		MousePosition pos = GetCoordinates();
-		_accumX += pos.X;
-		_accumY += pos.Y;
+		_foldedX = 0;
+		_foldedY = 0;
+		Fold();
 	}
 
 public:
@@ -71,6 +88,8 @@ public:
 	//Returns false when there is nothing new to send.
 	bool GetPacket(uint8_t packet[3])
 	{
+		Fold();
+
 		//Bit layout matches what the reference emulator feeds its packet builder:
 		//right=$01, middle=$02, left=$04.
 		uint8_t buttons =
@@ -105,6 +124,7 @@ public:
 	//reference emulator's shared mouse state uses: bit 0 left, bit 1 right, bit 2 middle.
 	void TakeDelta(int8_t& dx, int8_t& dy, uint8_t& buttons)
 	{
+		Fold();
 		buttons =
 			(IsPressed(Buttons::Left) ? 0x01 : 0) |
 			(IsPressed(Buttons::Right) ? 0x02 : 0) |
