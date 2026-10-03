@@ -125,9 +125,9 @@ private:
 
 	//The BIOS measures the DRAM rather than assuming it: it counts pages until one already
 	//holds the pattern it wrote into an earlier one, which is where the address wrapped, shows
-	//the total and picks the layout for it (256KB/512KB/1MB/2MB+ = $53/$54/$56/$51). A real
-	//SMART-128C reports 2048KB at power-on. Nothing says what a 128B carries, so it keeps the
-	//1MB the reference emulator gives both; the 中索 disc games fit in either.
+	//the total and picks the layout for it (256KB/512KB/1MB/2MB+ = $53/$54/$56/$51). Both the
+	//SMART-128B and the SMART-128C carry 2MB. A 中索 disc game started on its own keeps the 1MB
+	//the reference emulator gives it; those games fit in either.
 	static constexpr uint32_t MaxDramSize = 0x200000;
 	static constexpr uint32_t DramOffset = 0x2000;
 	uint32_t _dramSize = 0x100000;
@@ -422,7 +422,7 @@ protected:
 	void InitMapper(RomData& romData) override
 	{
 		romData.Info.System = GameSystem::Dendy;
-		_dramSize = romData.Info.Hash.PrgCrc32 == Crc128C ? 0x200000 : 0x100000;
+		_dramSize = (romData.Info.Hash.PrgCrc32 == Crc128B || romData.Info.Hash.PrgCrc32 == Crc128C) ? 0x200000 : 0x100000;
 		UpdatePrgMapping();
 		if(!romData.CdvHeader.empty()) {
 			_cdvStub = romData.CdvHeader;
