@@ -47,6 +47,15 @@ bool ShortcutKeyHandler::IsKeyPressed(EmulatorShortcut shortcut)
 	bool blockKeyboardKeys = shortcut != EmulatorShortcut::Pause && _isKeyboardConnected && !_isPaused;
 
 	KeyCombination keyComb = _emu->GetSettings()->GetShortcutKey(shortcut, _keySetIndex);
+
+	//Esc is also a key on the console's keyboard, so it does not pause while a keyboard is plugged in
+	if(shortcut == EmulatorShortcut::Pause && _isKeyboardConnected) {
+		uint16_t escKey = KeyManager::GetKeyCode("Esc");
+		if(escKey && (keyComb.Key1 == escKey || keyComb.Key2 == escKey || keyComb.Key3 == escKey)) {
+			return false;
+		}
+	}
+
 	vector<KeyCombination> supersets = _emu->GetSettings()->GetShortcutSupersets(shortcut, _keySetIndex);
 	for(KeyCombination& superset : supersets) {
 		if(IsKeyPressed(superset, blockKeyboardKeys)) {

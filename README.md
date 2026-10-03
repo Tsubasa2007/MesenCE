@@ -44,7 +44,7 @@ BIOS、软盘和光盘镜像都**不**随本程序提供，请使用自己的备
 ### 5. 键盘和鼠标
 
 - 载入学习机后，Mesen 会自动接上这台机器的键盘和鼠标（**Settings → NES → Input** 里的 *Automatically configure controllers when loading a game*，默认开启）。
-- 接上键盘后，Mesen 的快捷键会停用，按键交给学习机。**只有「暂停」（Pause）例外，它默认是 Esc**，所以按 Esc 会同时让学习机和 Mesen 都收到。学习机上常用 Esc，建议在 **Settings → Preferences → Shortcut Keys** 里把 Pause 改成别的键，或者清除。
+- 接上键盘后，Mesen 的快捷键会停用，按键交给学习机。**只有「暂停」（Pause）例外**，但它的默认键 Esc 在接上键盘时只交给学习机，不会暂停。要暂停可以用菜单，或者在 **Settings → Preferences → Shortcut Keys** 里给 Pause 设一个不含 Esc 的键。
 - 在画面上单击即可捕获鼠标。按一下 Alt 键（会切到 Mesen 的菜单栏），或者切换到别的窗口（例如 Alt+Tab），就会释放鼠标。
 
 ### 6. 光盘里的视频
