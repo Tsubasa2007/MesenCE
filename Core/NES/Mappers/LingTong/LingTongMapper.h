@@ -10,6 +10,7 @@
 #include "NES/Input/Sb2kMouse.h"
 #include "NES/Mappers/Bung/DrPcJrGameChips.h"
 #include "NES/Mappers/Bbk/BbkLpcAudio.h"
+#include "NES/Mappers/LingTong/LingTongDiskDrive.h"
 #include "Utilities/Serializer.h"
 #include "Utilities/FolderUtilities.h"
 #include "Utilities/VirtualFile.h"
@@ -95,10 +96,11 @@
 //  11   horizontal distance, bits 3-0 - the packet is complete
 //The 128C's own software never reads it.
 //
-//Floppy: an Apple II style Disk II controller - $5600-$560F are its sixteen soft switches
-//(stepper phases, motor, drive select, Q6/Q7), read-only, and the BIOS decodes 6-and-2 GCR
-//itself. $5300 bit 3 reads high when no disk is in the drive, which the BIOS checks before
-//every boot attempt. No disk images exist for this machine, so the drive is always empty.
+//Floppy: an Apple II style Disk II controller - $5600-$560F are its sixteen soft switches, and
+//the software decodes the GCR itself (see LingTongDiskDrive). $5300 bit 3 reads high when no
+//disk is in the drive, which the BIOS checks before every boot attempt. The disks are WOZ 2
+//bit-stream images: "<rom name>.woz" beside the BIOS is put in the drive at power-on, and the
+//disk menu swaps between the .woz files of the disk folder, as on the other floppy machines.
 //
 //中索 (Zoson) disc games: the VCD machine these discs came with is this hardware, and each game
 //.CDV is 2KB of code followed by the game (see ZosonCdvLoader). Opened on its own, there is no
@@ -164,6 +166,80 @@ private:
 	uint8_t _kbdColumn = 0;
 
 	uint8_t _status5300 = 0;
+
+	LingTongDiskDrive _disk;
+	bool _diskChecked = false;
+
+	//A power cycle recreates the mapper, so the disk in the drive is remembered here and put
+	//back rather than the paired one - scoped to the BIOS it was put in under
+	inline static string _persistedDiskRom;
+	inline static string _persistedDiskPath;
+
+	class DiskSwapListener final : public INotificationListener
+	{
+	private:
+		LingTongMapper* _mapper;
+
+	public:
+		DiskSwapListener(LingTongMapper* mapper) : _mapper(mapper) {}
+
+		void ProcessNotification(ConsoleNotificationType type, void* parameter) override
+		{
+			if(type == ConsoleNotificationType::ExecuteShortcut) {
+				ExecuteShortcutParams* params = (ExecuteShortcutParams*)parameter;
+				switch(params->Shortcut) {
+					case EmulatorShortcut::FdsEjectDisk: _mapper->EjectDisk(); break;
+					case EmulatorShortcut::FdsInsertNextDisk: _mapper->InsertNextDisk(); break;
+					case EmulatorShortcut::FdsInsertDiskNumber: _mapper->InsertDisk(params->Param); break;
+					default: break;
+				}
+			}
+		}
+	};
+	shared_ptr<DiskSwapListener> _swapListener;
+
+	string GetConfiguredDiskFolder()
+	{
+		const char* folder = _console->GetNesConfig().BbkDiskFolder;
+		return folder[0] ? string(folder) : string();
+	}
+
+	//Puts the disk in at the first look at the drive, once the rom's path is known: the one left
+	//in by the last session of this BIOS, else "<rom name>.woz" beside it or in the disk folder
+	void CheckForDiskImage()
+	{
+		if(_diskChecked) {
+			return;
+		}
+		_diskChecked = true;
+		_disk.SetClockRate(_console->GetMasterClockRate());
+
+		string romPath = _emu->GetRomInfo().RomFile.GetFilePath();
+		if(_persistedDiskRom == romPath && !_persistedDiskPath.empty() && _disk.Load(_persistedDiskPath)) {
+			MessageManager::Log("[LingTong] Re-mounted disk image: " + _persistedDiskPath);
+			return;
+		}
+
+		string baseName = FolderUtilities::GetFilename(romPath, false);
+		vector<string> folders = { FolderUtilities::GetFolderName(romPath) };
+		string configured = GetConfiguredDiskFolder();
+		if(!configured.empty() && configured != folders[0]) {
+			folders.push_back(configured);
+		}
+		for(string& folder : folders) {
+			for(string ext : { ".woz", ".WOZ" }) {
+				string path = FolderUtilities::CombinePath(folder, baseName + ext);
+				ifstream test(path, ios::in | ios::binary);
+				if(test) {
+					test.close();
+					if(_disk.Load(path)) {
+						MessageManager::Log("[LingTong] Mounted disk image: " + path);
+						return;
+					}
+				}
+			}
+		}
+	}
 
 	//The mouse, and the bytes it has queued: a single step, or a three-byte packet
 	shared_ptr<Sb2kMouse> _mouse;
@@ -495,6 +571,12 @@ protected:
 	{
 		_romInfo.System = GameSystem::Dendy;
 
+		if(!_swapListener) {
+			_swapListener.reset(new DiskSwapListener(this));
+			_emu->GetNotificationManager()->RegisterNotificationListener(_swapListener);
+		}
+		_diskChecked = false;
+
 		AddRegisterRange(0x4016, 0x4016, MemoryOperation::Write);
 		AddRegisterRange(0x4017, 0x4017, MemoryOperation::Read);
 
@@ -572,8 +654,9 @@ protected:
 			case 0x5300:
 				//Bit 3: no disk in the drive. Bit 7: printer ready. Bit 4 is the serial
 				//keyboard's clock line - toggled so the LED handshake never stalls.
+				CheckForDiskImage();
 				_status5300 ^= 0x10;
-				return 0x88 | _status5300;
+				return 0x80 | (_disk.IsDiskInserted() ? 0 : 0x08) | _status5300;
 
 			case 0x50C0:
 			case 0x50C1:
@@ -585,9 +668,8 @@ protected:
 		}
 
 		if(addr >= 0x5600 && addr <= 0x56FF) {
-			//Disk II soft switches. With no disk the read latch only ever holds noise that
-			//never forms an address mark, so the BIOS's searches run out and report an error.
-			return (addr & 0x0F) == 0x0C ? 0xFF : 0;
+			CheckForDiskImage();
+			return _disk.Access((uint8_t)(addr & 0x0F), _console->GetCpu()->GetCycleCount(), false, 0);
 		}
 
 		return _mapperRam[addr - 0x4000];
@@ -609,6 +691,12 @@ protected:
 		}
 
 		_mapperRam[addr - 0x4000] = value;
+
+		if(addr >= 0x5600 && addr <= 0x56FF) {
+			CheckForDiskImage();
+			_disk.Access((uint8_t)(addr & 0x0F), _console->GetCpu()->GetCycleCount(), true, value);
+			return;
+		}
 
 		switch(addr) {
 			case 0x5000: _reg5000 = value; UpdatePrgMapping(); break;
@@ -686,6 +774,7 @@ protected:
 		SV(_kbdRow);
 		SV(_kbdColumn);
 		SV(_status5300);
+		SV(_disk);
 		SVArray(_mousePacket, 3);
 		SV(_mousePacketSize);
 		SV(_mousePacketPos);
@@ -703,4 +792,74 @@ protected:
 
 public:
 	static bool IsLingTong(uint32_t prgCrc) { return prgCrc == Crc128B || prgCrc == Crc128C; }
+
+	//Disk swapping - the disk menu and the FDS disk shortcut keys, as on the other floppy machines
+	vector<string> GetDiskFileList()
+	{
+		string folder = GetConfiguredDiskFolder();
+		if(folder.empty()) {
+			folder = FolderUtilities::GetFolderName(_emu->GetRomInfo().RomFile.GetFilePath());
+		}
+		vector<string> files = FolderUtilities::GetFilesInFolder(folder, { ".woz" }, false);
+		std::sort(files.begin(), files.end());
+		return files;
+	}
+
+	string GetCurrentDiskFilename() { return _disk.IsDiskInserted() ? _disk.GetFilename() : ""; }
+
+	void EjectDisk()
+	{
+		auto lock = _emu->AcquireLock();
+		if(_disk.IsDiskInserted()) {
+			MessageManager::DisplayMessage("LingTong", "Disk ejected: " + FolderUtilities::GetFilename(_disk.GetFilename(), true));
+			_disk.Eject();
+		}
+		_diskChecked = true;
+		_persistedDiskRom.clear();
+		_persistedDiskPath.clear();
+	}
+
+	void InsertDisk(uint32_t index)
+	{
+		auto lock = _emu->AcquireLock();
+		vector<string> disks = GetDiskFileList();
+		if(index < disks.size()) {
+			_disk.Eject();
+			_disk.SetClockRate(_console->GetMasterClockRate());
+			if(_disk.Load(disks[index])) {
+				_diskChecked = true;
+				_persistedDiskRom = _emu->GetRomInfo().RomFile.GetFilePath();
+				_persistedDiskPath = disks[index];
+				MessageManager::DisplayMessage("LingTong", "Disk inserted: " + FolderUtilities::GetFilename(disks[index], true));
+			}
+		}
+	}
+
+	void InsertNextDisk()
+	{
+		vector<string> disks = GetDiskFileList();
+		if(disks.empty()) {
+			return;
+		}
+		int current = -1;
+		for(size_t i = 0; i < disks.size(); i++) {
+			if(disks[i] == _disk.GetFilename()) {
+				current = (int)i;
+				break;
+			}
+		}
+		InsertDisk((uint32_t)((current + 1) % disks.size()));
+	}
+
+	void SaveBattery() override
+	{
+		BaseMapper::SaveBattery();
+		if(_disk.IsDirty()) {
+			if(_disk.Save()) {
+				MessageManager::Log("[LingTong] Disk image saved: " + _disk.GetFilename());
+			} else {
+				MessageManager::Log("[LingTong] Failed to save disk image!");
+			}
+		}
+	}
 };

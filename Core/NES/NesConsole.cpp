@@ -487,6 +487,9 @@ vector<string> NesConsole::GetBbkDiskList(int32_t& currentIndex)
 	} else if(DrPcJrMapper* pcjr = dynamic_cast<DrPcJrMapper*>(_mapper.get())) {
 		current = FolderUtilities::GetFilename(pcjr->GetCurrentDiskFilename(), true);
 		paths = pcjr->GetDiskFileList();
+	} else if(LingTongMapper* lingTong = dynamic_cast<LingTongMapper*>(_mapper.get())) {
+		current = FolderUtilities::GetFilename(lingTong->GetCurrentDiskFilename(), true);
+		paths = lingTong->GetDiskFileList();
 	}
 	for(size_t i = 0; i < paths.size(); i++) {
 		string name = FolderUtilities::GetFilename(paths[i], true);
@@ -923,10 +926,11 @@ void NesConsole::EndVideoPlayback(bool completed)
 
 bool NesConsole::IsBbkGame()
 {
-	//Also true for the SB-2000, the YuXing machines and the Doctor PC jr., which reuse the
-	//same media-swap UI
+	//Also true for the SB-2000, the YuXing machines, the Doctor PC jr. and the LingTong machines,
+	//which reuse the same media-swap UI
 	return dynamic_cast<BbkMapper*>(_mapper.get()) != nullptr || dynamic_cast<Sb2kMapper*>(_mapper.get()) != nullptr ||
-		dynamic_cast<YuxingMapper*>(_mapper.get()) != nullptr || dynamic_cast<DrPcJrMapper*>(_mapper.get()) != nullptr;
+		dynamic_cast<YuxingMapper*>(_mapper.get()) != nullptr || dynamic_cast<DrPcJrMapper*>(_mapper.get()) != nullptr ||
+		dynamic_cast<LingTongMapper*>(_mapper.get()) != nullptr;
 }
 
 ShortcutState NesConsole::IsShortcutAllowed(EmulatorShortcut shortcut, uint32_t shortcutParam)

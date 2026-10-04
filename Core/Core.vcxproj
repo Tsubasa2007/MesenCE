@@ -196,6 +196,7 @@
     <ClInclude Include="NES\Mappers\Subor\Subor560.h" />
     <ClInclude Include="NES\Mappers\Subor\SuborCarts.h" />
     <ClInclude Include="NES\Mappers\Subor\SuborWindows2002.h" />
+    <ClInclude Include="NES\Mappers\LingTong\LingTongDiskDrive.h" />
     <ClInclude Include="NES\Mappers\LingTong\LingTongMapper.h" />
     <ClInclude Include="NES\Mappers\Bung\DrPcJrGameChips.h" />
     <ClInclude Include="NES\Mappers\Bung\DrPcJrMapper.h" />
