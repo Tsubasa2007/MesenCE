@@ -268,6 +268,8 @@
 			<Control ID="chkFdsAutoInsertDisk">FDS 游戏自动换盘</Control>
 			<Control ID="lblBbkSettings">步步高学习机设置</Control>
 			<Control ID="chkBbkShowDiskLed">显示磁盘读写指示灯（右上角）</Control>
+			<Control ID="chkBbkPcLink">在步步高并口上连接电脑以代替打印机（PCLINK 驱动器，取代 PCSVER）</Control>
+			<Control ID="lblBbkPcLinkFolder">电脑文件夹（留空 = Mesen 文件夹中的 BbkPcLink）：</Control>
 			<Control ID="chkYuyin2Printer">为步步高语音机型和小霸王学习卡连接打印机（占用端口 1 的手柄线）</Control>
 			<Control ID="chkBbkAttributeLag">用前一列的属性给图块上色（经典机型，实验性）</Control>
 			<Control ID="lblYuxingSettings">裕兴学习机设置</Control>

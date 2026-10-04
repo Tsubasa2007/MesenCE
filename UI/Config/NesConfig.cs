@@ -45,11 +45,13 @@ namespace Mesen.Config
 		[ObservableProperty] public partial bool FdsAutoInsertDisk { get; set; } = false;
 		[ObservableProperty] public partial bool BbkShowDiskLed { get; set; } = false;
 		[ObservableProperty] public partial bool Yuyin2Printer { get; set; } = false;
+		[ObservableProperty] public partial bool BbkPcLink { get; set; } = false;
 		[ObservableProperty] public partial bool YuxingSkipVcdScreen { get; set; } = true;
 		[ObservableProperty] public partial bool UseExternalVideoPlayer { get; set; } = false;
 		[ObservableProperty] public partial bool DisableDiscVideoPlayback { get; set; } = false;
 		[ObservableProperty] public partial bool YuxingDTypeMouse { get; set; } = false;
 		[ObservableProperty] public partial string BbkDiskFolder { get; set; } = "";
+		[ObservableProperty] public partial string BbkPcLinkFolder { get; set; } = "";
 		[ObservableProperty] public partial VsDualOutputOption VsDualVideoOutput { get; set; } = VsDualOutputOption.Both;
 		[ObservableProperty] public partial VsDualOutputOption VsDualAudioOutput { get; set; } = VsDualOutputOption.Both;
 
@@ -149,6 +151,9 @@ namespace Mesen.Config
 			byte[] bbkDiskFolder = new byte[1000];
 			byte[] bbkDiskFolderBytes = System.Text.Encoding.UTF8.GetBytes(BbkDiskFolder ?? "");
 			Array.Copy(bbkDiskFolderBytes, bbkDiskFolder, Math.Min(bbkDiskFolderBytes.Length, 999));
+			byte[] bbkPcLinkFolder = new byte[1000];
+			byte[] bbkPcLinkFolderBytes = System.Text.Encoding.UTF8.GetBytes(BbkPcLinkFolder ?? "");
+			Array.Copy(bbkPcLinkFolderBytes, bbkPcLinkFolder, Math.Min(bbkPcLinkFolderBytes.Length, 999));
 
 			ConfigApi.SetNesConfig(new InteropNesConfig() {
 				Port1 = Port1.ToInterop(),
@@ -178,6 +183,7 @@ namespace Mesen.Config
 				FdsAutoInsertDisk = FdsAutoInsertDisk,
 				BbkShowDiskLed = BbkShowDiskLed,
 				Yuyin2Printer = Yuyin2Printer,
+				BbkPcLink = BbkPcLink,
 				YuxingSkipVcdScreen = YuxingSkipVcdScreen,
 				UseExternalVideoPlayer = UseExternalVideoPlayer,
 				DisableDiscVideoPlayback = DisableDiscVideoPlayback,
@@ -269,6 +275,7 @@ namespace Mesen.Config
 				UserPalette = palette,
 
 				BbkDiskFolder = bbkDiskFolder,
+				BbkPcLinkFolder = bbkPcLinkFolder,
 			});
 		}
 
@@ -324,6 +331,7 @@ namespace Mesen.Config
 		[MarshalAs(UnmanagedType.I1)] public bool FdsAutoInsertDisk;
 		[MarshalAs(UnmanagedType.I1)] public bool BbkShowDiskLed;
 		[MarshalAs(UnmanagedType.I1)] public bool Yuyin2Printer;
+		[MarshalAs(UnmanagedType.I1)] public bool BbkPcLink;
 		[MarshalAs(UnmanagedType.I1)] public bool YuxingSkipVcdScreen;
 		[MarshalAs(UnmanagedType.I1)] public bool UseExternalVideoPlayer;
 		[MarshalAs(UnmanagedType.I1)] public bool DisableDiscVideoPlayback;
@@ -418,6 +426,9 @@ namespace Mesen.Config
 
 		[MarshalAs(UnmanagedType.ByValArray, SizeConst = 1000)]
 		public byte[] BbkDiskFolder;
+
+		[MarshalAs(UnmanagedType.ByValArray, SizeConst = 1000)]
+		public byte[] BbkPcLinkFolder;
 	}
 
 	public enum StereoFilter

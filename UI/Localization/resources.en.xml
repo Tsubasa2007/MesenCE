@@ -306,6 +306,8 @@
 
 			<Control ID="lblBbkSettings">BBK Learning Machine Settings</Control>
 			<Control ID="chkBbkShowDiskLed">Show disk activity LED (top-right corner)</Control>
+			<Control ID="chkBbkPcLink">Connect a PC to the BBK parallel port instead of the printer (PCLINK drive, replaces PCSVER)</Control>
+			<Control ID="lblBbkPcLinkFolder">PC folder (empty = BbkPcLink in the Mesen folder):</Control>
 			<Control ID="chkYuyin2Printer">Attach the printer to the BBK voice models and the Subor cartridges (occupies the port 1 controller line)</Control>
 			<Control ID="chkBbkAttributeLag">Color tiles with the previous column's attribute (classic models, experimental)</Control>
 

@@ -719,6 +719,8 @@ struct NesConfig
 	//The 语音二号's printer reports "ready" on the same line the port 1 controller shifts
 	//its data out on, so only one of the two can be attached at a time - see Yuyin2Mapper.
 	bool Yuyin2Printer = false;
+	//The BBK's parallel port goes to an emulated PC serving a host folder as a drive (see BbkPcLink)
+	bool BbkPcLink = false;
 	//The YuXing VCD models power on showing the player's own screen, which is left behind
 	//by ejecting the disc. Skipping it boots straight to the computer side instead.
 	bool YuxingSkipVcdScreen = true;
@@ -800,6 +802,8 @@ struct NesConfig
 
 	//Folder scanned for BBK floppy disk images (.img/.ima). Empty = use the game's own folder.
 	char BbkDiskFolder[1000] = {};
+	//Folder the BBK PC link serves. Empty = a BbkPcLink folder in the home folder.
+	char BbkPcLinkFolder[1000] = {};
 };
 
 enum class SmsRevision

@@ -74,6 +74,7 @@ void EmuSettings::Serialize(Serializer& s)
 			SV(_nes.LightDetectionRadius);
 			SV(_nes.YuxingDTypeMouse);
 			SV(_nes.Yuyin2Printer);
+			SV(_nes.BbkPcLink);
 			SV(_nes.Port1.Type);
 			SV(_nes.Port1SubPorts[0].Type);
 			SV(_nes.Port1SubPorts[1].Type);

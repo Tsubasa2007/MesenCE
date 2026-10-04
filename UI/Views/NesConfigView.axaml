@@ -79,6 +79,11 @@
 					<c:OptionSection Header="{l:Translate lblBbkSettings}">
 						<CheckBox IsChecked="{Binding Config.BbkShowDiskLed}" Content="{l:Translate chkBbkShowDiskLed}" />
 						<CheckBox IsChecked="{Binding Config.Yuyin2Printer}" Content="{l:Translate chkYuyin2Printer}" />
+						<CheckBox IsChecked="{Binding Config.BbkPcLink}" Content="{l:Translate chkBbkPcLink}" />
+						<DockPanel Margin="20 0 0 0">
+							<TextBlock DockPanel.Dock="Left" Text="{l:Translate lblBbkPcLinkFolder}" VerticalAlignment="Center" Margin="0 0 5 0" />
+							<c:PathSelector Editable="{Binding Config.BbkPcLink}" Path="{Binding Config.BbkPcLinkFolder}" />
+						</DockPanel>
 						<c:CheckBoxWarning IsChecked="{Binding Config.BbkAttributeLag}" Text="{l:Translate chkBbkAttributeLag}" />
 					</c:OptionSection>
 

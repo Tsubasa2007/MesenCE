@@ -7,6 +7,7 @@
 #include "NES/Mappers/Bbk/BbkFdc.h"
 #include "NES/Mappers/Bbk/BbkLpcAudio.h"
 #include "NES/Mappers/Bbk/BbkPrinter.h"
+#include "NES/Mappers/Bbk/BbkPcLink.h"
 #include "Shared/MessageManager.h"
 #include "Shared/NotificationManager.h"
 #include "Shared/Interfaces/INotificationListener.h"
@@ -89,6 +90,8 @@ private:
 	unique_ptr<BbkLpcAudio> _lpcAudio;
 	BbkPrinter _printer;
 	bool _printerNamed = false;
+	BbkPcLink _pcLink;
+	uint8_t _parallelData = 0;
 	shared_ptr<DiskSwapListener> _swapListener;
 
 	//Inno ASIC registers
@@ -791,6 +794,7 @@ protected:
 		_regFF2C = 0;
 		_mapRam = false;
 		_ff01D4 = false;
+		_parallelData = 0;
 
 		_splitMode = false;
 		_enableIrq = false;
@@ -830,6 +834,7 @@ protected:
 
 		_printerNamed = false;
 		_printer.Reset();
+		_pcLink.Reset();
 	}
 
 	//Printed pages are named after the ROM, but the emulator's rom info is not filled in
@@ -841,6 +846,17 @@ protected:
 			_printer.SetRomName(FolderUtilities::GetFilename(_emu->GetRomInfo().RomFile.GetFilePath(), false));
 		}
 		return _printer;
+	}
+
+	//With the PC link on, the parallel port goes to a PC serving a host folder instead of the
+	//printer (see BbkPcLink). The folder is looked at on every use, so a change applies at once.
+	bool PcLinkAttached() { return _console->GetNesConfig().BbkPcLink; }
+
+	BbkPcLink& PcLink()
+	{
+		string folder = _console->GetNesConfig().BbkPcLinkFolder;
+		_pcLink.SetRoot(folder.empty() ? FolderUtilities::CombinePath(FolderUtilities::GetHomeFolder(), "BbkPcLink") : folder);
+		return _pcLink;
 	}
 
 	void GetMemoryRanges(MemoryRanges& ranges) override
@@ -903,8 +919,10 @@ protected:
 
 			switch(addr) {
 				case 0xFF18: return _lpcAudio->ReadStatus();
-				case 0xFF40: return 0; //Printer data port is write-only
-				case 0xFF48: return _printer.ReadStatus();
+				//The parallel data latch reads back: PCLINK lowers its handshake with DEC $FF40, which
+				//only works if the read gives the $10 it wrote
+				case 0xFF40: return _parallelData;
+				case 0xFF48: return PcLinkAttached() ? _pcLink.ReadStatus() : _printer.ReadStatus();
 				case 0xFF50: return 0; //PC Card
 				default: return 0;
 			}
@@ -1268,9 +1286,15 @@ protected:
 			case 0xFF10: _lpcAudio->WriteControl(value); break;
 			case 0xFF18: _lpcAudio->WriteData(value); break;
 
-			//Parallel port printer ($FF48 is the host-to-machine data/handshake half of the
-			//PC-card link, which nothing on these disks uses)
-			case 0xFF40: Printer().WriteData(value); break;
+			//Parallel port: the printer, or the PC link
+			case 0xFF40:
+				_parallelData = value;
+				if(PcLinkAttached()) {
+					PcLink().WriteData(value);
+				} else {
+					Printer().WriteData(value);
+				}
+				break;
 			case 0xFF48: break;
 			case 0xFF50: Printer().WriteControl(value); break;
 
@@ -1288,7 +1312,7 @@ protected:
 		SV(_printer);
 
 		SV(_regFF14); SV(_regFF1C); SV(_regFF24); SV(_regFF2C);
-		SV(_mapRam); SV(_ff01D4);
+		SV(_mapRam); SV(_ff01D4); SV(_parallelData);
 		SV(_romBank16k); SV(_dram8000); SV(_regFF08); SV(_regFFB0); SV(_lineIrqPending);
 		SV(_regFF09); SV(_ff09IrqIoOverride); SV(_regFF11);
 		SV(_splitMode); SV(_enableIrq); SV(_lineCount);
