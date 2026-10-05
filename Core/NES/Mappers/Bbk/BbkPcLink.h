@@ -488,7 +488,7 @@ private:
 			Bank(0xFF);
 			addr = (uint16_t)(addr - highOffset);
 		}
-		ReadMemory(addr, 80, [this, then](vector<uint8_t>& d) { then(CString(d)); });
+		ReadMemory(addr, 80, [then](vector<uint8_t>& d) { then(CString(d)); });
 	}
 
 	void Handle()
