@@ -206,6 +206,7 @@
     <ClInclude Include="NES\Mappers\Sb2k\Sb2kPpu.h" />
     <ClInclude Include="NES\Mappers\Yuxing\YuxingMapper.h" />
     <ClInclude Include="NES\Mappers\Yuxing\YuxingModem.h" />
+    <ClInclude Include="NES\Mappers\Yuxing\YuxingV40.h" />
     <ClInclude Include="NES\Mappers\Yuxing\YuxingVcdDrive.h" />
     <ClInclude Include="NES\Mappers\Yuxing\YuxingVcdMenu.h" />
     <ClInclude Include="NES\Mappers\Mmc3Variants\McAcc.h" />

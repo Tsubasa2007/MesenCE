@@ -55,22 +55,19 @@ public:
 		return prgCrc == 0xCB7AA37A || prgCrc == 0x8E53518B;
 	}
 
-	//The two earliest revisions predate the key matrix and take an ordinary keyboard on
-	//$4016/$4017 instead - so the input setup has to ask the mapper which machine this is
-	//before it can plug the right one in.
+	//The V5.0 predates the key matrix and takes an ordinary keyboard on $4016/$4017 instead -
+	//so the input setup has to ask the mapper which machine this is before it can plug the
+	//right one in. (The V4.0, earlier still, is a board of its own: YuxingV40.)
 	//
 	//These read the CRC rather than _type: NesConsole sets the input up while it is loading
 	//the ROM, and does not call InitSpecificMapper() - and so DetectMachineType() - until
 	//afterwards, so _type is still Unknown at that point. _romInfo is already filled in.
 	bool UsesXtKeyboard() { return IsV50(_romInfo.Hash.PrgCrc32); }
-	bool UsesFamilyBasicKeyboard() { return IsV40(_romInfo.Hash.PrgCrc32); }
 	bool UsesSuborKeyboard() { return _romInfo.Hash.PrgCrc32 == HuatongPrgCrc; }
 
-	static bool IsV40(uint32_t prgCrc) { return prgCrc == V40PrgCrc; }
 	static bool IsV50(uint32_t prgCrc) { return prgCrc == V50PrgCrc || prgCrc == V50WuBiPrgCrc; }
 
 	//Named here rather than only in DetectMachineType()'s switch so the two cannot drift
-	static constexpr uint32_t V40PrgCrc = 0xCEAC04C7;
 	static constexpr uint32_t V50PrgCrc = 0x3B02AF09;
 	static constexpr uint32_t V50WuBiPrgCrc = 0x871254E8;
 	//华通 (Huatong) HT-DOS card - this board with a Subor keyboard on $4016/$4017
@@ -155,8 +152,6 @@ private:
 	{
 		//Unknown BIOS - treated as the largest configuration (1MB PRAM / 256KB CRAM)
 		Unknown = 0xFF,
-		//V4.0 - 32KB PRAM / 32KB CRAM, Family Basic keyboard
-		V40 = 7,
 		//V5.0 (and the WuBi variant) - 32KB PRAM / 32KB CRAM, Subor XT keyboard
 		V50 = 1,
 		//V7.0 - 128KB PRAM / 32KB CRAM
@@ -628,12 +623,6 @@ private:
 		_reg5002 = 2;
 
 		switch(crc) {
-			case V40PrgCrc: //V4.0
-				_type = YuxingType::V40;
-				_pramMask = 0x01; //32KB
-				_cramMask = 0x03; //32KB
-				break;
-
 			case V50PrgCrc: //V5.0
 			case V50WuBiPrgCrc: //V5.0 + WuBi
 				_type = YuxingType::V50;

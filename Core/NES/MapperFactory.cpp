@@ -55,6 +55,7 @@
 #include "NES/Mappers/Bbk/Yuyin2Mapper.h"
 #include "NES/Mappers/Sb2k/Sb2kMapper.h"
 #include "NES/Mappers/Yuxing/YuxingMapper.h"
+#include "NES/Mappers/Yuxing/YuxingV40.h"
 #include "NES/Mappers/Subor/Subor168.h"
 #include "NES/Mappers/Subor/Subor560.h"
 #include "NES/Mappers/Subor/SuborCarts.h"
@@ -462,6 +463,14 @@ BaseMapper* MapperFactory::GetMapperFromID(RomData& romData)
 			//The VirtuaNES-BBK fork uses mapper 169 for the YuXing learning machines.
 			//The BIOS carries the machine revision in its PRG CRC32 - see YuxingMapper.
 			romData.Info.System = GameSystem::Dendy;
+			if(romData.Info.Hash.PrgCrc32 == YuxingV40::PrgCrc) {
+				//The V4.0 is a board of its own, with the Family Basic keyboard
+				//50Hz like the Dendy-timed YuXing machines, but not Dendy itself - see YuxingV40
+				romData.Info.System = GameSystem::NesPal;
+				romData.Info.InputType = GameInputType::FamilyBasicKeyboard;
+				romData.Info.HasBattery = true;
+				return new YuxingV40();
+			}
 			//Reuses the standard keyboard+mouse input id; NesConsole picks the YuXing
 			//devices apart from the Subor/BBK ones by the mapper type
 			romData.Info.InputType = GameInputType::SuborKeyboardMouse1;

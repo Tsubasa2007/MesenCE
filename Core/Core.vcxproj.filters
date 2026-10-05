@@ -2100,6 +2100,9 @@
     <ClInclude Include="NES\Mappers\Yuxing\YuxingModem.h">
       <Filter>NES\Mappers\Yuxing</Filter>
     </ClInclude>
+    <ClInclude Include="NES\Mappers\Yuxing\YuxingV40.h">
+      <Filter>NES\Mappers\Yuxing</Filter>
+    </ClInclude>
     <ClInclude Include="NES\Mappers\Yuxing\YuxingVcdDrive.h">
       <Filter>NES\Mappers\Yuxing</Filter>
     </ClInclude>

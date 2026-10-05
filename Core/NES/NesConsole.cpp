@@ -1193,11 +1193,6 @@ void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem syst
 				//(clocked by $4016 bit 0 with bit 2 low, which the keyboard's writes never are)
 				log("[Input] YuXing mouse connected");
 				port2 = ControllerType::YuxingMouse;
-			} else if(yuxing->UsesFamilyBasicKeyboard()) {
-				//Likewise the V4.0, which takes the Family Basic keyboard. Untested - no dump
-				//of that BIOS is on hand - but it is what the reference emulator plugs in.
-				log("[Input] Family Basic Keyboard connected");
-				expDevice = ControllerType::FamilyBasicKeyboard;
 			} else {
 				//The YuXing machines scan a 14x8 key matrix through the mapper's own registers,
 				//and their mouse is the 3-byte serial device NintendulatorNRS documents
