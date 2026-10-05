@@ -114,7 +114,7 @@ protected:
 	uint8_t ReadRegister(uint16_t addr) override
 	{
 		if((addr & 0xFF00) == 0x5300) {
-			return (_lpcAudio->IsFull() ? 0x00 : 0x80) | (_lpcAudio->IsSpeechEnd() ? 0x0F : 0x00);
+			return (_lpcAudio->IsBusy() ? 0x00 : 0x80) | (_lpcAudio->IsSpeechEnd() ? 0x0F : 0x00);
 		}
 		return _console->GetMemoryManager()->GetOpenBus();
 	}

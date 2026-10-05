@@ -66,6 +66,22 @@ public:
 		}
 	}
 
+	//The cartridges that read $4016 bit 0 only to wait for the printer: nothing in their menus,
+	//WPS, lessons or add-on cards reads a pad or mouse there (F-BASIC's pad is on bit 1), so the
+	//printer can stay attached whatever the printer setting says
+	static bool HasPrinterAlways(uint32_t prgCrc)
+	{
+		switch(prgCrc) {
+			case 0x40A4C574: //V5
+			case 0xFDD9321C: //V5 with add-ons
+			case 0xCA501706:
+				return true;
+
+			default:
+				return false;
+		}
+	}
+
 	static bool IsSuborCart(uint32_t prgCrc)
 	{
 		switch(prgCrc) {

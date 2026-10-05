@@ -962,6 +962,11 @@ public:
 	bool IsSpeechEnd() { return _speechEnd; }
 	bool IsFull() { return IsFifoFull(); }
 
+	//Subor cartridges' $5300 status: the real chip's 16-byte FIFO. Their WPS feeds speech from its NMI
+	//handler for as long as bit 7 says the chip takes data - with the whole 64KB buffer free, one NMI
+	//ran for many frames, the NMIs nested inside it and the stack overflowed into the program's vectors.
+	bool IsBusy() { return GetFifoCount() >= BusyThreshold; }
+
 	//$FF10 write (SpeakInitPort): bit 0 rising edge resets the decoder.
 	//Unlike the original (whose decoder free-ran ahead of real time and had usually
 	//drained its buffer by reset time), this port is locked to 10KHz and may still
