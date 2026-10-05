@@ -1250,7 +1250,9 @@ void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem syst
 			} else {
 				log("[Input] Subor mouse (24-bit) connected");
 				port1 = ControllerType::SuborMouse24;
-				port2 = ControllerType::None;
+				//A joypad (or a dance mat) in the second port: the V12.0's dance game reads only
+				//$4017 bit 0, and the extended keyboard leaves that bit to it
+				port2 = ControllerType::NesController;
 			}
 			log("[Input] Subor keyboard connected");
 			expDevice = ControllerType::SuborKeyboard;
