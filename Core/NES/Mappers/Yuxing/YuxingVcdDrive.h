@@ -190,6 +190,10 @@ private:
 	bool _keyboardSelected = false;
 	bool _readComplete = false;
 
+	//A byte going out over the serial link rather than through $4207 - see the $07 write
+	bool _serialActive = false;
+	uint8_t _serialByte = 0;
+
 	//Whether a command byte has been shifted in that the drive has not finished with yet, and
 	//how many answers have been clocked out since anything was asked - see the $04 shift
 	bool _commandPending = false;
@@ -375,6 +379,18 @@ private:
 				//The channels belong to the show they arrive with, so they are handed over
 				//rather than latched here: a show that turns out to be one the drive is to
 				//ignore must not silence the piece it is ignoring it in favour of.
+				//
+				//Bit 2 leaves the screen to the machine. Only a front end handing over to a
+				//program it loaded asks for it - its scripts mask the type to bits 0, 1 and 3 -
+				//and the program it starts draws everything itself and never says $AA, so the
+				//picture named is not one to stand over it.
+				if(_cmd[1] & 0x04) {
+					if(_pictureShown) {
+						_pictureShown = false;
+						MessageManager::Log("[YuXing] Program handed the screen with its start");
+					}
+					break;
+				}
 				RequestShow(((uint32_t)_cmd[2] << 8) | _cmd[3], (uint8_t)(_cmd[1] & 0x03));
 				break;
 			}
@@ -387,6 +403,10 @@ private:
 					if(_disc.size() > 0x12) {
 						if(_disc[0x10] == 0x46 && _disc[0x11] == 0xFC) { _pos = 0x8800; }
 						if(_disc[0x10] == 0x15 && _disc[0x11] == 0xDF) { _pos = 0x9000; } //older images
+					}
+					int32_t addressed = FindAddressedProgram(_cmd[1], _cmd[2], _cmd[3]);
+					if(addressed >= 0) {
+						_pos = addressed;
 					}
 				} else {
 					//Minute/second/frame address, relative to the latched base sector
@@ -403,6 +423,10 @@ private:
 					}
 				}
 				_seekPos = _pos;
+				//A seek starts a new read. Once one had run on to the end of the image, $4207 went
+				//back to the key matrix for good: a front end whose first module sits last on its
+				//disc read every later module it loaded as zeros, and the screen stayed black.
+				_readComplete = false;
 				break;
 		}
 	}
@@ -443,6 +467,28 @@ private:
 		return true;
 	}
 
+	//Whether an item's slot on an evenly spaced disc lies inside an earlier item that runs on
+	//past its own allocation.
+	//
+	//The two kinds of gap in a directory listed in order look alike and are not. A long item
+	//takes the slots after it, the names carry on past them, and a number with no file of its
+	//own is the next file along - counting finds it, and the slot is the middle of the long
+	//item. But one disc's records for most of its first hundred items are unreadable while the
+	//items themselves are where their slots say: there a number with no readable file is in a
+	//slot nothing else covers, and counting hands back a file dozens of items further on - a
+	//piece of music where a program asked for the picture behind its screen.
+	bool IsSlotCovered(uint32_t item)
+	{
+		uint32_t slotLba = _segmentEvenBase + (item - 1) * _segmentEvenStep;
+		for(uint32_t i = 0; i + 1 < item && i < _segmentItems.size(); i++) {
+			const DiscSegmentItem& earlier = _segmentItems[i];
+			if(earlier.Sectors > 0 && earlier.Lba <= slotLba && slotLba < earlier.Lba + earlier.Sectors) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	bool SegmentItem(uint32_t item, uint32_t& lba, uint32_t& sectors)
 	{
 		if(item == 0) {
@@ -461,7 +507,9 @@ private:
 		//n'th SURVIVING record is not the n'th item, and counting quietly answers with a
 		//neighbour - asked for the letter A it handed back the page for G, several hundred
 		//items away, because 801 of that disc's 1081 records carry an impossible address.
-		if(_segmentEvenStep > 0) {
+		//A directory that lists its items in order is counted down instead, unless the item's
+		//slot is free - see IsSlotCovered.
+		if(_segmentEvenStep > 0 && (!_segmentNamesInOrder || !IsSlotCovered(item))) {
 			lba = _segmentEvenBase + (item - 1) * _segmentEvenStep;
 			sectors = _segmentEvenStep;
 			return StretchToStream(lba, sectors);
@@ -557,6 +605,14 @@ private:
 		MessageManager::Log("[YuXing] Program asked for track " + std::to_string(number));
 	}
 
+	//The two Windows keys and the menu key (cells 78, 94 and 95). The host takes them for
+	//itself, and one left held as focus moves away would otherwise press buttons for a game
+	//reading the pad - see the strobe in Write().
+	static bool IsWindowsKeyCell(int32_t cell)
+	{
+		return cell == 9 * 8 + 6 || cell == 11 * 8 + 6 || cell == 11 * 8 + 7;
+	}
+
 	//The word ends with its last bit, and the next select starts a fresh one. Leaving the
 	//byte index set once the bits had run out is what made the keyboard go dead: the disc
 	//menu reads the port 24-48 times after each select, for the mouse, and so reads past
@@ -593,7 +649,8 @@ public:
 		_pos = _basePos = _seekPos = _cmdIndex = _keySendBit = _shiftCount = 0;
 		_followUp = 0;
 		_hasFollowUp = false;
-		_move = _shifting = _canReadData = _seekOk = _readComplete = _keyboardSelected = false;
+		_move = _shifting = _canReadData = _seekOk = _readComplete = _keyboardSelected = _serialActive = false;
+		_serialByte = 0;
 		_commandPending = false;
 		_idleReads = 0;
 		_leaving = false;
@@ -778,6 +835,32 @@ public:
 
 		_programIndex = (int32_t)index;
 		return true;
+	}
+
+	//Where in the program a seek to this disc address lands, or -1 when the disc does not say.
+	//
+	//The address is the disc's own - binary minute/second/frame, as in a program header's
+	//bytes 8-10 - and what the drive hands over starts one second after it: programs ask for
+	//a second early, the drive's pre-roll, and take the first 2KB they are given as what they
+	//asked for. The fixed homes above are this same arithmetic for the addresses the programs
+	//they were found on ask for, which is why they work there. A program that is a bundle - a
+	//front end followed by the programs it loads, each at an address in its script - asks for
+	//other places, and homing handed it the middle of a program instead, whose "header" then
+	//had it read on past the end and run rubbish.
+	//
+	//Only a whole disc says where the program lies on it; a lone program image keeps the homes.
+	int32_t FindAddressedProgram(uint8_t minutes, uint8_t seconds, uint8_t frames)
+	{
+		if(_programIndex < 0 || _programIndex >= (int32_t)_programs.size()) {
+			return -1;
+		}
+
+		int64_t lba = ((int64_t)minutes * 60 + seconds) * 75 + frames - 150 + 75;
+		int64_t offset = (lba - _programs[_programIndex].Lba) * 0x800;
+		if(offset < 0 || offset >= (int64_t)_disc.size()) {
+			return -1;
+		}
+		return (int32_t)offset;
 	}
 
 	bool SelectProgram(uint32_t index)
@@ -1062,11 +1145,8 @@ public:
 		//A directory that lists its items in order is trustworthy enough to count down, and
 		//counting is what a disc whose numbering has run ahead of its names needs: there the
 		//slot arithmetic lands in the middle of a long item, a stretch with no picture in it.
-		//So this is only for the disc whose ordering is scrambled.
-		if(_segmentNamesInOrder) {
-			return;
-		}
-
+		//So on such a disc the spacing found here answers only for a slot no item covers -
+		//see IsSlotCovered.
 		uint32_t firstNumber = 0, lastNumber = 0;
 		for(uint32_t i = 0; i < _segmentItems.size(); i++) {
 			if(_segmentItems[i].Sectors == 0) {
@@ -1339,6 +1419,12 @@ public:
 				return true;
 
 			case 0x4017:
+				if(_serialActive) {
+					//One bit a read on bit 3, the most significant first and inverted
+					data = (_serialByte & 0x80) ? 0x00 : 0x08;
+					_serialByte <<= 1;
+					return true;
+				}
 				if(_keyboardSelected) {
 					if(_keyByteIndex != 2 && _keyByteIndex) {
 						_keyByteIndex = 0;
@@ -1359,25 +1445,31 @@ public:
 					return false;
 				}
 				_canReadData = false;
-				//The base-sector seek homes to a fixed offset that several of the smaller
-				//images are shorter than (the 34KB mouse titles are seeked to $C800), so the
-				//position genuinely can sit past the end - read those as blank rather than
-				//off the end of the buffer.
-				data = _pos >= 0 && _pos < (int32_t)_disc.size() ? _disc[_pos] : 0;
-				_secondsSinceRead = 0;
-				_readStarted = true;
-				if(++_pos >= (int32_t)_disc.size()) {
-					_readComplete = true;
-					//The whole program is in, so the card shown while it loaded makes way for it
-					if(_loadingPicture) {
-						_loadingPicture = false;
-						_pictureShown = false;
-						MessageManager::Log("[YuXing] Program read in - loading picture taken down");
-					}
-				}
+				data = NextProgramByte();
 				return true;
 		}
 		return false;
+	}
+
+	//The next byte of what the drive serves, by either way of reading it
+	uint8_t NextProgramByte()
+	{
+		//The base-sector seek homes to a fixed offset that several of the smaller images are
+		//shorter than (the 34KB mouse titles are seeked to $C800), so the position genuinely
+		//can sit past the end - read those as blank rather than off the end of the buffer.
+		uint8_t data = _pos >= 0 && _pos < (int32_t)_disc.size() ? _disc[_pos] : 0;
+		_secondsSinceRead = 0;
+		_readStarted = true;
+		if(++_pos >= (int32_t)_disc.size()) {
+			_readComplete = true;
+			//The whole program is in, so the card shown while it loaded makes way for it
+			if(_loadingPicture) {
+				_loadingPicture = false;
+				_pictureShown = false;
+				MessageManager::Log("[YuXing] Program read in - loading picture taken down");
+			}
+		}
+		return data;
 	}
 
 	bool Write(uint16_t addr, uint8_t value)
@@ -1393,6 +1485,32 @@ public:
 				return false;
 
 			case 0x4016: {
+				//The serial way of reading a byte, which the loader the 315 BIOS starts a disc's
+				//system with uses instead of $4207: with the drive selected and saying it has a
+				//byte ($06 answered with bit 2), $07 takes the byte and $06 lets it go; eight
+				//reads of $4017 then clock it out, and $04 ends it - the drive answering with
+				//bit 2 clear - before $06 asks for the next. Nothing else sends $07 to a
+				//selected drive.
+				if(value == 0x07 && _driveSelected && _cmdSel == 6 && !_keyboardSelected) {
+					_serialActive = true;
+					_serialByte = NextProgramByte();
+					return true;
+				}
+				if(_serialActive) {
+					if(value == 0x06) {
+						return true;
+					}
+					_serialActive = false;
+					if(value == 0x04) {
+						//The end of a byte, not a status bit shifted out: the counters that
+						//watch the status byte are left alone
+						_cmdSel = 4;
+						_shifting = true;
+						_driveSelected = true;
+						return true;
+					}
+				}
+
 				//Bit 0 is the joypad's strobe line and the drive's link never uses it - every
 				//command bit and clock is an even value, and the keyboard's $FF is caught
 				//below. A game that strobes with bit 1 held ($03, then $02 to release) was
@@ -1410,6 +1528,13 @@ public:
 				if(_strobeReleasePending) {
 					_strobeReleasePending = false;
 					if(value == _strobeRelease) {
+						//The keyboard latches its word on the strobe too, not only on the
+						//BIOS's $FF/$FE: the programs that find no "YX315B" at $0140 read it
+						//as a plain pad strobe followed by eight reads of each port. It only
+						//answers while a key is held, so a game reading the pad is left alone.
+						if(value == 0 && PendingKeyCell >= 0 && !IsWindowsKeyCell(PendingKeyCell)) {
+							SelectKeyboard();
+						}
 						return true;
 					}
 				}
@@ -1510,7 +1635,16 @@ public:
 		return false;
 	}
 
-	//$FF followed by $FE selects the keyboard and latches one key for transmission
+	//Off the line until it is addressed again - see YuxingMapper's _driveLink
+	void Release()
+	{
+		_driveSelected = false;
+		_keyboardSelected = false;
+		_serialActive = false;
+	}
+
+	//$FF followed by $FE selects the keyboard and latches one key for transmission - as does a
+	//plain pad strobe while a key is held, see Write()
 	void KeyWrite(uint8_t value)
 	{
 		_keySelect = (uint16_t)((_keySelect << 8) | value);
@@ -1518,6 +1652,11 @@ public:
 			return;
 		}
 
+		SelectKeyboard();
+	}
+
+	void SelectKeyboard()
+	{
 		_keyboardSelected = true;
 		if(_keyByteIndex) {
 			return;
@@ -1542,6 +1681,7 @@ public:
 		SV(_followUp); SV(_hasFollowUp); SV(_shiftCount);
 		SV(_move); SV(_shifting); SV(_canReadData); SV(_seekOk); SV(_commandPending); SV(_idleReads); SV(_statusBitsRead); SV(_leaving); SV(_programLeft); SV(_strobeRelease); SV(_strobeReleasePending);
 		SV(_driveSelected); SV(_keyboardSelected); SV(_readComplete); SV(_loadingPicture); SV(_secondsSinceRead); SV(_readStarted);
+		SV(_serialActive); SV(_serialByte);
 		SV(_programIndex);
 
 		//The disc is not part of a savestate, so the positions above only mean anything if the

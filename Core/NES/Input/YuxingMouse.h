@@ -44,6 +44,8 @@ private:
 	uint8_t _queueCount = 0;
 	bool _clock = false;
 	bool _vcdMode = false;
+	//Wired to $4016 bit 0 instead - see SetOnFirstPort
+	bool _onFirstPort = false;
 
 	//What the last report said the buttons were, so a change in them is worth reporting even
 	//when the mouse has not moved
@@ -112,7 +114,7 @@ protected:
 	void Serialize(Serializer& s) override
 	{
 		BaseControlDevice::Serialize(s);
-		SV(_accumX); SV(_accumY); SV(_queueHead); SV(_queueCount); SV(_clock); SV(_vcdMode); SV(_sentButtons); SV(_foldedX); SV(_foldedY);
+		SV(_accumX); SV(_accumY); SV(_queueHead); SV(_queueCount); SV(_clock); SV(_vcdMode); SV(_onFirstPort); SV(_sentButtons); SV(_foldedX); SV(_foldedY);
 		for(uint32_t i = 0; i < QueueSize; i++) {
 			SVI(_queue[i]);
 		}
@@ -140,6 +142,16 @@ public:
 	//Set by YuxingMapper - see the class comment
 	void SetVcdMode(bool enabled) { _vcdMode = enabled; }
 
+	//The 315 running the system a disc carries for its floppy model: programs that find the
+	//machine's name at $0140 read the mouse on $4016 bit 0, clocked by the same $FE/$FF
+	//writes as on the player's side. The mapper puts the bit on $4016 - see ReadFirstPort.
+	void SetOnFirstPort(bool enabled) { _onFirstPort = enabled; }
+
+	uint8_t ReadFirstPort()
+	{
+		return (_onFirstPort && _clock && _queueCount > 0 && !_queue[_queueHead]) ? 0x01 : 0x00;
+	}
+
 	//Names for the movement and the buttons, so that a script can drive this mouse the
 	//way it can drive every other one in the fork - each of the others has this and only
 	//this one did not, which left it the single pointing device no test could move.
@@ -160,6 +172,9 @@ public:
 		}
 
 		uint16_t value = 0x40;
+		if(_onFirstPort) {
+			return 0;
+		}
 		if(_clock && _queueCount > 0) {
 			value |= _queue[_queueHead] ? 0 : 1;
 		}
@@ -173,7 +188,7 @@ public:
 		}
 
 		//The VCD models' keyboard-select writes double as a clock edge
-		if(_vcdMode && (value == 0xFE || value == 0xFF)) {
+		if((_vcdMode || _onFirstPort) && (value == 0xFE || value == 0xFF)) {
 			value &= 0x01;
 		}
 

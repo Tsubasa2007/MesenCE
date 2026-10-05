@@ -11,6 +11,7 @@
 #include "NES/Mappers/Bbk/BbkLpcAudio.h"
 #include "NES/Mappers/Bbk/BbkPrinter.h"
 #include "NES/Mappers/Bbk/PcFdc.h"
+#include "NES/Mappers/Yuxing/YuxingModem.h"
 #include "NES/Mappers/Yuxing/YuxingVcdDrive.h"
 #include "NES/NesControlManager.h"
 #include "Shared/BaseControlManager.h"
@@ -124,6 +125,9 @@ private:
 	//printer's ready line, which the BIOS tests before every byte and gives up on after ten
 	//tries ("打印机未准备好").
 	BbkPrinter _printer;
+	//The floppy model's serial port - see YuxingModem - and whether it holds the IRQ line
+	YuxingModem _modem;
+	bool _modemIrq = false;
 	bool _printerNamed = false;
 	uint8_t _lptLast = 0;
 	uint8_t _lptShift = 0;
@@ -238,6 +242,14 @@ private:
 	//from a host key combination, since the machine's own "computer" key is not on the
 	//scanned matrix.
 	bool _vcdMode = false;
+
+	//The drive taken up from the computer side. The 315 BIOS starts the system a disc carries
+	//for its floppy model from its own menu ('*') rather than from the player: its loader
+	//copies itself into RAM, writes the machine's name to $0140 and reads the system off the
+	//drive one bit at a time - see YuxingVcdDrive's $07. From then on the drive answers and
+	//shows its pictures while the machine stays a computer: the key matrix is its keyboard,
+	//and its mouse is read on $4016 bit 0, as programs that find the name expect.
+	bool _driveLink = false;
 	//Set while the BIOS has the serial link switched to the keyboard rather than the
 	//drive; the controller port has to stay quiet for the duration
 	bool _vcdKeyboardSelected = false;
@@ -399,6 +411,7 @@ private:
 		shared_ptr<YuxingMouse> mouse = _console->GetControlManager()->GetControlDevice<YuxingMouse>();
 		if(mouse) {
 			mouse->SetVcdMode(_vcdMode);
+			mouse->SetOnFirstPort(_driveLink);
 		}
 	}
 
@@ -790,6 +803,17 @@ protected:
 		_fdc.Clock();
 		_lpcAudio->Clock();
 		_printer.Clock();
+		_modem.Clock();
+		//The line is the MMC3 clone's too, but the two never overlap: only the online program
+		//talks to the modem, and it runs on the machine's own banking
+		if(_modem.IsInterruptPending() != _modemIrq) {
+			_modemIrq = !_modemIrq;
+			if(_modemIrq) {
+				_console->GetCpu()->SetIrqSource(IRQSource::External);
+			} else if(!_mmc3Mode) {
+				_console->GetCpu()->ClearIrqSource(IRQSource::External);
+			}
+		}
 
 		//The reference emulator renders scanline N and then runs its per-scanline logic, so
 		//fire it during that line's hblank (after the sprite fetches, PPU cycle >= 321) -
@@ -874,6 +898,7 @@ protected:
 		_huatongBand = 0;
 		_mmc3Mode = false;
 		_vcdMode = (_type == YuxingType::V92);
+		_driveLink = false;
 		_vcdKeyboardSelected = false;
 		_lpcReceiving = false;
 		_lpcNibbleCount = 0;
@@ -882,6 +907,8 @@ protected:
 		_lpcAudio->Reset();
 		_printerNamed = false;
 		_printer.Reset();
+		_modem.Reset();
+		_modemIrq = false;
 		_lptLast = 0;
 		_lptShift = 0;
 		_lastPpuScanline = -2;
@@ -918,6 +945,10 @@ protected:
 			return (uint8_t)(addr >> 8);
 		}
 
+		if(_type != YuxingType::Huatong && YuxingModem::IsModemAddress(addr)) {
+			return _modem.Read(addr);
+		}
+
 		switch(addr) {
 			case 0x4016:
 			case 0x4017: {
@@ -933,7 +964,13 @@ protected:
 				if(IsVcdActive()) {
 					_vcd.Read(addr, vcdValue);
 				}
-				if(addr == 0x4016 && !_vcdMode && IsPrinterSelected()) {
+				if(addr == 0x4016 && _driveLink) {
+					shared_ptr<YuxingMouse> mouse = _console->GetControlManager()->GetControlDevice<YuxingMouse>();
+					if(mouse) {
+						value |= mouse->ReadFirstPort();
+					}
+				}
+				if(addr == 0x4016 && !_vcdMode && !_driveLink && IsPrinterSelected()) {
 					value |= 0x02;
 				}
 				if(UsesXtKeyboard()) {
@@ -994,6 +1031,11 @@ protected:
 			}
 		}
 
+		if(_type != YuxingType::Huatong && YuxingModem::IsModemAddress(addr)) {
+			_modem.Write(addr, value);
+			return;
+		}
+
 		switch(addr) {
 			case 0x4016:
 				//Only the computer side has a printer. In VCD mode this port is the drive's
@@ -1004,14 +1046,19 @@ protected:
 				//lines ($06 is both "clock high, selected" and an XT command), so the two
 				//cannot share the port - and only the later, computer-shaped models have a
 				//printer anyway.
-				if(!_vcdMode && !UsesXtKeyboard()) {
+				if(!_vcdMode && !_driveLink && !UsesXtKeyboard()) {
 					WriteLpt(value);
 				}
 				if(UsesXtKeyboard()) {
 					XtWrite4016(value);
 				}
 				//$FF/$FE switches the serial link to the keyboard
-				if(IsVcdActive()) {
+				if(_driveLink && !_vcdMode && (value == 0xFF || value == 0xFE)) {
+					//...except from the computer side, whose keyboard is the key matrix: there
+					//they are the mouse's clock on $4016 bit 0, and all the drive does is let go
+					//of the line
+					_vcd.Release();
+				} else if(IsVcdActive()) {
 					_vcdKeyboardSelected = (value == 0xFF || value == 0xFE);
 					LatchKeyForVcd();
 					_vcd.Write(addr, value);
@@ -1053,6 +1100,18 @@ protected:
 
 			case 0x4800:
 				_reg4800 = value;
+				//The 315 loader opening its way to the drive - see _driveLink. It is the one
+				//thing on the computer side to store $40 here, as it starts.
+				if(value == 0x40 && !_vcdMode && !_driveLink && _type == YuxingType::V92 && _vcd.HasDisc()) {
+					_driveLink = true;
+					UpdateMouseMode();
+					//What it reads is the disc's program, from the start - picked here if the
+					//player's side never got as far as choosing it
+					if(!_vcd.IsDiscInserted() && _vcd.GetProgramCount() > 0) {
+						_vcd.SelectProgram(0);
+					}
+					MessageManager::Log("[YuXing] The disc's system is being loaded from the computer side");
+				}
 				UpdateSplitMode();
 				UpdatePrgMapping();
 				break;
@@ -1278,7 +1337,7 @@ protected:
 	//bit 2 set, and $FE also matches on bits 1 and 0.
 	bool IsPrinterSelected() { return !UsesXtKeyboard() && _lptLast == 0x06; }
 
-	bool IsVcdActive() { return _vcdMode && _vcd.IsDiscInserted(); }
+	bool IsVcdActive() { return (_vcdMode || _driveLink) && _vcd.IsDiscInserted(); }
 
 	//$4016/$4017 are handled by the mapper here, so the controller port's own value has to
 	//be fetched from the control manager and merged in by hand
@@ -1647,7 +1706,7 @@ public:
 		//found again every time the machine is reset - which is what leaving the player does -
 		//so without this the menu would come back up over the computer's own screen, having
 		//been ejected a moment earlier.
-		if(!_discChecked || !_vcdMode) {
+		if(!_discChecked || !(_vcdMode || _driveLink)) {
 			return;
 		}
 
@@ -1739,8 +1798,16 @@ public:
 		if(MenuKeyPressed(keyboard, YuxingKeyboard::PageUp)) {
 			menu.PrevPage();
 		}
-		if(MenuKeyPressed(keyboard, YuxingKeyboard::Esc) || MenuKeyPressed(keyboard, YuxingKeyboard::Backspace)) {
-			menu.Leave();
+		bool esc = MenuKeyPressed(keyboard, YuxingKeyboard::Esc);
+		if(esc || MenuKeyPressed(keyboard, YuxingKeyboard::Backspace)) {
+			if(!menu.Leave() && esc) {
+				//On the disc's first screen, Esc is the machine's 电脑 key: the player gives way
+				//to the computer, and the disc stays in the drive. That is how the 315 reaches
+				//its own menu with a disc in, and from there the system the disc carries for its
+				//floppy model ('*' - see _driveLink).
+				SwitchToComputerSide();
+				return;
+			}
 		}
 
 		if(chosen || MenuKeyPressed(keyboard, YuxingKeyboard::Enter) ||
@@ -1784,7 +1851,7 @@ public:
 	//Whether the drive is still the thing the screen belongs to. A picture off a disc stays
 	//up until something takes it down, and a still stays up indefinitely, so leaving the
 	//player - by ejecting, or by any other way out of that mode - has to be able to say so.
-	bool IsPlayerShowing() { return _vcdMode && _vcd.HasDisc() && _vcd.IsPictureShown(); }
+	bool IsPlayerShowing() { return (_vcdMode || _driveLink) && _vcd.HasDisc() && _vcd.IsPictureShown(); }
 
 	//Where the disc's program has asked for its pointer - see YuxingVcdDrive::GetPointer
 	bool GetDiscPointer(double& x, double& y) { return _vcd.GetPointer(x, y); }
@@ -1837,6 +1904,11 @@ public:
 		_persistedFloppyRom.clear();
 		_persistedFloppyPath.clear();
 
+		SwitchToComputerSide();
+	}
+
+	void SwitchToComputerSide()
+	{
 		if(_vcdMode) {
 			//$5002 bit 1 tells the BIOS to come up as a learning machine instead. A soft
 			//reset re-runs its boot code with the new value; the mapper keeps its state
@@ -1923,7 +1995,7 @@ public:
 		BaseMapper::Serialize(s);
 		SV(_keyRowMask); SV(_reg5002); SV(_reg4800); SV(_reg5500); SV(_reg5501);
 		SV(_reg8000); SV(_mmc3Mode); SV(_cramLoaded); SV(_vcdMode); SV(_vcdKeyboardSelected);
-		SV(_huatongLatches); SV(_huatongPage); SV(_huatongBand);
+		SV(_huatongLatches); SV(_huatongPage); SV(_huatongBand); SV(_driveLink);
 		SV(_mmc3Cmd); SV(_mmc3Prg0); SV(_mmc3Prg1);
 		SV(_mmc3Chr01); SV(_mmc3Chr23); SV(_mmc3Chr4); SV(_mmc3Chr5); SV(_mmc3Chr6); SV(_mmc3Chr7);
 		SV(_mmc3IrqLatch); SV(_mmc3IrqCounter); SV(_mmc3IrqPreset); SV(_mmc3IrqPresetVbl); SV(_mmc3IrqReloadForced);
@@ -1932,7 +2004,7 @@ public:
 		SV(_xtScan); SV(_xtScanPrev);
 		SV(_lpcReceiving); SV(_lpcNibbleCount); SV(_lpcByte);
 		SV(_lpcAudio);
-		SV(_printer); SV(_lptLast); SV(_lptShift);
+		SV(_printer); SV(_lptLast); SV(_lptShift); SV(_modem); SV(_modemIrq);
 		SV(_fdc);
 		_vcd.Serialize(s);
 

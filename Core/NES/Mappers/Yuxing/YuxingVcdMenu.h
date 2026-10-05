@@ -367,14 +367,17 @@ public:
 	bool PrevPage() { return Turn(_offset + 6); }
 
 	//Back to the list this one came from
-	void Leave()
+	//Back up a level. False when there is none - this is the disc's first screen.
+	bool Leave()
 	{
 		if(!_open) {
-			return;
+			return false;
 		}
 		uint32_t target = Target(_offset + 10);
 		if(target != Nowhere && TypeAt(target) != PlayList) {
 			Show(target);
+			return true;
 		}
+		return false;
 	}
 };
