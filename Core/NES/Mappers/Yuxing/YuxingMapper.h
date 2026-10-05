@@ -1,10 +1,11 @@
-﻿#pragma once
+#pragma once
 #include "pch.h"
 #include "NES/BaseMapper.h"
 #include "NES/BaseNesPpu.h"
 #include "NES/NesConsole.h"
 #include "NES/NesCpu.h"
 #include "NES/Input/Sb2kKeyboard.h"
+#include "NES/Input/SuborKeyboard.h"
 #include "NES/Input/YuxingKeyboard.h"
 #include "NES/Input/YuxingMouse.h"
 #include "NES/Mappers/Bbk/BbkLpcAudio.h"
@@ -62,6 +63,7 @@ public:
 	//afterwards, so _type is still Unknown at that point. _romInfo is already filled in.
 	bool UsesXtKeyboard() { return IsV50(_romInfo.Hash.PrgCrc32); }
 	bool UsesFamilyBasicKeyboard() { return IsV40(_romInfo.Hash.PrgCrc32); }
+	bool UsesSuborKeyboard() { return _romInfo.Hash.PrgCrc32 == HuatongPrgCrc; }
 
 	static bool IsV40(uint32_t prgCrc) { return prgCrc == V40PrgCrc; }
 	static bool IsV50(uint32_t prgCrc) { return prgCrc == V50PrgCrc || prgCrc == V50WuBiPrgCrc; }
@@ -70,6 +72,8 @@ public:
 	static constexpr uint32_t V40PrgCrc = 0xCEAC04C7;
 	static constexpr uint32_t V50PrgCrc = 0x3B02AF09;
 	static constexpr uint32_t V50WuBiPrgCrc = 0x871254E8;
+	//华通 (Huatong) HT-DOS card - this board with a Subor keyboard on $4016/$4017
+	static constexpr uint32_t HuatongPrgCrc = 0x9212AD32;
 
 private:
 	//Handles the FDS disk shortcut keys, reused here to swap VCD discs
@@ -160,7 +164,9 @@ private:
 		//V9.0-98 - 1MB PRAM / 128KB CRAM
 		V9098 = 5,
 		//V9.2-98 / V9.2-F - 1MB PRAM / 256KB CRAM, VCD player models
-		V92 = 6
+		V92 = 6,
+		//华通 HT-DOS card - 512KB BIOS, Subor keyboard; not in the reference emulator
+		Huatong = 8
 	};
 
 	//Work RAM is the 1MB PRAM and nothing else - every CPU window that holds RAM, the
@@ -203,6 +209,11 @@ private:
 	uint8_t _reg5501 = 0;
 	//Bank latch written through the $8000-$FFFF window while $5500 bit 2 is set
 	uint8_t _reg8000 = 0;
+
+	//The 华通 card's four latches at $4100-$4107, and its extended RAM page ($4500) - see
+	//SetHuatongLatch
+	uint8_t _huatongLatches = 0x0F;
+	uint8_t _huatongPage = 0;
 
 	//MMC3-clone banking mode ($5501 bit 7). Cartridge-style software banks the whole
 	//$8000-$FFFF window and both pattern tables through a private MMC3 register file, out
@@ -261,6 +272,59 @@ private:
 		SelectPrgPage(cpuPage - 3, (uint16_t)(bank * 2 + 1));
 	}
 
+	//The 华通 card. Four one-bit latches sit at $4100-$4107, set by any access at all, read
+	//or write: address bits 1-2 pick the latch and bit 0 is the value it takes. Latch 1 puts
+	//the card's own RAM over $8000-$FFFF while clear ($4102) and gives the ROM back when set
+	//($4103), one 32KB page of up to sixteen at a time, picked by $4500. The BIOS copies
+	//itself into the first page with the two alternating - reading the ROM, then writing
+	//the RAM underneath at the same address - and HT-DOS counts the pages that hold a byte
+	//for its extended memory. What the other three latches do is not known; nothing here
+	//depends on them.
+	//
+	//Kept in the upper half of PRAM, clear of every page the machine's own windows reach.
+	static constexpr int32_t HuatongFirstPage = 0x40;
+
+	bool IsHuatongRamShown() { return _type == YuxingType::Huatong && !(_huatongLatches & 0x02) && !_mmc3Mode; }
+
+	int32_t HuatongPage(uint16_t addr) { return HuatongFirstPage + _huatongPage * 4 + ((addr >> 13) - 4); }
+
+	void SetHuatongLatch(uint16_t addr)
+	{
+		uint8_t bit = (uint8_t)(1 << ((addr >> 1) & 0x03));
+		uint8_t previous = _huatongLatches;
+		_huatongLatches = (addr & 0x01) ? (uint8_t)(_huatongLatches | bit) : (uint8_t)(_huatongLatches & ~bit);
+		if((previous ^ _huatongLatches) & 0x02) {
+			UpdateSplitMode();
+			if(IsHuatongBanded()) {
+				SetHuatongBand(_huatongBand);
+			} else {
+				MapCram8k(_reg5501 & _cramMask);
+			}
+		}
+		UpdatePrgMapping();
+	}
+
+	//The reset button puts the card back as it powers on: its latches and its bank registers.
+	//Its RAM page over $8000-$FFFF is what the BIOS leaves selected for as long as its title is
+	//up, and the 32KB ROM bank $4800 picks stays picked: with either kept, the CPU took its reset
+	//vector from wherever the program had been - the card's RAM, or a bank of LOGO whose vector
+	//is $FFFF - and ran into the weeds, and only a power cycle brought the machine back. A reset
+	//at the DOS prompt or in a program happened to work only for the banks that carry a usable
+	//vector.
+	void Reset(bool softReset) override
+	{
+		if(softReset && _type == YuxingType::Huatong) {
+			_huatongLatches = 0x0F;
+			_reg4800 = 0;
+			_reg5500 = 0;
+			_reg5501 = 0;
+			_reg8000 = 0;
+			UpdateSplitMode();
+			MapCram8k(_reg5501 & _cramMask);
+			UpdatePrgMapping();
+		}
+	}
+
 	void MapRom32k(int32_t bank)
 	{
 		for(uint16_t i = 0; i < 4; i++) {
@@ -294,7 +358,26 @@ private:
 	//converter did patch another byte of the same game, so on the machine it cannot have done
 	//this. The reference emulator takes the split from $4800/$5500 alone and would show it too.
 	bool IsSplit2Screen() { return !_mmc3Mode && (_reg4800 & 0x80) && !(_reg5500 & 0x80); }
-	bool IsSplit4Screen() { return !_mmc3Mode && (_reg4800 & 0x80) && (_reg5500 & 0x80); }
+	bool IsSplit4Screen() { return !_mmc3Mode && (((_reg4800 & 0x80) && (_reg5500 & 0x80)) || IsHuatongBanded()); }
+
+	//The 华通 card bands the screen while its latch 1 is clear, rather than through
+	//$4800/$5500 - see SetHuatongBand.
+	bool IsHuatongBanded() { return _type == YuxingType::Huatong && !(_huatongLatches & 0x02) && !IsSplit2Screen(); }
+
+	//Which band's bank $1000-$1FFF shows is the last name table row seen on the PPU bus,
+	//and that is the whole of it: the drawing's own name table fetches set it row by row,
+	//and so does software pointing $2006 at the name table - which is how the BIOS fills
+	//the four banks of its full-screen title, sending $2006 to $2020, $2121, $2222 and
+	//$2323 in turn before writing the same $1000-$1FFF each time. A pattern address in
+	//between leaves it alone; putting the plain bank back for those, as the YuXing split
+	//does, wrote all four quarters of the picture over each other in one bank.
+	uint8_t _huatongBand = 0;
+
+	void SetHuatongBand(uint8_t band)
+	{
+		_huatongBand = band;
+		MapCram4k(4, (band << 3) | ((_reg5501 & 0x03) << 1) | 1);
+	}
 
 	void UpdateSplitMode()
 	{
@@ -562,7 +645,13 @@ private:
 				//The VCD models come up showing the player's own screen
 				_reg5002 = 0;
 				break;
+
+			case HuatongPrgCrc:
+				//The full 1MB: its extended RAM is kept in the upper half - see HuatongFirstPage
+				_type = YuxingType::Huatong;
+				break;
 		}
+
 	}
 
 	//Rebuilds the $6000-$FFFF mapping from the current register state.
@@ -631,6 +720,12 @@ private:
 			MapPramPage(3, _type != YuxingType::V50 ? ((0x3C & _pramMask) | (_reg5500 & 0x03)) : (_reg5500 & 0x03));
 		} else if(_type != YuxingType::V50) {
 			MapPramPage(3, 0x3C & _pramMask);
+		}
+
+		if(IsHuatongRamShown()) {
+			for(uint8_t i = 0; i < 4; i++) {
+				MapPramPage(4 + i, HuatongPage((uint16_t)(0x8000 + i * 0x2000)));
+			}
 		}
 	}
 
@@ -774,6 +869,9 @@ protected:
 		_reg5500 = 0;
 		_reg5501 = 0;
 		_reg8000 = 0;
+		_huatongLatches = 0x0F;
+		_huatongPage = 0;
+		_huatongBand = 0;
 		_mmc3Mode = false;
 		_vcdMode = (_type == YuxingType::V92);
 		_vcdKeyboardSelected = false;
@@ -813,6 +911,11 @@ protected:
 		if(!_discChecked) {
 			CheckForDisc();
 			UpdateMouseMode();
+		}
+
+		if(_type == YuxingType::Huatong && (addr & 0xFFF8) == 0x4100) {
+			SetHuatongLatch(addr);
+			return (uint8_t)(addr >> 8);
 		}
 
 		switch(addr) {
@@ -872,6 +975,23 @@ protected:
 		if(addr >= 0x8000) {
 			WriteBankLatch(addr, value);
 			return;
+		}
+
+		if(_type == YuxingType::Huatong) {
+			if((addr & 0xFFF8) == 0x4100) {
+				SetHuatongLatch(addr);
+				return;
+			}
+			if(addr == 0x4500) {
+				_huatongPage = value & 0x0F;
+				UpdatePrgMapping();
+				return;
+			}
+			//HT-DOS pages its buffers in at $6000 through $5508 and $550A, so this board
+			//decodes $5500 without the address' low byte beyond bit 0
+			if((addr & 0xFF01) == 0x5500) {
+				addr = 0x5500;
+			}
 		}
 
 		switch(addr) {
@@ -980,6 +1100,12 @@ protected:
 	//write is swallowed by the ROM.
 	void WriteBankLatch(uint16_t addr, uint8_t value)
 	{
+		if(IsHuatongRamShown()) {
+			//The register range intercepts the write before it reaches the mapping
+			_workRam[((uint32_t)HuatongPage(addr) % 0x80) * 0x2000 + (addr & 0x1FFF)] = value;
+			return;
+		}
+
 		if(_mmc3Mode) {
 			Mmc3Write(addr, value);
 			return;
@@ -1046,6 +1172,10 @@ protected:
 		if(!IsSplit4Screen() || !_console->GetPpu()->IsDisplayOn()) {
 			return;
 		}
+		//The 华通 card takes its band from the bus instead - see SetHuatongBand
+		if(IsHuatongBanded()) {
+			return;
+		}
 		uint8_t band = (uint8_t)((_console->GetPpu()->GetVideoRamAddr() >> 8) & 0x03);
 		if(band != _lastSplitBand) {
 			_lastSplitBand = band;
@@ -1059,6 +1189,15 @@ protected:
 	//rendered scanline happened to leave mapped.
 	void NotifyVramAddressChange(uint16_t addr) override
 	{
+		if(IsHuatongBanded()) {
+			//The band is the last name table row on the bus, whoever put it there - see
+			//SetHuatongBand. Not the attribute bytes: they all sit in the last band's rows.
+			if(addr >= 0x2000 && addr < 0x3000 && (addr & 0x3FF) < 0x3C0) {
+				SetHuatongBand((uint8_t)((addr >> 8) & 0x03));
+			}
+			return;
+		}
+
 		if(addr >= 0x2000 || !IsSplit4Screen()) {
 			return;
 		}
@@ -1279,6 +1418,17 @@ protected:
 
 	uint8_t ReadKeyMatrix()
 	{
+		if(_type == YuxingType::Huatong) {
+			//This board's keyboard is the Subor one its DOS scans through $4016/$4017, but
+			//the YuXing software in its own ROM (and on YuXing floppies) reads keys from the
+			//YuXing matrix and nowhere else. The same keys answer there, at their YuXing cells.
+			shared_ptr<SuborKeyboard> subor = _console->GetControlManager()->GetControlDevice<SuborKeyboard>();
+			if(!subor) {
+				return 0;
+			}
+			return YuxingKeyboard::GetColumns(_keyRowMask, false, [&](uint8_t key) { return subor->IsKeyPressed(key); });
+		}
+
 		shared_ptr<YuxingKeyboard> keyboard = _console->GetControlManager()->GetControlDevice<YuxingKeyboard>();
 		if(!keyboard) {
 			return 0;
@@ -1773,6 +1923,7 @@ public:
 		BaseMapper::Serialize(s);
 		SV(_keyRowMask); SV(_reg5002); SV(_reg4800); SV(_reg5500); SV(_reg5501);
 		SV(_reg8000); SV(_mmc3Mode); SV(_cramLoaded); SV(_vcdMode); SV(_vcdKeyboardSelected);
+		SV(_huatongLatches); SV(_huatongPage); SV(_huatongBand);
 		SV(_mmc3Cmd); SV(_mmc3Prg0); SV(_mmc3Prg1);
 		SV(_mmc3Chr01); SV(_mmc3Chr23); SV(_mmc3Chr4); SV(_mmc3Chr5); SV(_mmc3Chr6); SV(_mmc3Chr7);
 		SV(_mmc3IrqLatch); SV(_mmc3IrqCounter); SV(_mmc3IrqPreset); SV(_mmc3IrqPresetVbl); SV(_mmc3IrqReloadForced);

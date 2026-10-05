@@ -1154,6 +1154,11 @@ void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem syst
 				//keyboard sends. No mouse on this machine.
 				log("[Input] XT keyboard connected");
 				expDevice = ControllerType::Sb2kKeyboard;
+			} else if(yuxing->UsesSuborKeyboard()) {
+				//The 华通 HT-DOS card scans a 13-row Subor keyboard over $4016/$4017, and
+				//restarts every few frames while it finds none there
+				log("[Input] Subor keyboard connected");
+				expDevice = ControllerType::SuborKeyboard;
 			} else if(yuxing->UsesFamilyBasicKeyboard()) {
 				//Likewise the V4.0, which takes the Family Basic keyboard. Untested - no dump
 				//of that BIOS is on hand - but it is what the reference emulator plugs in.

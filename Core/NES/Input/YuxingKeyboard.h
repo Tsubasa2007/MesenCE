@@ -169,7 +169,7 @@ public:
 protected:
 
 	//Row-major key matrix: [row][column]. None marks a matrix position with no key on it.
-	Buttons _keyboardMatrix[RowCount][8] = {
+	static constexpr Buttons _keyboardMatrix[RowCount][8] = {
 		{ Esc,        F9,           Num7,    R,        A,        None,        None,      Shift       },
 		{ None,       NumpadEnter,  None,    NumpadMultiply, NumpadDivide, Up,    Backspace, F12       },
 		{ None,       None,         None,    NumpadPlus, NumLock, Left,       Down,      Right       },
@@ -247,6 +247,14 @@ public:
 	//The V8.2-D / V8.3-D machines predate three of the keys and never scan those cells.
 	uint8_t GetColumns(uint16_t rowMask, bool skipNewKeys)
 	{
+		return GetColumns(rowMask, skipNewKeys, [this](uint8_t key) { return IsPressed(key); });
+	}
+
+	//The same matrix read for a keyboard that is not this device - the key states come
+	//from isPressed, indexed by this device's Buttons
+	template<typename T>
+	static uint8_t GetColumns(uint16_t rowMask, bool skipNewKeys, T isPressed)
+	{
 		uint8_t result = 0;
 		for(uint8_t row = 0; row < RowCount; row++) {
 			if(!(rowMask & (1 << row))) {
@@ -259,7 +267,7 @@ public:
 				}
 
 				Buttons key = _keyboardMatrix[row][col];
-				if(key != Buttons::None && IsPressed((uint8_t)key)) {
+				if(key != Buttons::None && isPressed((uint8_t)key)) {
 					result |= (1 << col);
 				}
 			}

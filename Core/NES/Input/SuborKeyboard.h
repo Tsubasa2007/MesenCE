@@ -19,6 +19,37 @@ protected:
 		return "ABCDEFGHIJKLMNOPQRSTUVWXYZ01234567891234567890120123456789edpmdmncdsasbemglrcpcsasbteeehidududlr123";
 	}
 
+	//Lets a script drive this keyboard through emu.setInput, as the learning machines'
+	//keyboards can be. Without it nothing that needs a key press can be tested headlessly.
+	vector<DeviceButtonName> GetKeyNameAssociations() override
+	{
+		vector<DeviceButtonName> names;
+		for(int i = 0; i < 26; i++) {
+			names.push_back({ string(1, (char)('a' + i)), Buttons::A + i });
+		}
+		for(int i = 0; i < 10; i++) {
+			names.push_back({ "num" + std::to_string(i), Buttons::Num0 + i });
+			names.push_back({ "numpad" + std::to_string(i), Buttons::Numpad0 + i });
+		}
+		for(int i = 0; i < 12; i++) {
+			names.push_back({ "f" + std::to_string(i + 1), Buttons::F1 + i });
+		}
+		vector<DeviceButtonName> others = {
+			{ "numpadenter", Buttons::NumpadEnter }, { "numpaddot", Buttons::NumpadDot }, { "numpadplus", Buttons::NumpadPlus },
+			{ "numpadmultiply", Buttons::NumpadMultiply }, { "numpaddivide", Buttons::NumpadDivide }, { "numpadminus", Buttons::NumpadMinus },
+			{ "numlock", Buttons::NumLock }, { "comma", Buttons::Comma }, { "dot", Buttons::Dot }, { "semicolon", Buttons::SemiColon },
+			{ "apostrophe", Buttons::Apostrophe }, { "slash", Buttons::Slash }, { "backslash", Buttons::Backslash }, { "equal", Buttons::Equal },
+			{ "minus", Buttons::Minus }, { "grave", Buttons::Grave }, { "leftbracket", Buttons::LeftBracket }, { "rightbracket", Buttons::RightBracket },
+			{ "capslock", Buttons::CapsLock }, { "pause", Buttons::Pause }, { "ctrl", Buttons::Ctrl }, { "shift", Buttons::Shift },
+			{ "alt", Buttons::Alt }, { "space", Buttons::Space }, { "backspace", Buttons::Backspace }, { "tab", Buttons::Tab },
+			{ "esc", Buttons::Esc }, { "enter", Buttons::Enter }, { "end", Buttons::End }, { "home", Buttons::Home },
+			{ "ins", Buttons::Ins }, { "delete", Buttons::Delete }, { "pageup", Buttons::PageUp }, { "pagedown", Buttons::PageDown },
+			{ "up", Buttons::Up }, { "down", Buttons::Down }, { "left", Buttons::Left }, { "right", Buttons::Right }
+		};
+		names.insert(names.end(), others.begin(), others.end());
+		return names;
+	}
+
 	// clang-format off
 	enum Buttons
 	{
@@ -104,6 +135,14 @@ protected:
 	}
 
 public:
+	//A key by its Buttons index, for a board that reads this keyboard through a matrix of its
+	//own. The order matches YuxingKeyboard's up to the arrow keys; the three unnamed keys
+	//after them have no counterpart there.
+	bool IsKeyPressed(uint8_t key)
+	{
+		return key <= (uint8_t)Buttons::Right && IsPressed(key);
+	}
+
 	SuborKeyboard(Emulator* emu, KeyMappingSet keyMappings, bool reduced = false) : BaseControlDevice(emu, ControllerType::SuborKeyboard, BaseControlDevice::ExpDevicePort, keyMappings)
 	{
 		_reduced = reduced;
