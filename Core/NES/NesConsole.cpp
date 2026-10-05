@@ -1173,6 +1173,11 @@ void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem syst
 				//restarts every few frames while it finds none there
 				log("[Input] Subor keyboard connected");
 				expDevice = ControllerType::SuborKeyboard;
+				//The card patches the YuXing programs it runs only where they read the key
+				//matrix; their mouse code is left as it is and talks to the YuXing serial mouse
+				//(clocked by $4016 bit 0 with bit 2 low, which the keyboard's writes never are)
+				log("[Input] YuXing mouse connected");
+				port2 = ControllerType::YuxingMouse;
 			} else if(yuxing->UsesFamilyBasicKeyboard()) {
 				//Likewise the V4.0, which takes the Family Basic keyboard. Untested - no dump
 				//of that BIOS is on hand - but it is what the reference emulator plugs in.

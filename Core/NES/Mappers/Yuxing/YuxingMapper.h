@@ -339,6 +339,14 @@ private:
 
 	void MapRom32k(int32_t bank)
 	{
+		if(_type == YuxingType::Huatong && (bank & 0x10)) {
+			//The card's 512KB ROM answers the upper sixteen banks with bank bit 1 forced on
+			//(16 -> 2, 17 -> 3, 18 -> 2, 20 -> 6...), as a 1MB read of it shows. HT-DOS's RUN
+			//hands a YuXing program to bank $10 expecting the DOS copy in bank 2, whose RAM
+			//setup is the one the boot left behind; wrapping to bank 0 found another copy that
+			//expects its own, and the program crashed on its first call.
+			bank = (bank & 0x0F) | 0x02;
+		}
 		for(uint16_t i = 0; i < 4; i++) {
 			SelectPrgPage(i, (uint16_t)(bank * 4 + i));
 		}
@@ -660,8 +668,12 @@ private:
 				break;
 
 			case HuatongPrgCrc:
-				//The full 1MB: its extended RAM is kept in the upper half - see HuatongFirstPage
+				//128KB as the YuXing side sees it: the card's routine that starts a YuXing program
+				//patches DRAM banks 0-7 as the whole of it, the page fixed at $C000 included, and
+				//then takes the reset vector from bank 7 there. Its extended RAM is apart from
+				//that, kept in the upper half of PRAM - see HuatongFirstPage.
 				_type = YuxingType::Huatong;
+				_pramMask = 0x07;
 				break;
 		}
 
@@ -943,6 +955,14 @@ protected:
 		if(_type == YuxingType::Huatong && (addr & 0xFFF8) == 0x4100) {
 			SetHuatongLatch(addr);
 			return (uint8_t)(addr >> 8);
+		}
+
+		//The card reads its ROM at $5000-$5FFF, the same 4KB of it as the address: HT-DOS's RUN
+		//turns a program's JMP ($FFFC) into a jump to $5000, where the ROM rewrites the loaded
+		//banks' YuXing keyboard accesses into calls to its own routines there, then takes the
+		//reset vector. Writes there still reach the registers.
+		if(_type == YuxingType::Huatong && addr >= 0x5000) {
+			return _prgRom[addr];
 		}
 
 		if(_type != YuxingType::Huatong && YuxingModem::IsModemAddress(addr)) {
