@@ -96,6 +96,7 @@ public:
 	//currentIndex is set to the inserted disk's index, or -1 when none/not applicable.
 	vector<string> GetBbkDiskList(int32_t& currentIndex);
 	bool IsBbkGame();
+	bool HasSuborFloppy();
 	string GetVideoDiscPath();
 	vector<CdVideoReel> GetVideoReels();
 

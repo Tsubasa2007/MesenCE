@@ -82,6 +82,14 @@ public:
 		}
 	}
 
+	//The cartridges carrying SB DOS (Copyright by SUBOR, 1996) for the Subor floppy drive: it reads
+	//1.44MB PC-format disks and runs the Subor .EXE/.COM programs on them. That is the V5 and its
+	//add-on images - the same ones as HasPrinterAlways.
+	static bool HasFloppyDrive(uint32_t prgCrc)
+	{
+		return HasPrinterAlways(prgCrc);
+	}
+
 	static bool IsSuborCart(uint32_t prgCrc)
 	{
 		switch(prgCrc) {

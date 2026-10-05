@@ -31,6 +31,7 @@
 #include "NES/Mappers/Subor/SuborCarts.h"
 #include "NES/Mappers/Subor/SuborWindows2002.h"
 #include "NES/Mappers/LingTong/LingTongMapper.h"
+#include "NES/Mappers/Unlicensed/Dance2000.h"
 #include "NES/Mappers/Unlicensed/DongdaPec586.h"
 #include "NES/Mappers/Bung/DrPcJrMapper.h"
 #include "NES/Mappers/Bbk/Yuyin2Mapper.h"
@@ -490,6 +491,9 @@ vector<string> NesConsole::GetBbkDiskList(int32_t& currentIndex)
 	} else if(LingTongMapper* lingTong = dynamic_cast<LingTongMapper*>(_mapper.get())) {
 		current = FolderUtilities::GetFilename(lingTong->GetCurrentDiskFilename(), true);
 		paths = lingTong->GetDiskFileList();
+	} else if(Dance2000* subor = dynamic_cast<Dance2000*>(_mapper.get()); subor && subor->HasFloppyDrive()) {
+		current = FolderUtilities::GetFilename(subor->GetCurrentDiskFilename(), true);
+		paths = subor->GetDiskFileList();
 	}
 	for(size_t i = 0; i < paths.size(); i++) {
 		string name = FolderUtilities::GetFilename(paths[i], true);
@@ -930,7 +934,13 @@ bool NesConsole::IsBbkGame()
 	//which reuse the same media-swap UI
 	return dynamic_cast<BbkMapper*>(_mapper.get()) != nullptr || dynamic_cast<Sb2kMapper*>(_mapper.get()) != nullptr ||
 		dynamic_cast<YuxingMapper*>(_mapper.get()) != nullptr || dynamic_cast<DrPcJrMapper*>(_mapper.get()) != nullptr ||
-		dynamic_cast<LingTongMapper*>(_mapper.get()) != nullptr;
+		dynamic_cast<LingTongMapper*>(_mapper.get()) != nullptr || HasSuborFloppy();
+}
+
+bool NesConsole::HasSuborFloppy()
+{
+	Dance2000* subor = dynamic_cast<Dance2000*>(_mapper.get());
+	return subor && subor->HasFloppyDrive();
 }
 
 ShortcutState NesConsole::IsShortcutAllowed(EmulatorShortcut shortcut, uint32_t shortcutParam)
@@ -966,6 +976,9 @@ ShortcutState NesConsole::IsShortcutAllowed(EmulatorShortcut shortcut, uint32_t 
 				}
 				if(DrPcJrMapper* pcjr = dynamic_cast<DrPcJrMapper*>(_mapper.get())) {
 					return (ShortcutState)(shortcutParam < pcjr->GetDiskCount());
+				}
+				if(Dance2000* subor = dynamic_cast<Dance2000*>(_mapper.get()); subor && subor->HasFloppyDrive()) {
+					return (ShortcutState)(shortcutParam < subor->GetDiskCount());
 				}
 			}
 			return ShortcutState::Disabled;
