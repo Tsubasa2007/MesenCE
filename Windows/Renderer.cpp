@@ -1,5 +1,6 @@
 #include "Common.h"
 #include "Renderer.h"
+#include "RendererShaders.h"
 #include "Core/Shared/Emulator.h"
 #include "Core/Shared/Video/VideoDecoder.h"
 #include "Core/Shared/Video/VideoRenderer.h"
@@ -498,58 +499,19 @@ HRESULT Renderer::InitDeviceCommon()
 		return hr;
 	}
 
-	string shaderCode = R"(
-struct VS_IN
-{
-	float3 pos : POSITION;
-	float2 tex : TEXCOORD;
-};
-
-struct PS_IN 
-{
-	float4 pos : SV_POSITION;
-	float2 tex : TEXCOORD;
-};
-
-PS_IN VS(VS_IN input)
-{ 
-	PS_IN output;
-	output.pos = float4(input.pos, 1.0f);
-	output.tex = input.tex;
-	return output;
-}
-
-Texture2D tex : register(t0);
-SamplerState samp : register(s0);
-
-float4 PS(PS_IN input) : SV_Target
-{
-	return tex.Sample(samp, input.tex);
-}
-)";
-
-	ID3DBlob* vsBlob = nullptr;
-	hr = D3DCompile(shaderCode.c_str(), shaderCode.size(), nullptr, nullptr, nullptr, "VS", "vs_4_0", 0, 0, &vsBlob, nullptr);
-	CheckError("D3DCompile (Vertex Shader) failed.");
-	hr = _pd3dDevice->CreateVertexShader(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), nullptr, &_pVertexShader);
+	//Precompiled - see RendererShaders.h
+	hr = _pd3dDevice->CreateVertexShader(g_quadVs, sizeof(g_quadVs), nullptr, &_pVertexShader);
 	CheckError("CreateVertexShader failed.");
 
-	ID3DBlob* psBlob = nullptr;
-	hr = D3DCompile(shaderCode.c_str(), shaderCode.size(), nullptr, nullptr, nullptr, "PS", "ps_4_0", 0, 0, &psBlob, nullptr);
-	CheckError("D3DCompile (Pixel Shader) failed.");
-
-	hr = _pd3dDevice->CreatePixelShader(psBlob->GetBufferPointer(), psBlob->GetBufferSize(), nullptr, &_pPixelShader);
+	hr = _pd3dDevice->CreatePixelShader(g_quadPs, sizeof(g_quadPs), nullptr, &_pPixelShader);
 	CheckError("CreatePixelShader failed.");
 
 	D3D11_INPUT_ELEMENT_DESC layout[] = {
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
 		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 }
 	};
-	hr = _pd3dDevice->CreateInputLayout(layout, 2, vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), &_pInputLayout);
+	hr = _pd3dDevice->CreateInputLayout(layout, 2, g_quadVs, sizeof(g_quadVs), &_pInputLayout);
 	CheckError("CreateInputLayout failed.");
-
-	vsBlob->Release();
-	psBlob->Release();
 
 	//Vertex buffer
 	D3D11_BUFFER_DESC bd = {};
