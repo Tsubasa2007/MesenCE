@@ -377,8 +377,17 @@ private:
 	//banks and name tables were all right. The disc carries the store unpatched while the
 	//converter did patch another byte of the same game, so on the machine it cannot have done
 	//this. The reference emulator takes the split from $4800/$5500 alone and would show it too.
-	bool IsSplit2Screen() { return !_mmc3Mode && (_reg4800 & 0x80) && !(_reg5500 & 0x80); }
-	bool IsSplit4Screen() { return !_mmc3Mode && (((_reg4800 & 0x80) && (_reg5500 & 0x80)) || IsHuatongBanded()); }
+	bool IsSplit2Screen() { return !_mmc3Mode && IsSplitEnabled() && !(_reg5500 & 0x80); }
+	bool IsSplit4Screen() { return !_mmc3Mode && ((IsSplitEnabled() && (_reg5500 & 0x80)) || IsHuatongBanded()); }
+
+	//$4800 bit 7 turns the split on. On the 华通 card it does so only with bit 5 - the bank
+	//latch - clear. The card's routine that starts a YuXing program leaves $4800 = $E0 for
+	//every program it starts, and a program that never writes $4800 itself draws its menus
+	//right only without the split: with it, they drew their text from 1bpp glyph halves.
+	//Everything on the card that does want the split - HT-DOS's loading card ($D0), a
+	//program's own loader ($90) and its text screens ($82-$8B) - writes it with bit 5 clear,
+	//and a rule on bit 6 or on $5500's DRAM window broke that loading card instead.
+	bool IsSplitEnabled() { return (_reg4800 & 0x80) && !(_type == YuxingType::Huatong && (_reg4800 & 0x20)); }
 
 	//The 华通 card bands the screen while its latch 1 is clear, rather than through
 	//$4800/$5500 - see SetHuatongBand.
