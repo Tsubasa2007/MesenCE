@@ -1,0 +1,148 @@
+#pragma once
+#include "pch.h"
+#include "NES/BaseMapper.h"
+#include "NES/NesConsole.h"
+#include "NES/BaseNesPpu.h"
+#include "NES/Mappers/Bbk/BbkLpcAudio.h"
+#include "Utilities/Serializer.h"
+
+//Subor V7.0 / V7.1 (小霸王) learning cartridges. Their headers say mapper 168, which in iNES terms
+//is the Racermate board; this one is the Subor board the reference emulator also numbers 168, so
+//it is picked out by PRG CRC32. Ported from the reference emulator's Mapper168.
+//
+//$5000 and $5200, both write-only:
+// - ROM paging: with $5200 bit 2 set, $5000 picks a 32KB bank; otherwise $5000 picks the 16KB bank
+//   at $8000 and the first 16KB stays at $C000. ($5000 bit 7 selects RAM paging on the board
+//   variant with a disk drive; this one has no RAM there, and its software never sets it.)
+// - $5200 bit 0: horizontal mirroring, otherwise vertical.
+// - $5200 bits 1-0 = 2: the background's pattern table follows the nametable as well as $2000 -
+//   nametables 1-3 draw from $1000. Nametable 2 draws from $1000 in every mode.
+//$5300: the LPC-10 speech chip - the SB-2000's, with the same Subor coefficient set and status
+//byte ($80 = can take data, $0F = end of speech).
+//
+//8KB of work RAM at $6000 and 8KB of CHR RAM. The keyboard and mouse are the Subor cartridges'
+//(see SuborCarts).
+class Subor168 : public BaseMapper
+{
+private:
+	uint8_t _reg5000 = 0;
+	uint8_t _reg5200 = 0;
+
+	//The last nametable byte the picture fetched, which picks the background's pattern table
+	uint16_t _ntAddr = 0;
+
+	unique_ptr<BbkLpcAudio> _lpcAudio;
+
+	void UpdateState()
+	{
+		if(_reg5200 & 0x04) {
+			SelectPrgPage2x(0, (_reg5000 & 0x7F) * 2);
+		} else {
+			SelectPrgPage(0, _reg5000 & 0x7F);
+			SelectPrgPage(1, 0);
+		}
+		SetMirroringType((_reg5200 & 0x01) ? MirroringType::Horizontal : MirroringType::Vertical);
+	}
+
+	bool IsBackgroundFetch()
+	{
+		uint32_t cycle = _console->GetPpu()->GetCurrentCycle();
+		return cycle <= 256 || cycle >= 321;
+	}
+
+protected:
+	uint16_t GetPrgPageSize() override { return 0x4000; }
+	uint16_t GetChrPageSize() override { return 0x2000; }
+	uint32_t GetChrRamSize() override { return 0x2000; }
+	uint32_t GetWorkRamSize() override { return 0x2000; }
+	uint32_t GetSaveRamSize() override { return 0; }
+
+	uint16_t RegisterStartAddress() override { return 0x5000; }
+	uint16_t RegisterEndAddress() override { return 0x5FFF; }
+	bool AllowRegisterRead() override { return true; }
+	bool EnableCustomVramRead() override { return true; }
+	bool EnableCpuClockHook() override { return true; }
+
+	void InitMapper(RomData& romData) override
+	{
+		romData.Info.System = GameSystem::Dendy;
+	}
+
+	void InitMapper() override
+	{
+		_romInfo.System = GameSystem::Dendy;
+		_lpcAudio.reset(new BbkLpcAudio(_console, BbkLpcAudio::LpcVariant::Sb2k));
+		_lpcAudio->Reset();
+
+		SetCpuMemoryMapping(0x6000, 0x7FFF, 0, PrgMemoryType::WorkRam);
+		SelectChrPage(0, 0);
+		UpdateState();
+	}
+
+	void Reset(bool softReset) override
+	{
+		BaseMapper::Reset(softReset);
+		_reg5000 = 0;
+		_reg5200 = 0;
+		_lpcAudio->Reset();
+		UpdateState();
+	}
+
+	void ProcessCpuClock() override
+	{
+		BaseProcessCpuClock();
+		_lpcAudio->Clock();
+	}
+
+	uint8_t MapperReadVram(uint16_t addr, MemoryOperationType type) override
+	{
+		if(type == MemoryOperationType::PpuRenderingRead) {
+			if(addr >= 0x2000) {
+				if((addr & 0x3FF) < 0x3C0) {
+					_ntAddr = addr;
+				}
+			} else if(IsBackgroundFetch()) {
+				uint8_t nametable = (_ntAddr >> 10) & 0x03;
+				if(nametable == 2 || (nametable != 0 && (_reg5200 & 0x03) == 0x02)) {
+					addr |= 0x1000;
+				}
+			}
+		}
+		return InternalReadVram(addr);
+	}
+
+	uint8_t ReadRegister(uint16_t addr) override
+	{
+		if((addr & 0xFF00) == 0x5300) {
+			return (_lpcAudio->IsFull() ? 0x00 : 0x80) | (_lpcAudio->IsSpeechEnd() ? 0x0F : 0x00);
+		}
+		return _console->GetMemoryManager()->GetOpenBus();
+	}
+
+	void WriteRegister(uint16_t addr, uint8_t value) override
+	{
+		switch(addr & 0xFF00) {
+			case 0x5000: _reg5000 = value; UpdateState(); break;
+			case 0x5200: _reg5200 = value; UpdateState(); break;
+			case 0x5300: _lpcAudio->WriteData(value); break;
+		}
+	}
+
+	void Serialize(Serializer& s) override
+	{
+		BaseMapper::Serialize(s);
+		SV(_reg5000);
+		SV(_reg5200);
+		SV(_ntAddr);
+		SV(_lpcAudio);
+		if(!s.IsSaving()) {
+			UpdateState();
+		}
+	}
+
+public:
+	static bool IsSubor168(uint32_t prgCrc)
+	{
+		return prgCrc == 0x04260DBC || prgCrc == 0x79C85E71;
+	}
+};

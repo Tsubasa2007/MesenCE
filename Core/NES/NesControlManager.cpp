@@ -32,8 +32,9 @@
 #include "NES/Input/SuborKeyboard.h"
 #include "NES/Input/SuborMouse.h"
 #include "NES/Input/SuborMouse24.h"
-#include "NES/Mappers/Subor/SuborWindows2002.h"
+#include "NES/Mappers/Subor/SuborCarts.h"
 #include "NES/Input/BbkMouse.h"
+#include "NES/Input/Ps2Mouse.h"
 #include "NES/Input/BbkKeyboard.h"
 #include "NES/Input/Sb2kMouse.h"
 #include "NES/Input/Sb2kKeyboard.h"
@@ -110,6 +111,7 @@ shared_ptr<BaseControlDevice> NesControlManager::CreateControllerDevice(Controll
 		case ControllerType::SuborMouse: device.reset(new SuborMouse(_emu, port, keys)); break;
 		case ControllerType::SuborMouse24: device.reset(new SuborMouse24(_emu, port, keys)); break;
 		case ControllerType::BbkMouse: device.reset(new BbkMouse(_emu, port, keys)); break;
+		case ControllerType::Ps2Mouse: device.reset(new Ps2Mouse(_emu, port, keys)); break;
 		case ControllerType::Sb2kMouse: device.reset(new Sb2kMouse(_emu, port, keys)); break;
 		case ControllerType::YuxingMouse: device.reset(new YuxingMouse(_emu, port, keys)); break;
 		case ControllerType::YuxingSerialMouse: device.reset(new YuxingSerialMouse(_emu, port, keys)); break;
@@ -133,12 +135,16 @@ shared_ptr<BaseControlDevice> NesControlManager::CreateControllerDevice(Controll
 		case ControllerType::ExcitingBoxing: device.reset(new ExcitingBoxingController(_emu, keys)); break;
 		case ControllerType::JissenMahjong: device.reset(new JissenMahjongController(_emu, keys)); break;
 		case ControllerType::SuborKeyboard: {
-			//Two machines carry the cut-down version of this keyboard rather than the full
-			//matrix - the YuXing V10/V11 and the Subor Windows 2002 - and neither says so in
-			//its header, so both are known by their BIOS's PRG CRC32.
+			//The YuXing V10/V11 and the Subor learning cartridges carry the cut-down version of
+			//this keyboard rather than the full matrix, and none says so in its header, so they
+			//are known by their BIOS's PRG CRC32. Some Subor cartridges' scan also probes row 9 for
+			//the extended keyboard and reads rows 10-12 when it is there - Alt among them, which
+			//their software's Alt+Fn shortcuts need - so theirs is the extended one (see
+			//SuborCarts::HasExtendedKeyboard). The YuXing machines stop at row 8.
 			uint32_t prgCrc = _console->GetMapper()->GetRomInfo().Hash.PrgCrc32;
-			bool reduced = YuxingMapper::IsV10OrV11(prgCrc) || SuborWindows2002::IsSuborWindows2002(prgCrc);
-			device.reset(new SuborKeyboard(_emu, keys, reduced));
+			bool isSuborCart = SuborCarts::IsSuborCart(prgCrc);
+			bool reduced = YuxingMapper::IsV10OrV11(prgCrc) || isSuborCart;
+			device.reset(new SuborKeyboard(_emu, keys, reduced, SuborCarts::HasExtendedKeyboard(prgCrc), SuborCarts::HasPs2Mouse(prgCrc)));
 			break;
 		}
 		case ControllerType::BbkKeyboard: device.reset(new BbkKeyboard(_emu, keys)); break;

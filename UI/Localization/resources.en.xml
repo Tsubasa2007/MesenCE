@@ -2104,6 +2104,7 @@ E
 			<Value ID="ColecoVisionController">ColecoVision Controller</Value>
 
 			<Value ID="SacController">Super A'Can Controller</Value>
+			<Value ID="Ps2Mouse">PS/2 Mouse (port-wired)</Value>
 		</Enum>
 		<Enum ID="NesJissenMahjongButtons">
 			<Value ID="A">A</Value>

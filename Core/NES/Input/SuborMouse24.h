@@ -30,6 +30,12 @@
 //Movement is accumulated rather than sampled: whatever is reported in a packet is subtracted
 //from the running total, so a movement larger than the 127 the packet can carry is delivered
 //over as many packets as it takes instead of being thrown away.
+//
+//The machines take either this mouse or a joypad on the first port, and their games want the
+//joypad, so the device is both: a joypad latched by the same strobe and shifted out on the same
+//line, ORed with the packet. The mouse sends zeros while it lies still, so the games see the pad;
+//the pad goes quiet after its 8 buttons (an authentic one would send 1s, which would set every
+//packet bit past the 8th), and in the BIOS its A/B fall on the packet's button bits.
 class SuborMouse24 : public BaseControlDevice
 {
 private:
@@ -37,6 +43,8 @@ private:
 	uint8_t _bitPos = 24;
 	int32_t _xMovement = 0;
 	int32_t _yMovement = 0;
+	uint8_t _padBits = 0;
+	uint8_t _padPos = 8;
 
 protected:
 	bool HasCoordinates() override { return true; }
@@ -45,8 +53,21 @@ protected:
 	{
 		Left = 0,
 		Right,
-		Middle
+		Middle,
+		PadA,
+		PadB,
+		PadSelect,
+		PadStart,
+		PadUp,
+		PadDown,
+		PadLeft,
+		PadRight
 	};
+
+	string GetKeyNames() override
+	{
+		return "LRMABSTUDlr";
+	}
 
 	void Serialize(Serializer& s) override
 	{
@@ -55,6 +76,8 @@ protected:
 		SV(_bitPos);
 		SV(_xMovement);
 		SV(_yMovement);
+		SV(_padBits);
+		SV(_padPos);
 	}
 
 	void InternalSetStateFromInput() override
@@ -62,6 +85,14 @@ protected:
 		for(KeyMapping& keyMapping : _keyMappings) {
 			SetPressedState(Buttons::Left, KeyManager::IsKeyPressed(keyMapping.CustomKeys[0]));
 			SetPressedState(Buttons::Right, KeyManager::IsKeyPressed(keyMapping.CustomKeys[1]));
+			SetPressedState(Buttons::PadA, KeyManager::IsKeyPressed(keyMapping.A));
+			SetPressedState(Buttons::PadB, KeyManager::IsKeyPressed(keyMapping.B));
+			SetPressedState(Buttons::PadSelect, KeyManager::IsKeyPressed(keyMapping.Select));
+			SetPressedState(Buttons::PadStart, KeyManager::IsKeyPressed(keyMapping.Start));
+			SetPressedState(Buttons::PadUp, KeyManager::IsKeyPressed(keyMapping.Up));
+			SetPressedState(Buttons::PadDown, KeyManager::IsKeyPressed(keyMapping.Down));
+			SetPressedState(Buttons::PadLeft, KeyManager::IsKeyPressed(keyMapping.Left));
+			SetPressedState(Buttons::PadRight, KeyManager::IsKeyPressed(keyMapping.Right));
 		}
 		SetMovement(KeyManager::GetMouseMovement(_emu, _emu->GetSettings()->GetInputConfig().MouseSensitivity));
 	}
@@ -87,9 +118,26 @@ public:
 	{
 	}
 
+	uint8_t PadButtons()
+	{
+		uint8_t b = 0;
+		for(int i = 0; i < 8; i++) {
+			if(IsPressed(Buttons::PadA + i)) {
+				b |= 1 << i;
+			}
+		}
+		return b;
+	}
+
 	void WriteRam(uint16_t addr, uint8_t value) override
 	{
 		StrobeProcessWrite(value);
+
+		if(value & 0x01) {
+			//The pad reloads while the strobe is high, like a standard one
+			_padBits = PadButtons();
+			_padPos = 0;
+		}
 
 		//Drain before the test, so movement that arrived earlier in this frame is in the
 		//accumulator by the time the guest asks for a packet
@@ -131,9 +179,17 @@ public:
 	uint8_t ReadRam(uint16_t addr) override
 	{
 		if((addr == 0x4016 && (_port & 0x01) == 0) || (addr == 0x4017 && (_port & 0x01) == 1)) {
-			if(_bitPos < 24) {
-				return (uint8_t)((_bits >> (23 - _bitPos++)) & 0x01);
+			uint8_t output = 0;
+			if(_padPos < 8) {
+				output = (_padBits >> _padPos) & 0x01;
+				if(!_strobe) {
+					_padPos++;
+				}
 			}
+			if(_bitPos < 24) {
+				output |= (uint8_t)((_bits >> (23 - _bitPos++)) & 0x01);
+			}
+			return output;
 		}
 		return 0;
 	}
@@ -144,7 +200,15 @@ public:
 			{ "xOffset", BaseControlDevice::DeviceXCoordButtonId, true },
 			{ "yOffset", BaseControlDevice::DeviceYCoordButtonId, true },
 			{ "left", Buttons::Left },
-			{ "right", Buttons::Right }
+			{ "right", Buttons::Right },
+			{ "a", Buttons::PadA },
+			{ "b", Buttons::PadB },
+			{ "select", Buttons::PadSelect },
+			{ "start", Buttons::PadStart },
+			{ "up", Buttons::PadUp },
+			{ "down", Buttons::PadDown },
+			{ "padleft", Buttons::PadLeft },
+			{ "padright", Buttons::PadRight }
 		};
 	}
 };

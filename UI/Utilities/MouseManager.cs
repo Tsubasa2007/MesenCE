@@ -259,6 +259,7 @@ namespace Mesen.Utilities
 					InputApi.HasControlDevice(ControllerType.SuborMouse) ||
 					InputApi.HasControlDevice(ControllerType.SuborMouse24) ||
 					InputApi.HasControlDevice(ControllerType.BbkMouse) ||
+					InputApi.HasControlDevice(ControllerType.Ps2Mouse) ||
 					InputApi.HasControlDevice(ControllerType.Sb2kMouse) ||
 					InputApi.HasControlDevice(ControllerType.YuxingMouse) ||
 					InputApi.HasControlDevice(ControllerType.YuxingSerialMouse) ||

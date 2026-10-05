@@ -1295,6 +1295,7 @@ bank 越小，通常 PNG 文件越少
 			<Value ID="SmsLightPhaser">Light Phaser 光枪</Value>
 			<Value ID="ColecoVisionController">ColecoVision 手柄</Value>
 			<Value ID="SacController">Super A'Can 手柄</Value>
+			<Value ID="Ps2Mouse">PS/2 鼠标（接手柄口）</Value>
 		</Enum>
 		<Enum ID="NesPachinkoButtons">
 			<Value ID="Press">按下</Value>

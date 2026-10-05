@@ -55,6 +55,9 @@
 #include "NES/Mappers/Bbk/Yuyin2Mapper.h"
 #include "NES/Mappers/Sb2k/Sb2kMapper.h"
 #include "NES/Mappers/Yuxing/YuxingMapper.h"
+#include "NES/Mappers/Subor/Subor168.h"
+#include "NES/Mappers/Subor/Subor560.h"
+#include "NES/Mappers/Subor/SuborCarts.h"
 #include "NES/Mappers/Subor/SuborWindows2002.h"
 #include "NES/Mappers/LingTong/LingTongMapper.h"
 #include "NES/Mappers/Bung/DrPcJrMapper.h"
@@ -449,7 +452,12 @@ BaseMapper* MapperFactory::GetMapperFromID(RomData& romData)
 		case 165: return new MMC3_165();
 		case 166: return new Subor166();
 		case 167: return new Subor166();
-		case 168: return new Racermate();
+		case 168:
+			//The Subor V7 cartridges carry this number for a Subor board of their own
+			if(Subor168::IsSubor168(romData.Info.Hash.PrgCrc32)) {
+				return new Subor168();
+			}
+			return new Racermate();
 		case 169:
 			//The VirtuaNES-BBK fork uses mapper 169 for the YuXing learning machines.
 			//The BIOS carries the machine revision in its PRG CRC32 - see YuxingMapper.
@@ -585,7 +593,12 @@ BaseMapper* MapperFactory::GetMapperFromID(RomData& romData)
 		case 236: return new Bmc70in1();
 		case 238: return new MMC3_238();
 		case 240: return new Mapper240();
-		case 241: return new Mapper241();
+		case 241:
+			//One dump of the Windows 2002 cartridge carries a mapper 241 header; the board is the 177 one
+			if(SuborWindows2002::IsSuborWindows2002(romData.Info.Hash.PrgCrc32)) {
+				return new SuborWindows2002();
+			}
+			return new Mapper241();
 		case 242: return new Mapper242();
 		case 243: return new Sachen74LS374N();
 		case 244: return new Mapper244();
@@ -704,6 +717,16 @@ BaseMapper* MapperFactory::GetMapperFromID(RomData& romData)
 		
 		case 552: return new TaitoX1017();
 
+		case 560:
+			//Only the Subor V1.0 (submapper 1) - the plain C/E BASIC cartridges need the reference
+			//emulator's rendering special cases, which are not ported
+			if(romData.Info.SubMapperID == 1 || romData.Info.Hash.PrgCrc32 == 0xC07ADC88) {
+				//Its NES 2.0 header declares no CHR RAM, but the board has the 8KB its ordinary tiles live in
+				romData.ChrRamSize = 0x2000;
+				return new Subor560();
+			}
+			break;
+
 		case 682: return new Rainbow();
 
 		case UnifBoards::Ac08: return new Ac08(); //mapper 42?
@@ -739,6 +762,13 @@ unique_ptr<BaseMapper> MapperFactory::InitializeFromFile(NesConsole* console, Vi
 		//that is the last point where the region can still be changed.
 		if(YuxingMapper::IsV10OrV11(romData.Info.Hash.PrgCrc32)) {
 			romData.Info.System = GameSystem::Dendy;
+		}
+
+		//The Subor learning cartridges likewise, and their keyboard and mouse - asking for the input
+		//type here is what gets the auto-configure step to run at all (see SuborCarts)
+		if(SuborCarts::IsSuborCart(romData.Info.Hash.PrgCrc32)) {
+			romData.Info.System = GameSystem::Dendy;
+			romData.Info.InputType = GameInputType::SuborKeyboardMouse1;
 		}
 
 		unique_ptr<BaseMapper> mapper(GetMapperFromID(romData));

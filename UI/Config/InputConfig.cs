@@ -436,6 +436,9 @@ namespace Mesen.Config
 
 		//Super A'Can
 		SacController,
+
+		//NES - appended at the end to keep existing values stable
+		Ps2Mouse,
 	}
 
 	public static class ControllerTypeExtensions

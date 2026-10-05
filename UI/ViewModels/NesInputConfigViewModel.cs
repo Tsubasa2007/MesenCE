@@ -66,6 +66,7 @@ namespace Mesen.ViewModels
 			ControllerType.SuborMouse,
 			ControllerType.SuborMouse24,
 			ControllerType.BbkMouse,
+			ControllerType.Ps2Mouse,
 			ControllerType.Sb2kMouse,
 			ControllerType.YuxingMouse,
 			ControllerType.YuxingSerialMouse,

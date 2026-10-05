@@ -289,7 +289,10 @@ enum class ControllerType
 	SuborMouse24,
 
 	//Super A'Can
-	SacController
+	SacController,
+
+	//NES - appended at the end to keep existing values stable
+	Ps2Mouse
 };
 
 struct KeyMapping

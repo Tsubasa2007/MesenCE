@@ -192,6 +192,9 @@
     <ClInclude Include="NES\Mappers\Bbk\BbkMapper.h" />
     <ClInclude Include="NES\Mappers\Bbk\BbkPrinter.h" />
     <ClInclude Include="NES\Mappers\Bbk\Bbk928Mapper.h" />
+    <ClInclude Include="NES\Mappers\Subor\Subor168.h" />
+    <ClInclude Include="NES\Mappers\Subor\Subor560.h" />
+    <ClInclude Include="NES\Mappers\Subor\SuborCarts.h" />
     <ClInclude Include="NES\Mappers\Subor\SuborWindows2002.h" />
     <ClInclude Include="NES\Mappers\LingTong\LingTongMapper.h" />
     <ClInclude Include="NES\Mappers\Bung\DrPcJrGameChips.h" />
@@ -519,6 +522,7 @@
     <ClInclude Include="NES\Input\PowerPad.h" />
     <ClInclude Include="NES\Input\SuborKeyboard.h" />
     <ClInclude Include="NES\Input\BbkMouse.h" />
+    <ClInclude Include="NES\Input\Ps2Mouse.h" />
     <ClInclude Include="NES\Input\BbkKeyboard.h" />
     <ClInclude Include="NES\Input\YuxingKeyboard.h" />
     <ClInclude Include="NES\Input\YuxingMouse.h" />

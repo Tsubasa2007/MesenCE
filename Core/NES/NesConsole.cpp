@@ -28,6 +28,7 @@
 #include "NES/Mappers/FDS/Fds.h"
 #include "NES/Mappers/Bbk/BbkMapper.h"
 #include "NES/Mappers/Bbk/Bbk928Mapper.h"
+#include "NES/Mappers/Subor/SuborCarts.h"
 #include "NES/Mappers/Subor/SuborWindows2002.h"
 #include "NES/Mappers/LingTong/LingTongMapper.h"
 #include "NES/Mappers/Unlicensed/DongdaPec586.h"
@@ -1204,13 +1205,20 @@ void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem syst
 			//The same key matrix as the LingTong machines, read by DongdaPec586
 			log("[Input] PEC-586 keyboard connected");
 			expDevice = ControllerType::Sb2kKeyboard;
-		} else if(dynamic_cast<SuborWindows2002*>(mapper)) {
+		} else if(SuborCarts::IsSuborCart(mapper->GetRomInfo().Hash.PrgCrc32)) {
 			//The mouse takes the first port so it answers $4016 and leaves $4017 to the keyboard,
-			//which is the split this machine's BIOS scans - one 24-bit packet per latch on $4016,
+			//which is the split the Subor cartridges' BIOS scans - one 24-bit packet per latch on $4016,
 			//and the $05/$04/$06 key counter read back on $4017.
-			log("[Input] Subor mouse (24-bit) connected");
-			port1 = ControllerType::SuborMouse24;
-			port2 = ControllerType::None;
+			if(SuborCarts::HasPs2Mouse(mapper->GetRomInfo().Hash.PrgCrc32)) {
+				//The card's own mouse answers on $4017 bit 0, beside the keyboard's bits 1-4
+				log("[Input] PS/2 mouse connected");
+				port1 = ControllerType::NesController;
+				port2 = ControllerType::Ps2Mouse;
+			} else {
+				log("[Input] Subor mouse (24-bit) connected");
+				port1 = ControllerType::SuborMouse24;
+				port2 = ControllerType::None;
+			}
 			log("[Input] Subor keyboard connected");
 			expDevice = ControllerType::SuborKeyboard;
 		} else if(dynamic_cast<BbkMapper*>(mapper) || dynamic_cast<Yuyin2Mapper*>(mapper) || dynamic_cast<Bbk928Mapper*>(mapper)) {
