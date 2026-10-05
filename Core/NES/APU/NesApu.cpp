@@ -127,6 +127,11 @@ uint8_t NesApu::PeekRam(uint16_t addr)
 	return GetStatus<true>();
 }
 
+void NesApu::WriteFrameCounter(uint8_t value)
+{
+	_frameCounter->WriteRam(0x4017, value);
+}
+
 void NesApu::WriteRam(uint16_t addr, uint8_t value)
 {
 	//$4015 write

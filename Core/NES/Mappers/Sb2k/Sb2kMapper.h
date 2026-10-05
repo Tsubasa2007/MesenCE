@@ -5,8 +5,10 @@
 #include "NES/NesConsole.h"
 #include "NES/NesCpu.h"
 #include "NES/NesMemoryManager.h"
+#include "NES/NesControlManager.h"
 #include "NES/Mappers/Bbk/BbkFdc.h"
 #include "NES/Mappers/Bbk/BbkLpcAudio.h"
+#include "NES/Input/NesController.h"
 #include "NES/Input/Sb2kKeyboard.h"
 #include "NES/Input/Sb2kMouse.h"
 #include "Shared/BaseControlManager.h"
@@ -50,6 +52,14 @@
 //drive unit, different address decode), LPC-10 speech synthesizer data/status port at
 //$4302 (SB-2000 variant of BbkLpcAudio; reset via $4026 EIO6), EVRAM bank at $4300,
 //RAM-boot control at $4301.
+//
+//The same chip family (UM6578, NES 2.0 mapper 405) runs game cartridges and multicarts. On
+//those - submappers 0 and 1; 3 is the SB-2000 - the video chip is in its own mode from
+//power-on, $8000-$FFFF is all ROM through the eight 4KB bank registers with a ninth bank
+//bit from $4016 bit 1 (submapper 0) or $4026 bit 7 (submapper 1), the DMA engine reads
+//the ROM above source address $8000 and the CPU bus below it, and there is no floppy drive,
+//speech chip, keyboard or mouse. Ported from the reference emulator's MapperUM6576
+//(fanoble and NewRisingSun).
 //
 //CPU memory map (famiclone mode):
 // - $5000-$57FF: 2KB work RAM (mirrored in $5800-$5FFF); $5006 doubles as the EBank register
@@ -124,6 +134,15 @@ private:
 	//UM6576 mode unlock state: 0 = locked, 1 = $65 seen, 2 = unlocked (native mode)
 	uint8_t _mode6576 = 0;
 
+	//A UM6578 game cartridge rather than the SB-2000 (see the class comment)
+	bool _cart = false;
+	uint8_t _reg4016 = 0;
+	//The DMA source page's bits 5-7, which on the cartridges come from $4016 (submapper 0)
+	//or $4026 (submapper 1) rather than from $4049
+	uint8_t _dmaPageHigh = 0;
+	bool _frameIrqInhibited = false;
+	uint8_t _reg4027 = 0; //the DAC's last sample, which the cartridges read back
+
 	//Extension registers
 	uint8_t _regKbdIn = 0xFF;
 	uint8_t _regKbdOut = 0;
@@ -138,6 +157,18 @@ private:
 	uint8_t _reg4035 = 0; //timer reload value
 	uint8_t _reg4036 = 0; //timer current value
 	uint8_t _dmaReg[8] = {};
+	uint32_t _cartDmaBusy = 0; //cartridges: CPU cycles left before $4048 bit 7 reads clear
+
+	//Cartridges with a PS/2 mouse on the keyboard port (see Ps2MouseCommand)
+	bool _cartPs2Mouse = false;
+	uint8_t _ps2Queue[16] = {};
+	uint8_t _ps2QueueHead = 0;
+	uint8_t _ps2QueueCount = 0;
+	bool _ps2Reporting = false;
+	uint8_t _ps2LastButtons = 0;
+	int32_t _ps2SendDelay = 0;
+	int32_t _ps2ReturnDelay = 0;
+	int32_t _ps2ScanTimer = 0;
 
 	uint8_t _timerPrescaleCnt = 0;
 	int32_t _kbdSendIrqDelay = 0;
@@ -197,17 +228,30 @@ private:
 			//$8000-$FFFF follows the MMC3 mapping into the current 128KB EPRAM slice.
 			//The reference emulator marks these banks read-only (writes in famiclone
 			//mode hit the MMC3 registers instead).
+			//A cartridge's NES mode banks its own ROM the same way
 			uint32_t base = _eBank * 0x20000;
+			PrgMemoryType type = _cart ? PrgMemoryType::PrgRom : PrgMemoryType::WorkRam;
+			uint32_t size = _cart ? _prgSize : EpramSize;
+			uint32_t fixed8000 = (base + 0x20000 - 0x4000) % size;
+			uint32_t bank6 = (base + (_c3Reg[6] & 0x0F) * 0x2000) % size;
+			uint32_t bank7 = (base + (_c3Reg[7] & 0x0F) * 0x2000) % size;
 			if(_c3Sel & 0x40) {
-				SetCpuMemoryMapping(0x8000, 0x9FFF, PrgMemoryType::WorkRam, base + 0x20000 - 0x4000, MemoryAccessType::Read);
-				SetCpuMemoryMapping(0xA000, 0xBFFF, PrgMemoryType::WorkRam, base + (_c3Reg[7] & 0x0F) * 0x2000, MemoryAccessType::Read);
-				SetCpuMemoryMapping(0xC000, 0xDFFF, PrgMemoryType::WorkRam, base + (_c3Reg[6] & 0x0F) * 0x2000, MemoryAccessType::Read);
+				SetCpuMemoryMapping(0x8000, 0x9FFF, type, fixed8000, MemoryAccessType::Read);
+				SetCpuMemoryMapping(0xA000, 0xBFFF, type, bank7, MemoryAccessType::Read);
+				SetCpuMemoryMapping(0xC000, 0xDFFF, type, bank6, MemoryAccessType::Read);
 			} else {
-				SetCpuMemoryMapping(0x8000, 0x9FFF, PrgMemoryType::WorkRam, base + (_c3Reg[6] & 0x0F) * 0x2000, MemoryAccessType::Read);
-				SetCpuMemoryMapping(0xA000, 0xBFFF, PrgMemoryType::WorkRam, base + (_c3Reg[7] & 0x0F) * 0x2000, MemoryAccessType::Read);
-				SetCpuMemoryMapping(0xC000, 0xDFFF, PrgMemoryType::WorkRam, base + 0x20000 - 0x4000, MemoryAccessType::Read);
+				SetCpuMemoryMapping(0x8000, 0x9FFF, type, bank6, MemoryAccessType::Read);
+				SetCpuMemoryMapping(0xA000, 0xBFFF, type, bank7, MemoryAccessType::Read);
+				SetCpuMemoryMapping(0xC000, 0xDFFF, type, fixed8000, MemoryAccessType::Read);
 			}
-			SetCpuMemoryMapping(0xE000, 0xFFFF, PrgMemoryType::WorkRam, base + 0x20000 - 0x2000, MemoryAccessType::Read);
+			SetCpuMemoryMapping(0xE000, 0xFFFF, type, (base + 0x20000 - 0x2000) % size, MemoryAccessType::Read);
+		} else if(_cart) {
+			//Eight 4KB ROM banks, with the ninth bank bit from $4016 or $4026
+			uint32_t high = _romInfo.SubMapperID == 1 ? ((_reg4026 & 0x80) << 1) : ((_reg4016 & 0x02) << 7);
+			for(int i = 0; i < 8; i++) {
+				uint16_t start = 0x8000 + i * 0x1000;
+				SetCpuMemoryMapping(start, start + 0x0FFF, PrgMemoryType::PrgRom, ((_pbank[i] | high) * 0x1000) % _prgSize, MemoryAccessType::Read);
+			}
 		} else {
 			//Eight 4KB banks via $4040-$4047: bank < $80 = BIOS page, >= $80 = EPRAM page
 			for(int i = 0; i < 8; i++) {
@@ -290,6 +334,36 @@ private:
 			}
 		} else {
 			_timerPrescaleCnt -= (uint8_t)nTick;
+		}
+	}
+
+	//The cartridges' timer, as the reference emulator's MapperUM6576 has it (after the SH6578
+	//datasheet): it counts whatever bit 7 says - every CPU cycle, or every scanline with bit
+	//5 - through the prescaler up to $4035, raises its status bit at the end of a period only
+	//with bit 7 set, and stops itself after one unless bit 6 asks it to run on. $4036 reads
+	//the count. The IRQ line is the status under the mask.
+	void CartTimerStep()
+	{
+		if(++_timerPrescaleCnt >= (_reg4034 & 0x0F) + 1) {
+			_timerPrescaleCnt = 0;
+			if(++_reg4036 >= _reg4035 + 1) {
+				_reg4036 = 0;
+				if(_reg4034 & 0x80) {
+					_reg4033 |= 0x80;
+				}
+				if(!(_reg4034 & 0x40)) {
+					_reg4034 &= ~0x80;
+				}
+			}
+		}
+	}
+
+	void UpdateCartIrq()
+	{
+		if(_reg4033 & ~_reg4032) {
+			_console->GetCpu()->SetIrqSource(IRQSource::External);
+		} else {
+			_console->GetCpu()->ClearIrqSource(IRQSource::External);
 		}
 	}
 
@@ -466,10 +540,77 @@ private:
 		}
 	}
 
+	//A cartridge's PS/2 mouse on the keyboard port, as the reference emulator has it. The host
+	//sends a byte by writing it to $4021 and raising $4022 bit 7 with bit 0 set (bit 2 asks for
+	//the send-complete IRQ); the mouse acknowledges with $FA, and its bytes land in $4020 with
+	//$4033 bit 5 while $4022 bit 7 lets them in. Reset answers $AA $00; after $F4 it streams
+	//3-byte packets (buttons with bit 3 and the sign bits, then X, then Y counting upwards).
+	void Ps2Push(uint8_t value)
+	{
+		if(_ps2QueueCount < sizeof(_ps2Queue)) {
+			_ps2Queue[(_ps2QueueHead + _ps2QueueCount) % sizeof(_ps2Queue)] = value;
+			_ps2QueueCount++;
+		}
+	}
+
+	void Ps2MouseCommand(uint8_t cmd)
+	{
+		_ps2QueueCount = 0;
+		Ps2Push(0xFA);
+		switch(cmd) {
+			case 0xFF: //reset: self-test passed, device ID 0
+				_ps2Reporting = false;
+				Ps2Push(0xAA);
+				Ps2Push(0x00);
+				break;
+			case 0xF4: _ps2Reporting = true; break; //enable reporting
+			case 0xF0: case 0xF5: _ps2Reporting = false; break; //remote mode, disable reporting
+			default: break;
+		}
+	}
+
+	void Ps2MouseClock()
+	{
+		if(_ps2SendDelay && --_ps2SendDelay == 0) {
+			_reg4033 |= 0x20;
+		}
+		if(_ps2QueueCount && !_ps2ReturnDelay) {
+			_ps2ReturnDelay = CyclesPerMs * 2;
+		}
+		if(!_ps2SendDelay && _ps2ReturnDelay && --_ps2ReturnDelay == 0 && _ps2QueueCount && (_reg4022 & 0x80)) {
+			_regKbdIn = _ps2Queue[_ps2QueueHead];
+			_ps2QueueHead = (_ps2QueueHead + 1) % sizeof(_ps2Queue);
+			_ps2QueueCount--;
+			_reg4033 |= 0x20;
+		}
+		//A report about every 12ms, only when the mouse moved or a button changed, and never in
+		//the middle of another answer
+		if(_ps2Reporting && ++_ps2ScanTimer >= 20000) {
+			_ps2ScanTimer = 0;
+			shared_ptr<Sb2kMouse> mouse = _console->GetControlManager()->GetControlDevice<Sb2kMouse>();
+			if(mouse && _ps2QueueCount == 0) {
+				int8_t dx, dy;
+				uint8_t buttons;
+				mouse->TakeDelta(dx, dy, buttons);
+				dy = (int8_t)std::max(-127, -(int)dy);
+				if(dx || dy || buttons != _ps2LastButtons) {
+					_ps2LastButtons = buttons;
+					Ps2Push((buttons & 0x07) | 0x08 | (dx < 0 ? 0x10 : 0) | (dy < 0 ? 0x20 : 0));
+					Ps2Push((uint8_t)dx);
+					Ps2Push((uint8_t)dy);
+				}
+			}
+		}
+	}
+
 	//DMA engine ($4048-$404F): copies from BIOS ROM or EPRAM to the CPU bus or to video
 	//memory. The reference emulator performs the whole copy instantly; so does this.
 	void RunDma()
 	{
+		if(_cart) {
+			RunCartDma();
+			return;
+		}
 		uint32_t srcAddr = ((_dmaReg[1] & 0x0F) << 15) | ((_dmaReg[3] & 0x7F) << 8) | _dmaReg[2];
 		uint8_t* src = ((_dmaReg[1] & 0x10) ? _workRam : _prgRom) + srcAddr;
 		uint32_t srcLimit = (_dmaReg[1] & 0x10) ? EpramSize : _prgSize;
@@ -502,6 +643,79 @@ private:
 		}
 	}
 
+	//The cartridges' DMA: length + 1 bytes from the ROM (source address $8000 and up, in
+	//32KB pages) or from the CPU bus, to the CPU bus ($4048 bit 5) or to video memory.
+	//The copy is done at once, but $4048 bit 7 reads busy for a cycle per byte (two
+	//without bit 6), as the reference emulator counts it. Games wait on that bit: one
+	//that only queued its next transfer once the bit fell let its vblank pass meanwhile.
+	void RunCartDma()
+	{
+		NesMemoryManager* mm = _console->GetMemoryManager();
+		uint16_t src = (_dmaReg[3] << 8) | _dmaReg[2];
+		uint16_t dst = (_dmaReg[5] << 8) | _dmaReg[4];
+		int32_t len = (((_dmaReg[7] & 0x7F) << 8) | _dmaReg[6]) + 1;
+		uint32_t page = (_dmaReg[1] & 0x1F) | _dmaPageHigh;
+		while(len-- > 0) {
+			uint8_t value;
+			if(src & 0x8000) {
+				value = _prgRom[((src & 0x7FFF) | (page << 15)) % _prgSize];
+			} else {
+				value = mm->Read(src, MemoryOperationType::DmaRead);
+			}
+			if(_dmaReg[0] & 0x20) {
+				mm->Write(dst, value, MemoryOperationType::DmaWrite);
+			} else {
+				VideoWrite(dst, value);
+			}
+			src++;
+			dst++;
+			_cartDmaBusy += (_dmaReg[0] & 0x40) ? 1 : 2;
+		}
+		_dmaReg[0] &= 0x7F;
+	}
+
+	//The cartridges' $4026: a plain register whose bit 7 is a bank bit on submapper 1. A
+	//few games read it back for lines of their own, as the reference emulator has them.
+	uint8_t ReadCart4026()
+	{
+		uint8_t value = _reg4026;
+		switch(_romInfo.Hash.PrgCrc32) {
+			case 0x4B139C67: value &= ~0x10; break; //the light gun's trigger line, released
+			case 0x715D66AE: value |= 0x09; break; //the PS/2 mouse's lines, idle
+			case 0x865BEF26: //an input line the game waits on
+				if(_reg4026 == 0x10 || _reg4026 == 0x30) {
+					value = 0x80;
+				} else if(_reg4026 == 0x50) {
+					value = 0x00;
+				}
+				break;
+
+			case 0xE2FBB532: {
+				//A multi-game player's gamepad answers here: nothing while bit 7 is
+				//clear, and with $4026 = $FF the pad's buttons, by the $4016 value selecting them
+				if(!(_reg4026 & 0x80)) {
+					return 0;
+				}
+				//The buttons are taken from the pad's state, not by strobing and reading $4016: port
+				//writes land a cycle or two late and repeated reads in one cycle are merged, so a
+				//strobe and 8 reads from here would all see the same bit
+				if(_reg4026 == 0xFF && (_reg4016 == 0xF9 || _reg4016 == 0xFE)) {
+					shared_ptr<BaseControlDevice> pad = _console->GetControlManager()->GetControlDevice(0);
+					auto pressed = [&](uint8_t button) { return pad && pad->IsPressed(button); };
+					if(_reg4016 == 0xF9) {
+						value = (uint8_t)((pressed(NesController::Start) ? 0x04 : 0x00) ^ 0xFF);
+					} else {
+						value = (uint8_t)(((pressed(NesController::B) ? 0x04 : 0) | (pressed(NesController::A) ? 0x08 : 0) |
+							(pressed(NesController::Right) ? 0x10 : 0) | (pressed(NesController::Down) ? 0x20 : 0) |
+							(pressed(NesController::Left) ? 0x40 : 0) | (pressed(NesController::Up) ? 0x80 : 0)) ^ 0xFF);
+					}
+				}
+				break;
+			}
+		}
+		return value;
+	}
+
 	//Extension register read ($4018-$40FF)
 	uint8_t ExRead(uint16_t addr)
 	{
@@ -512,10 +726,18 @@ private:
 			case 0x4024: return _reg4024;
 
 			case 0x4026:
+				if(_cart) {
+					return ReadCart4026();
+				}
 				//Bits 3/4/5 read back the printer's ack/paper-out/select lines;
 				//no printer is emulated, so they read low
 				return _reg4026 & ~0x38;
 
+			case 0x4027:
+				if(_cart) {
+					return _reg4027;
+				}
+				return 0;
 			case 0x4032: return _reg4032;
 			case 0x4033: return _reg4033;
 			case 0x4034: return _reg4034;
@@ -524,6 +746,8 @@ private:
 			default:
 				if(addr >= 0x4040 && addr < 0x4048) {
 					return _pbank[addr & 0x07];
+				} else if(addr == 0x4048 && _cart) {
+					return _dmaReg[0] | (_cartDmaBusy ? 0x80 : 0);
 				} else if(addr >= 0x4048 && addr < 0x4050) {
 					return _dmaReg[addr & 0x07];
 				}
@@ -539,6 +763,16 @@ private:
 			case 0x4021: _regKbdOut = value; break;
 
 			case 0x4022:
+				if(_cart) {
+					if(_cartPs2Mouse && (value & 0x81) == 0x81 && !(_reg4022 & 0x80)) {
+						Ps2MouseCommand(_regKbdOut);
+						if(value & 0x04) {
+							_ps2SendDelay = CyclesPerMs;
+						}
+					}
+					_reg4022 = value;
+					break;
+				}
 				//Keyboard data control: bit 7 = clock, bit 0 = direction (1 = host-to-device),
 				//bit 2 = raise the send-complete IRQ ~1ms after the transfer
 				if((_reg4022 ^ value) & 0x80) {
@@ -558,6 +792,14 @@ private:
 			case 0x4025: break; //printer data port (printer not emulated)
 
 			case 0x4026:
+				if(_cart) {
+					_reg4026 = value;
+					if(_romInfo.SubMapperID == 1) {
+						_dmaPageHigh = (value >> 2) & 0xE0;
+						UpdatePrgMapping();
+					}
+					break;
+				}
 				//External I/O lines: EIO1 = mouse reset/RTS, EIO2 = printer strobe,
 				//EIO6 = speech reset, EIO7 = keyboard reset
 				if((_reg4026 ^ value) & 0x02) {
@@ -582,7 +824,7 @@ private:
 				_reg4026 = value & 0x7F;
 				break;
 
-			case 0x4027: WriteDac(value); break;
+			case 0x4027: _reg4027 = value; WriteDac(value); break;
 
 			case 0x4031:
 				//UM6576 mode unlock: $65 then $76
@@ -603,12 +845,23 @@ private:
 				//IRQ mask; writing 1s also clears the matching status bits
 				_reg4032 = value;
 				_reg4033 &= ~value;
-				if(_reg4033 == 0) {
+				if(_cart) {
+					UpdateCartIrq();
+				} else if(_reg4033 == 0) {
 					_console->GetCpu()->ClearIrqSource(IRQSource::External);
 				}
 				break;
 
 			case 0x4034:
+				if(_cart) {
+					_reg4034 = value;
+					if(!(value & 0x80)) {
+						_reg4033 &= ~0x80;
+						SetDacLevel(0);
+					}
+					UpdateCartIrq();
+					break;
+				}
 				if(!(value & 0x80)) {
 					//Timer stopped: the DAC stream is over, return the output to center
 					//so no DC offset lingers
@@ -620,6 +873,12 @@ private:
 
 			case 0x4035:
 				_reg4035 = value;
+				if(_cart) {
+					_reg4036 = 0;
+					_reg4033 &= ~0x80;
+					UpdateCartIrq();
+					break;
+				}
 				_reg4036 = value; //also sets the current value
 				break;
 
@@ -710,6 +969,9 @@ private:
 	//Super-IO read ($4100-$43FF)
 	uint8_t SuperIoRead(uint16_t addr)
 	{
+		if(_cart) {
+			return 0;
+		}
 		if(addr >= 0x4200 && addr < 0x4208) {
 			CheckForDiskImage();
 			_fdc.MarkActivity();
@@ -729,6 +991,9 @@ private:
 	//Super-IO write ($4100-$43FF)
 	void SuperIoWrite(uint16_t addr, uint8_t value)
 	{
+		if(_cart && addr != 0x4300 && addr != 0x4301) {
+			return;
+		}
 		if(addr >= 0x4200 && addr < 0x4208) {
 			CheckForDiskImage();
 			_fdc.MarkActivity();
@@ -855,7 +1120,12 @@ private:
 	//Per-scanline work, run once per line during hblank (same placement as the BBK port)
 	void HSync(int32_t scanline)
 	{
-		if((_reg4034 & 0xA0) == 0xA0) {
+		if(_cart) {
+			if(_reg4034 & 0x20) {
+				CartTimerStep();
+				UpdateCartIrq();
+			}
+		} else if((_reg4034 & 0xA0) == 0xA0) {
 			//Timer driven by the scanline clock
 			TimerTick(1);
 		}
@@ -915,12 +1185,39 @@ protected:
 
 	void InitMapper(RomData& romData) override
 	{
-		romData.Info.System = GameSystem::Dendy;
+		//The cartridges keep the region their header gives
+		if(romData.Info.MapperID != 405 || romData.Info.SubMapperID == 3) {
+			romData.Info.System = GameSystem::Dendy;
+		}
+	}
+
+	//$4016 is below the range the base mapper claims; the cartridges take a bank bit from it
+	void GetMemoryRanges(MemoryRanges& ranges) override
+	{
+		BaseMapper::GetMemoryRanges(ranges);
+		if(_cart) {
+			ranges.AddHandler(MemoryOperation::Write, 0x4016);
+			ranges.AddHandler(MemoryOperation::Write, 0x4017);
+			if(HasActiveLowPads(_romInfo.Hash.PrgCrc32)) {
+				ranges.AddHandler(MemoryOperation::Read, 0x4016);
+				ranges.AddHandler(MemoryOperation::Read, 0x4017);
+			}
+			ranges.SetAllowOverride();
+		}
 	}
 
 	void InitMapper() override
 	{
-		_romInfo.System = GameSystem::Dendy;
+		_cart = _romInfo.MapperID == 405 && _romInfo.SubMapperID != 3;
+		if(!_cart) {
+			_romInfo.System = GameSystem::Dendy;
+		} else {
+			AddRegisterRange(0x4016, 0x4017, MemoryOperation::Write);
+			if(HasActiveLowPads(_romInfo.Hash.PrgCrc32)) {
+				AddRegisterRange(0x4016, 0x4017, MemoryOperation::Read);
+			}
+		}
+		_frameIrqInhibited = false;
 
 		if(!_swapListener) {
 			_swapListener.reset(new DiskSwapListener(this));
@@ -944,7 +1241,10 @@ protected:
 		_eBank = 0;
 		_ramBoot = false;
 		_vbank = 0;
-		_mode6576 = 0;
+		//The cartridges' video chip is in its own mode from power-on
+		_mode6576 = _cart ? 2 : 0;
+		_reg4016 = 0;
+		_dmaPageHigh = (_cart && _romInfo.SubMapperID == 1) ? 0x20 : 0x00;
 
 		_c3Sel = 0;
 		memset(_c3Reg, 0, sizeof(_c3Reg));
@@ -960,13 +1260,24 @@ protected:
 		_reg4022 = 0;
 		_reg4023 = 0;
 		_reg4024 = 0;
-		_reg4026 = 0;
+		//The cartridges' $4026 powers up as $80: on submapper 1 that is the ninth bank bit,
+		//and those multicarts start from their upper megabyte
+		_reg4026 = _cart ? 0x80 : 0;
 		_reg4032 = 0xFF;
 		_reg4033 = 0;
 		_reg4034 = 0;
 		_reg4035 = 0;
 		_reg4036 = 0;
 		memset(_dmaReg, 0, sizeof(_dmaReg));
+		_cartDmaBusy = 0;
+		_cartPs2Mouse = _cart && HasCartPs2Mouse(_romInfo.Hash.PrgCrc32);
+		_ps2QueueHead = 0;
+		_ps2QueueCount = 0;
+		_ps2Reporting = false;
+		_ps2LastButtons = 0;
+		_ps2SendDelay = 0;
+		_ps2ReturnDelay = 0;
+		_ps2ScanTimer = 0;
 		_timerPrescaleCnt = 0;
 		_kbdSendIrqDelay = 0;
 
@@ -1014,6 +1325,10 @@ protected:
 
 	uint8_t ReadRegister(uint16_t addr) override
 	{
+		if(addr == 0x4016 || addr == 0x4017) {
+			//Cartridges whose own controller pulls its data line low for a pressed button
+			return ((NesControlManager*)_console->GetControlManager())->ReadRam(addr) ^ 0x01;
+		}
 		if(addr < 0x4100) {
 			return ExRead(addr);
 		}
@@ -1022,6 +1337,23 @@ protected:
 
 	void WriteRegister(uint16_t addr, uint8_t value) override
 	{
+		if(addr == 0x4017) {
+			//Cartridges only: the frame counter's mode reaches the APU, its IRQ never does
+			_console->GetApu()->WriteFrameCounter(value | 0x40);
+			return;
+		}
+		if(addr == 0x4016) {
+			//Cartridges only: still the controllers' strobe, and a bank bit on submapper 0
+			((NesControlManager*)_console->GetControlManager())->WriteRam(addr, value);
+			_reg4016 = value;
+			if(_romInfo.SubMapperID == 0) {
+				_dmaPageHigh = (value << 4) & 0xE0;
+				if(!_ramBoot) {
+					UpdatePrgMapping();
+				}
+			}
+			return;
+		}
 		if(addr < 0x4100) {
 			ExWrite(addr, value);
 		} else if(addr < 0x4400) {
@@ -1043,9 +1375,10 @@ protected:
 			if(_mode6576 == 0) {
 				Mmc3Write(addr, value);
 			} else {
-				//UM6576 mode: writes land in EPRAM through the program bank registers
+				//UM6576 mode: writes land in EPRAM through the program bank registers (the
+				//cartridges have none - every bank there is ROM)
 				uint8_t bank = _pbank[(addr >> 12) & 0x07];
-				if(bank >= 0x80) {
+				if(bank >= 0x80 && !_cart) {
 					_workRam[(bank & 0x7F) * 0x1000 + (addr & 0x0FFF)] = value;
 				}
 			}
@@ -1053,6 +1386,21 @@ protected:
 	}
 
 public:
+	//The cartridges whose controller reads 0 for a pressed button and 1 for a released one, as the
+	//reference emulator has it. The software tells its game mode from a test mode at power-on by a
+	//line that reads 1 on the real controller and 0 from a plain pad, so a plain pad's bits are
+	//inverted for it.
+	static bool HasActiveLowPads(uint32_t prgCrc)
+	{
+		return prgCrc == 0x865BEF26;
+	}
+
+	//The cartridges whose mouse is a PS/2 one on the keyboard port
+	static bool HasCartPs2Mouse(uint32_t prgCrc)
+	{
+		return prgCrc == 0x715D66AE;
+	}
+
 	//Disk swapping - driven by the FDS disk shortcut keys via DiskSwapListener
 	vector<string> GetDiskFileList()
 	{
@@ -1124,6 +1472,7 @@ public:
 	//UM6576 native-mode video bus, used by Sb2kPpu for both $2007 access and rendering:
 	//addresses below $8000 hit CRAM, $8000+ hits the 32KB EVRAM window selected by $4300
 	bool IsUm6576Mode() { return _mode6576 == 2; }
+	bool IsUm6578Cart() { return _cart; }
 
 	uint8_t VideoRead(uint16_t addr)
 	{
@@ -1165,6 +1514,40 @@ public:
 	void ProcessCpuClock() override
 	{
 		BaseProcessCpuClock();
+
+		if(_cart) {
+			//The same chip: no frame-counter IRQ (see below). These games take their raster
+			//IRQs from the chip's timer and never acknowledge a frame IRQ: one left pending
+			//re-entered their handler forever, and one let through ran a raster split before
+			//its tables were filled, which wrote $2000 without the NMI bit. Clearing the line
+			//each cycle is not enough - the APU can raise it after the clear within the same
+			//cycle - so the frame counter is told to inhibit it, from power-on and on every
+			//$4017 write.
+			if(!_frameIrqInhibited) {
+				_frameIrqInhibited = true;
+				_console->GetApu()->WriteFrameCounter(0x40);
+			}
+			_console->GetCpu()->ClearIrqSource(IRQSource::FrameCounter);
+			if(_cartDmaBusy) {
+				_cartDmaBusy--;
+			}
+			if(!(_reg4034 & 0x20)) {
+				CartTimerStep();
+				UpdateCartIrq();
+			}
+			if(_cartPs2Mouse) {
+				Ps2MouseClock();
+				UpdateCartIrq();
+			}
+			int32_t line = _console->GetPpu()->GetCurrentScanline();
+			if(line != _lastPpuScanline && _console->GetPpu()->GetCurrentCycle() >= 321) {
+				_lastPpuScanline = line;
+				if(line >= 0) {
+					HSync(line);
+				}
+			}
+			return;
+		}
 
 		//The clone APU's frame-counter IRQ line isn't wired up: the BIOS never writes
 		//$4017 and its IRQ dispatcher only acks the $4033 sources, so the 2A03 power-on
@@ -1217,12 +1600,17 @@ public:
 
 		SVArray(_pbank, 8);
 		SV(_eBank); SV(_ramBoot); SV(_vbank); SV(_mode6576);
+		SV(_reg4016); SV(_dmaPageHigh); SV(_frameIrqInhibited); SV(_reg4027);
 		SV(_c3Sel);
 		SVArray(_c3Reg, 8);
 		SV(_c3IrqEnable); SV(_c3IrqRequest); SV(_c3IrqLatch); SV(_c3IrqCounter); SV(_c3IrqPreset); SV(_c3IrqPresetVbl);
 		SV(_regKbdIn); SV(_regKbdOut); SV(_reg4020); SV(_reg4022); SV(_reg4023); SV(_reg4024); SV(_reg4026);
 		SV(_reg4032); SV(_reg4033); SV(_reg4034); SV(_reg4035); SV(_reg4036);
 		SVArray(_dmaReg, 8);
+		SV(_cartDmaBusy);
+		SVArray(_ps2Queue, sizeof(_ps2Queue));
+		SV(_ps2QueueHead); SV(_ps2QueueCount); SV(_ps2Reporting); SV(_ps2LastButtons);
+		SV(_ps2SendDelay); SV(_ps2ReturnDelay); SV(_ps2ScanTimer);
 		SV(_timerPrescaleCnt); SV(_kbdSendIrqDelay);
 		SV(_kbdTxData); SV(_kbdDataReady); SV(_kbdRspDelay);
 		SVArray(_kbdRetData, 8);

@@ -932,7 +932,9 @@ bool NesConsole::IsBbkGame()
 {
 	//Also true for the SB-2000, the YuXing machines, the Doctor PC jr. and the LingTong machines,
 	//which reuse the same media-swap UI
-	return dynamic_cast<BbkMapper*>(_mapper.get()) != nullptr || dynamic_cast<Sb2kMapper*>(_mapper.get()) != nullptr ||
+	//(but not the UM6578 game cartridges that share the SB-2000's mapper)
+	Sb2kMapper* sb2k = dynamic_cast<Sb2kMapper*>(_mapper.get());
+	return dynamic_cast<BbkMapper*>(_mapper.get()) != nullptr || (sb2k && !sb2k->IsUm6578Cart()) ||
 		dynamic_cast<YuxingMapper*>(_mapper.get()) != nullptr || dynamic_cast<DrPcJrMapper*>(_mapper.get()) != nullptr ||
 		dynamic_cast<LingTongMapper*>(_mapper.get()) != nullptr || HasSuborFloppy();
 }
@@ -1311,6 +1313,13 @@ void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem syst
 		expDevice = ControllerType::FcnsController;
 	} else {
 		log("[Input] 2 NES controllers connected");
+	}
+
+	if(dynamic_cast<Sb2kMapper*>(mapper) && Sb2kMapper::HasCartPs2Mouse(prgCrc)) {
+		//The mapper talks to this one through its keyboard port; the device only supplies the
+		//host mouse's movement and buttons
+		log("[Input] PS/2 mouse connected");
+		port2 = ControllerType::Sb2kMouse;
 	}
 
 	isFamicom = (system == GameSystem::Famicom || system == GameSystem::FDS || system == GameSystem::Dendy);

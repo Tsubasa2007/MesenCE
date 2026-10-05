@@ -697,6 +697,15 @@ BaseMapper* MapperFactory::GetMapperFromID(RomData& romData)
 
 		case 366: return new BmcGn45();
 
+		case 405:
+			//UMC UM6578. Submapper 3 is the Subor SB-2000, the same machine the BBK fork files
+			//as mapper 171 variant 1; the rest are the chip's game cartridges and multicarts.
+			if(romData.Info.SubMapperID == 3) {
+				romData.Info.System = GameSystem::Dendy;
+				romData.Info.InputType = GameInputType::SuborKeyboardMouse1;
+			}
+			return new Sb2kMapper();
+
 		case 487: return new Mapper487();
 
 		case 513: return new Sachen9602();

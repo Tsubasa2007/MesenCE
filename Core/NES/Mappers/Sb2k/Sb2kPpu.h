@@ -27,6 +27,18 @@
 //
 //Known gaps inherited from the reference implementation: the $2008.0 "page mode"
 //and sprite mirroring attributes are not emulated (marked "to do" in the fork).
+//
+//The UM6578 game cartridges (mapper 405) run in native mode from power-on and need what
+//the reference emulator's other model of this chip (its 2C02 core in UM6576 mode) draws:
+//flipped sprites, sprites behind the background, the sprite 0 hit flag, colour 0 of every
+//background palette showing the backdrop, and $2008 bit 0's single name table page. Those
+//are done for the cartridges only, so the SB-2000 draws as it always has.
+//
+//The cartridges also scroll the way that model does: a 2C02-style address register (v/t)
+//that $2000, $2005 and $2006 load, copied to the start of each line and stepped down the
+//page, with 32 rows per page (no attribute rows) and each 16-bit tile name read from
+//(v & $FFF) * 2. A $2006 write part way down the frame therefore moves the picture - which is
+//how the cartridges' games put their status panels below the play field.
 class Sb2kPpu final : public NesPpu<Sb2kPpu>
 {
 private:
@@ -44,6 +56,25 @@ private:
 	bool _toggle2006 = false;
 	uint8_t _vramReadBuffer = 0; //$2007 reads are buffered like the 2C02
 	uint8_t _nativePalette[64] = {}; //$2040-$207F: final color values, not indexes into palette RAM
+	bool _nativeSprite0Hit = false; //UM6578 cartridges only - see the class comment
+	uint16_t _cartV = 0; //UM6578 cartridges only: the rendering address (2C02 "v")
+	uint16_t _cartT = 0; //and its reload value ("t")
+	uint8_t _cartFineX = 0; //fine X scroll from the first $2005 write
+
+	//The model's vertical step: 32 rows to a page, then on to the page below
+	void IncrementCartRow()
+	{
+		if((_cartV & 0x7000) != 0x7000) {
+			_cartV += 0x1000;
+		} else {
+			_cartV &= 0x8FFF;
+			if((_cartV & 0x03E0) == 0x03E0) {
+				_cartV = (_cartV ^ 0x0800) & 0xFC1F;
+			} else {
+				_cartV += 0x0020;
+			}
+		}
+	}
 
 	__forceinline bool IsNativeMode() { return _sb2k->IsUm6576Mode(); }
 
@@ -51,10 +82,16 @@ private:
 	{
 		switch(addr) {
 			case 0x2002: {
-				uint8_t status = _statusFlags.VerticalBlank ? 0x80 : 0;
+				uint8_t status = (_statusFlags.VerticalBlank ? 0x80 : 0) | (_nativeSprite0Hit ? 0x40 : 0);
 				if(!forDebugger) {
 					_statusFlags.VerticalBlank = false;
-					_console->GetCpu()->ClearNmiFlag();
+					if(!_sb2k->IsUm6578Cart()) {
+						_console->GetCpu()->ClearNmiFlag();
+					}
+					//The cartridges: a read on the dot the flag rises does not take back the NMI,
+					//as it does on a 2C02 (the reference emulator never takes it back either). A
+					//game polling $2002 with its NMI on otherwise lost a frame's NMI whenever a
+					//poll landed on that dot, and its split screen jumped for that frame.
 					_toggle2005 = false;
 					_toggle2006 = false;
 				}
@@ -94,6 +131,7 @@ private:
 		switch(addr) {
 			case 0x2000: {
 				_nativeControl = value;
+				_cartT = (_cartT & 0xF3FF) | ((value & 0x03) << 10);
 				//Keep the base class NMI-enable flag in sync so its vblank logic fires the NMI
 				bool nmiEnabled = (value & 0x80) != 0;
 				if(!nmiEnabled) {
@@ -122,8 +160,11 @@ private:
 			case 0x2005:
 				if(_toggle2005) {
 					_originY = value;
+					_cartT = (_cartT & 0x8C1F) | ((value & 0xF8) << 2) | ((value & 0x07) << 12);
 				} else {
 					_originX = value;
+					_cartT = (_cartT & 0xFFE0) | (value >> 3);
+					_cartFineX = value & 0x07;
 				}
 				_toggle2005 = !_toggle2005;
 				break;
@@ -131,8 +172,12 @@ private:
 			case 0x2006:
 				if(_toggle2006) {
 					_ga = (_ga & 0xFF00) | value;
+					_cartT = (_cartT & 0xFF00) | value;
+					_cartV = _cartT;
 				} else {
 					_ga = (_ga & 0x00FF) | (value << 8);
+					//All 8 bits, unlike the 2C02's 6
+					_cartT = (_cartT & 0x00FF) | (value << 8);
 				}
 				_toggle2006 = !_toggle2006;
 				break;
@@ -160,6 +205,8 @@ private:
 	void RenderNativeScanline()
 	{
 		uint8_t line[272];
+		bool bgOpaque[272] = {};
+		bool cart = _sb2k->IsUm6578Cart();
 
 		if(_nativeMask & 0x08) {
 			//Background: 32x32-tile pages of 16-bit tile names. Bits 0-1 of $2000 pick
@@ -175,14 +222,24 @@ private:
 				}
 			}
 
-			int32_t y = (_scanline + _originY) & 0x07;
+			int32_t y = cart ? ((_cartV >> 12) & 0x07) : ((_scanline + _originY) & 0x07);
+			uint8_t fineX = cart ? _cartFineX : (_originX & 0x07);
+			uint16_t v = _cartV;
 			int32_t dstX = 8;
 
 			for(int32_t i = 0; i < 33; i++) {
 				int32_t tileX = (_originX / 8) + i;
 
 				int32_t tileAddr;
-				if(tileX & 0x20) {
+				if(cart) {
+					//From the address register (see the class comment). Page mode: one 2KB
+					//name table at $2000, whatever the page bits say.
+					tileAddr = (v & 0x0FFF) << 1;
+					if(_reg2008 & 0x01) {
+						tileAddr = (tileAddr & 0x7FF) | 0x2000;
+					}
+					v = ((v & 0x1F) == 0x1F) ? (v ^ 0x041F) : (v + 1);
+				} else if(tileX & 0x20) {
 					//Crossed the right edge into the horizontally adjacent page
 					tileAddr = tileBase + 2048 + tileY * 64 + (tileX & 0x1F) * 2;
 				} else {
@@ -191,12 +248,12 @@ private:
 
 				uint16_t tileName = _sb2k->VideoRead((uint16_t)(tileAddr + 1)) * 256 + _sb2k->VideoRead((uint16_t)tileAddr);
 
-				uint8_t mask = i ? 0x80 : (0x80 >> (_originX & 0x07));
+				uint8_t mask = i ? 0x80 : (0x80 >> fineX);
 				int32_t tileWidth;
 				if(i == 0) {
-					tileWidth = 8 - (_originX & 0x07);
+					tileWidth = 8 - fineX;
 				} else if(i == 32) {
-					tileWidth = _originX & 0x07;
+					tileWidth = fineX;
 				} else {
 					tileWidth = 8;
 				}
@@ -219,7 +276,8 @@ private:
 						if(plane[2] & mask) index |= 0x04;
 						if(plane[3] & mask) index |= 0x08;
 
-						line[dstX++] = _nativePalette[tileBank * 4 + index];
+						bgOpaque[dstX] = index != 0;
+						line[dstX++] = _nativePalette[(cart && !index) ? 0 : tileBank * 4 + index];
 						mask >>= 1;
 					}
 				} else {
@@ -236,13 +294,14 @@ private:
 						if(plane[0] & mask) index |= 0x01;
 						if(plane[1] & mask) index |= 0x02;
 
-						line[dstX++] = _nativePalette[tileBank * 4 + index];
+						bgOpaque[dstX] = index != 0;
+						line[dstX++] = _nativePalette[(cart && !index) ? 0 : tileBank * 4 + index];
 						mask >>= 1;
 					}
 				}
 			}
 		} else {
-			memset(line, 0, sizeof(line));
+			memset(line, cart ? _nativePalette[0] : 0, sizeof(line));
 		}
 
 		if(_nativeMask & 0x10) {
@@ -259,14 +318,26 @@ private:
 				if(_scanline < spriteY || _scanline >= spriteY + spriteHeight) {
 					continue;
 				}
-				if(sprite[2] & 0x20) {
+				bool behind = (sprite[2] & 0x20) != 0;
+				if(behind && !cart) {
 					//Behind-background sprites are not drawn (reference behavior)
 					continue;
 				}
 
 				int32_t y = _scanline - spriteY;
+				if(cart && (sprite[2] & 0x80)) {
+					y = spriteHeight - 1 - y; //vertical flip
+				}
 				int32_t tileOffset = patternBase + sprite[1] * 16;
-				if(_nativeControl & 0x20) {
+				if((_nativeControl & 0x20) && cart) {
+					//8x16 on the cartridges: an even/odd tile pair, as the reference
+					//emulator's model of the chip for them reads it
+					tileOffset = patternBase + (sprite[1] & 0xFE) * 16;
+					if(y >= 8) {
+						tileOffset += 16;
+						y -= 8;
+					}
+				} else if(_nativeControl & 0x20) {
 					//8x16: the top half comes from the preceding tile
 					if(y < 8) {
 						tileOffset -= 16;
@@ -279,17 +350,22 @@ private:
 				plane[0] = _sb2k->VideoRead((uint16_t)(tileOffset + y));
 				plane[1] = _sb2k->VideoRead((uint16_t)(tileOffset + 8 + y));
 
-				uint8_t mask = 0x80;
+				bool hFlip = cart && (sprite[2] & 0x40);
 				for(int32_t x = 0; x < 8; x++) {
+					uint8_t mask = hFlip ? (0x01 << x) : (0x80 >> x);
 					int32_t index = 0;
 					if(plane[0] & mask) index |= 0x01;
 					if(plane[1] & mask) index |= 0x02;
 
 					if(index) {
-						index += (sprite[2] & 0x03) * 4;
-						line[sprite[3] + 8 + x] = _nativePalette[16 + index];
+						int32_t px = sprite[3] + 8 + x;
+						if(cart && i == 0 && bgOpaque[px] && px < 8 + 255) {
+							_nativeSprite0Hit = true;
+						}
+						if(!behind || !bgOpaque[px]) {
+							line[px] = _nativePalette[16 + index + (sprite[2] & 0x03) * 4];
+						}
 					}
-					mask >>= 1;
 				}
 			}
 		}
@@ -325,14 +401,23 @@ public:
 		//Native mode: the base class per-cycle pipeline is idle (its rendering flags stay
 		//off), so only the frame bookkeeping runs here. The vblank flag and NMI are still
 		//set by the base class at the NMI scanline.
+		bool cartScroll = (_nativeMask & 0x18) && _sb2k->IsUm6578Cart();
 		if(_scanline >= 0) {
 			if(_cycle == 256) {
 				RenderNativeScanline();
+				if(cartScroll) {
+					//Next row, then the start of the line from t - as the 2C02 at dots 256/257
+					IncrementCartRow();
+					_cartV = (_cartV & 0xFBE0) | (_cartT & 0x041F);
+				}
 			}
 		} else if(_cycle == 1) {
 			//Pre-render scanline: end of vblank (same as the base class pipeline)
 			_statusFlags.VerticalBlank = false;
+			_nativeSprite0Hit = false;
 			_console->GetCpu()->ClearNmiFlag();
+		} else if(_cycle == 304 && cartScroll) {
+			_cartV = _cartT;
 		}
 	}
 
@@ -385,5 +470,7 @@ public:
 		SV(_toggle2005); SV(_toggle2006);
 		SV(_vramReadBuffer);
 		SVArray(_nativePalette, sizeof(_nativePalette));
+		SV(_nativeSprite0Hit);
+		SV(_cartV); SV(_cartT); SV(_cartFineX);
 	}
 };

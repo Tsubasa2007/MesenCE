@@ -63,6 +63,8 @@ public:
 	uint8_t ReadRam(uint16_t addr) override;
 	uint8_t PeekRam(uint16_t addr) override;
 	void WriteRam(uint16_t addr, uint8_t value) override;
+	//$4017 goes to the frame counter, a memory handler of its own - for a mapper that claims it
+	void WriteFrameCounter(uint8_t value);
 	void GetMemoryRanges(MemoryRanges& ranges) override;
 
 	ApuState GetState();
