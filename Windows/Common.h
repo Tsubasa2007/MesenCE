@@ -14,7 +14,6 @@
 #pragma comment(lib, "dxguid.lib")
 #pragma comment(lib, "winmm.lib")
 #pragma comment(lib, "dxgi.lib")
-#pragma comment(lib, "d3dcompiler.lib")
 
 // C RunTime Header Files
 #include <stdlib.h>
@@ -25,7 +24,6 @@
 #include <stdio.h>
 
 #include <d3d11_1.h>
-#include <d3dcompiler.h>
 #include <directxmath.h>
 #include <directxcolors.h>
 #include <dsound.h>
