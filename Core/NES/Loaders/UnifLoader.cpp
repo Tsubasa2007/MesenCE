@@ -282,7 +282,7 @@ std::unordered_map<string, int> UnifLoader::_boardMappings = std::unordered_map<
 	{ "NTD-03", 290 },
 	{ "NovelDiamond9999999in1", 201 },
 	{ "OneBus", UnifBoards::UnknownBoard },
-	{ "PEC-586", UnifBoards::UnknownBoard },
+	{ "PEC-586", 257 },
 	{ "PUZZLE", UnifBoards::UnlPuzzle }, //Doesn't actually exist as a UNIF file (used to reassign a new mapper number to the Puzzle beta)
 	{ "RESET-TXROM", 313 },
 	{ "RET-CUFROM", 29 },

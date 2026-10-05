@@ -6,6 +6,7 @@
 #include "NES/NesControlManager.h"
 #include "NES/NesMemoryManager.h"
 #include "NES/Input/Sb2kKeyboard.h"
+#include "NES/Input/PecKeyMatrix.h"
 #include "NES/Input/Sb2kMouse.h"
 #include "NES/Mappers/Bung/DrPcJrGameChips.h"
 #include "NES/Mappers/Bbk/BbkLpcAudio.h"
@@ -63,7 +64,7 @@
 //and $0000-$1FFF sees eight contiguous KB from there; the BIOS uses that only with the
 //picture off, to copy text rows around.
 //
-//Keyboard: a PEC-586 style 13x8 matrix on $4016/$4017 - $4016 = 5 resets the row counter,
+//Keyboard: the PEC-586 13x8 matrix (PecKeyMatrix) on $4016/$4017 - $4016 = 5 resets the row counter,
 //2 rewinds the column, 7 steps to the next row, and each $4017 read returns the next key in
 //bit 1 (and 4). The BIOS can also take an IRQ-driven serial keyboard at $50C0, but falls back
 //to scanning the matrix whenever that one has sent nothing.
@@ -362,59 +363,14 @@ private:
 		return CpuChrAddress(addr);
 	}
 
-	//PEC-586 matrix, as the reference emulator lays it out: [row][column]
-	uint8_t MatrixKey(uint8_t row, uint8_t column)
-	{
-		using K = Sb2kKeyboard::Buttons;
-		static constexpr uint8_t matrix[13][8] = {
-			{ K::Shift, K::Tab, K::Grave, K::Ctrl, K::CapsLock, K::Alt, K::Space, K::Esc },
-			{ K::F3, K::F1, K::F2, K::F8, K::F4, K::F5, K::F7, K::F6 },
-			{ K::Z, K::Q, K::Num1, K::Enter, K::A, K::NumpadDot, K::Numpad0, K::NumpadPlus },
-			{ K::X, K::W, K::Num2, K::Numpad9, K::S, K::Numpad6, K::Numpad3, K::NumpadMultiply },
-			{ K::C, K::E, K::Num3, K::Numpad8, K::D, K::Numpad5, K::Numpad2, K::NumpadDivide },
-			{ K::V, K::R, K::Num4, K::Numpad7, K::F, K::Numpad4, K::Numpad1, K::NumLock },
-			{ K::B, K::T, K::Num5, K::RightBracket, K::G, K::NumpadEnter, K::Backslash, K::Backspace },
-			{ K::Comma, K::I, K::Num8, K::O, K::K, K::L, K::Dot, K::Num9 },
-			{ K::M, K::U, K::Num7, K::P, K::J, K::SemiColon, K::Slash, K::Num0 },
-			{ K::N, K::Y, K::Num6, K::LeftBracket, K::H, K::Apostrophe, K::Equal, K::Minus },
-			{ K::None, K::None, K::F9, K::NumpadMinus, K::None, K::F10, K::F11, K::F12 },
-			{ K::Delete, K::End, K::Ins, K::Left, K::PageDown, K::Down, K::Right, K::Up },
-			{ K::None, K::None, K::None, K::None, K::None, K::PageUp, K::Home, K::Pause },
-		};
-		return matrix[row][column];
-	}
-
 	uint8_t ReadKeyMatrix()
 	{
-		uint8_t column = _kbdColumn++;
-		if(_kbdRow > 12 || column > 7) {
-			return 0;
-		}
-
-		uint8_t key = MatrixKey(_kbdRow, column);
-		if(key == Sb2kKeyboard::None) {
-			return 0;
-		}
-
-		shared_ptr<Sb2kKeyboard> kbd = NesControls()->GetControlDevice<Sb2kKeyboard>();
-		bool pressed = kbd && (kbd->IsPressed(key) ||
-			(key == Sb2kKeyboard::Shift && kbd->IsPressed(Sb2kKeyboard::RightShift)) ||
-			(key == Sb2kKeyboard::Ctrl && kbd->IsPressed(Sb2kKeyboard::RightCtrl)) ||
-			(key == Sb2kKeyboard::Alt && kbd->IsPressed(Sb2kKeyboard::RightAlt)));
-		return pressed ? 0x12 : 0;
+		return PecKeyMatrix::Read(NesControls()->GetControlDevice<Sb2kKeyboard>().get(), _kbdRow, _kbdColumn);
 	}
 
 	void WriteKeyMatrix(uint8_t value)
 	{
-		switch(value & 0x07) {
-			case 0x00: case 0x01: case 0x05: _kbdRow = 0; break;
-			case 0x02: case 0x03: _kbdColumn = 0; break;
-			case 0x06: case 0x07:
-				if(++_kbdRow > 12) {
-					_kbdRow = 0;
-				}
-				break;
-		}
+		PecKeyMatrix::Write(value, _kbdRow, _kbdColumn);
 	}
 
 protected:

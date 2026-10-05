@@ -82,6 +82,7 @@ protected:
 	bool _vramWriteGlitchEnabled = true; //A $2007 write during rendering smears the bus address' LSB into VRAM (2C02; unconfirmed, and some famiclone PPUs simply drop the write)
 	bool _vramAddrRealignEnabled = false; //A $2007 access re-aligns the $2006 write latch on some famiclone PPUs (see EnablePpuVramAddrRealign)
 	uint8_t _splitBgFetchMode = 0; //YuXing video chip split screen: 0 = 2C02 fetch, 1 = 2-screen (1bpp), 2 = 4-band (see YuxingMapper)
+	bool _spriteColorShift = false; //Sprites colored two entries further into the palette, as in the YuXing 2-screen split (see SetSpriteColorShift)
 	//160
 	NesSpriteInfo* _lastSprite = nullptr; //used by HD ppu
 	NesConsole* _console = nullptr;
@@ -147,6 +148,10 @@ public:
 	//byte, and sprites are colored two entries further into the palette. In 4-band mode
 	//the fetch is ordinary but the mapper rebanks video RAM per band.
 	void SetSplitBgFetch(uint8_t mode) { _splitBgFetchMode = mode; }
+
+	//Sprites colored two entries further into the palette without the split's fetch changes:
+	//the Dongda PEC-586 family's bitmap mode, whose background is 1bpp the same way.
+	void SetSpriteColorShift(bool enabled) { _spriteColorShift = enabled; }
 
 	//Whether $2001 has the display turned on. Mappers whose per-scanline logic is gated on
 	//it (see YuxingMapper's MMC3 clone) need this without the cost of a full GetState().

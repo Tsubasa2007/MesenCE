@@ -30,6 +30,7 @@
 #include "NES/Mappers/Bbk/Bbk928Mapper.h"
 #include "NES/Mappers/Subor/SuborWindows2002.h"
 #include "NES/Mappers/LingTong/LingTongMapper.h"
+#include "NES/Mappers/Unlicensed/DongdaPec586.h"
 #include "NES/Mappers/Bung/DrPcJrMapper.h"
 #include "NES/Mappers/Bbk/Yuyin2Mapper.h"
 #include "NES/Mappers/Yuxing/YuxingMapper.h"
@@ -1193,6 +1194,10 @@ void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem syst
 			//A key matrix scanned over $4016/$4017, but in its own layout - LingTongMapper reads
 			//the matrix, and this device only says which keys are down. Both pads stay plugged in.
 			log("[Input] LingTong keyboard connected");
+			expDevice = ControllerType::Sb2kKeyboard;
+		} else if(dynamic_cast<DongdaPec586*>(mapper)) {
+			//The same key matrix as the LingTong machines, read by DongdaPec586
+			log("[Input] PEC-586 keyboard connected");
 			expDevice = ControllerType::Sb2kKeyboard;
 		} else if(dynamic_cast<SuborWindows2002*>(mapper)) {
 			//The mouse takes the first port so it answers $4016 and leaves $4017 to the keyboard,

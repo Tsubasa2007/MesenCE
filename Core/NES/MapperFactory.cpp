@@ -200,6 +200,7 @@
 #include "NES/Mappers/Unlicensed/ColorDreams46.h"
 #include "NES/Mappers/Unlicensed/Dance2000.h"
 #include "NES/Mappers/Unlicensed/DaouInfosys.h"
+#include "NES/Mappers/Unlicensed/DongdaPec586.h"
 #include "NES/Mappers/Unlicensed/DreamTech01.h"
 #include "NES/Mappers/Unlicensed/Edu2000.h"
 #include "NES/Mappers/Unlicensed/Eh8813A.h"
@@ -598,7 +599,10 @@ BaseMapper* MapperFactory::GetMapperFromID(RomData& romData)
 		case 255: return new Bmc255();
 
 		case 256: break; //ONEBUS
-		case 257: break; //PEC-586
+		case 257:
+			//Asking for the input type here is what gets the keyboard auto-configured
+			romData.Info.InputType = GameInputType::SuborKeyboardMouse1;
+			return new DongdaPec586();
 		case 258: return new Unl158B();
 		case 259: return new MMC3_BmcF15();
 		case 260: return new BmcHpxx();

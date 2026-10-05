@@ -925,6 +925,9 @@
     <ClInclude Include="NES\Input\Sb2kKeyboard.h">
       <Filter>NES\Input</Filter>
     </ClInclude>
+    <ClInclude Include="NES\Input\PecKeyMatrix.h">
+      <Filter>NES\Input</Filter>
+    </ClInclude>
     <ClInclude Include="NES\Input\SuborMouse.h">
       <Filter>NES\Input</Filter>
     </ClInclude>
@@ -2353,6 +2356,9 @@
       <Filter>NES\Mappers\Unlicensed</Filter>
     </ClInclude>
     <ClInclude Include="NES\Mappers\Unlicensed\Henggedianzi179.h">
+      <Filter>NES\Mappers\Unlicensed</Filter>
+    </ClInclude>
+    <ClInclude Include="NES\Mappers\Unlicensed\DongdaPec586.h">
       <Filter>NES\Mappers\Unlicensed</Filter>
     </ClInclude>
     <ClInclude Include="NES\Mappers\Unlicensed\MagicKidGooGoo.h">

@@ -238,6 +238,7 @@
     <ClInclude Include="NES\Mappers\Unlicensed\Gs2013.h" />
     <ClInclude Include="NES\Mappers\Unlicensed\Henggedianzi177.h" />
     <ClInclude Include="NES\Mappers\Unlicensed\Henggedianzi179.h" />
+    <ClInclude Include="NES\Mappers\Unlicensed\DongdaPec586.h" />
     <ClInclude Include="NES\Mappers\Unlicensed\Hp898f.h" />
     <ClInclude Include="NES\Mappers\Unlicensed\MagicKidGooGoo.h" />
     <ClInclude Include="NES\Mappers\Unlicensed\Malee.h" />
@@ -524,6 +525,7 @@
     <ClInclude Include="NES\Input\SuborMouse24.h" />
     <ClInclude Include="NES\Input\Sb2kMouse.h" />
     <ClInclude Include="NES\Input\Sb2kKeyboard.h" />
+    <ClInclude Include="NES\Input\PecKeyMatrix.h" />
     <ClInclude Include="NES\Input\SuborMouse.h" />
     <ClInclude Include="NES\Input\TwoPlayerAdapter.h" />
     <ClInclude Include="NES\Input\VirtualBoyController.h" />

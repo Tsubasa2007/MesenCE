@@ -784,7 +784,7 @@ template<class T> void NesPpu<T>::LoadSprite(uint8_t spriteY, uint8_t tileIndex,
 	NesSpriteInfo& info = _spriteTiles[_spriteIndex];
 	info.BackgroundPriority = backgroundPriority;
 	//The YuXing split mode shifts sprites two entries further into the sprite palette
-	info.PaletteOffset = (((attributes & 0x03) << 2) | 0x10) + (_splitBgFetchMode == 1 ? 2 : 0);
+	info.PaletteOffset = (((attributes & 0x03) << 2) | 0x10) + (_splitBgFetchMode == 1 || _spriteColorShift ? 2 : 0);
 	if(extraSprite) {
 		//Use DebugReadVram for extra sprites to prevent side-effects.
 		info.LowByte = _mapper->DebugReadVram(tileAddr);
@@ -955,7 +955,8 @@ template<class T> uint8_t NesPpu<T>::GetPixelColor()
 
 				if(_emulatorSpritesEnabled && (backgroundColor == 0 || !_spriteTiles[spriteIndex].BackgroundPriority)) {
 					//Check sprite priority
-					return _spriteTiles[spriteIndex].PaletteOffset + spriteColor;
+					//Masked so a shifted palette 3 wraps within the sprite palettes instead of reading past palette RAM
+					return 0x10 | ((_spriteTiles[spriteIndex].PaletteOffset + spriteColor) & 0x0F);
 				}
 			}
 		}
