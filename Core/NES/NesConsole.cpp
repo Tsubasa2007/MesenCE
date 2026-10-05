@@ -555,7 +555,12 @@ bool NesConsole::WantsDiscVideoOnScreen()
 		return false;
 	}
 	DrPcJrMapper* pcjr = dynamic_cast<DrPcJrMapper*>(_mapper.get());
-	return !pcjr || !pcjr->IsOwnScreenOverVideo();
+	if(pcjr && pcjr->IsOwnScreenOverVideo()) {
+		return false;
+	}
+	//A YuXing program that took the screen back over a piece it wants heard
+	YuxingMapper* yuxing = dynamic_cast<YuxingMapper*>(_mapper.get());
+	return !yuxing || yuxing->IsPlayerShowing();
 }
 
 //What the screen shows. It can go to the machine's screen at once, since the video's filter
@@ -715,7 +720,11 @@ void NesConsole::ClockDiscVideo()
 	//A picture off a disc belongs to the drive it came out of. Nothing here ends of its own
 	//accord once it is being held, so when the disc leaves - or the machine does - the picture
 	//has to be taken down rather than left standing over whatever the machine went on to show.
-	if(yuxing && _discVideo && _discVideo->IsPlaying() && !yuxing->IsPlayerShowing()) {
+	//Unless what is playing is only being heard now, the program having drawn its own screen
+	//over it - that plays out its length, and a held picture with its stream run out has
+	//nothing left to say.
+	if(yuxing && _discVideo && _discVideo->IsPlaying() && !yuxing->IsPlayerShowing() &&
+		(!yuxing->IsPlayerSounding() || _discVideo->IsHolding())) {
 		_discVideo->Stop();
 		EndVideoPlayback(false);
 		_emu->GetVideoDecoder()->ForceFilterUpdate();

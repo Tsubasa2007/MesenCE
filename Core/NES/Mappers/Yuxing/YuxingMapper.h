@@ -1235,6 +1235,16 @@ protected:
 		if(IsHuatongBanded()) {
 			return;
 		}
+		//Only on the lines the PPU draws, and on the pre-render line that sets up the first.
+		//In vblank the address is software's, uploading tiles through $2007 with the display
+		//still on: latching a band from it mapped a band's bank for the rest of the line, and
+		//the one byte written meanwhile went into that bank instead of the one the upload was
+		//for. A bitmap screen collected a stray line of pixels at each - short dashes that
+		//stayed where its windows and icons were drawn.
+		int32_t scanline = _console->GetPpu()->GetCurrentScanline();
+		if(scanline < -1 || scanline >= 240) {
+			return;
+		}
 		uint8_t band = (uint8_t)((_console->GetPpu()->GetVideoRamAddr() >> 8) & 0x03);
 		if(band != _lastSplitBand) {
 			_lastSplitBand = band;
@@ -1852,6 +1862,9 @@ public:
 	//up until something takes it down, and a still stays up indefinitely, so leaving the
 	//player - by ejecting, or by any other way out of that mode - has to be able to say so.
 	bool IsPlayerShowing() { return (_vcdMode || _driveLink) && _vcd.HasDisc() && _vcd.IsPictureShown(); }
+
+	//Whether the drive's sound plays on under the program's own screen - see YuxingVcdDrive::_soundKept
+	bool IsPlayerSounding() { return (_vcdMode || _driveLink) && _vcd.HasDisc() && _vcd.IsSoundKept(); }
 
 	//Where the disc's program has asked for its pointer - see YuxingVcdDrive::GetPointer
 	bool GetDiscPointer(double& x, double& y) { return _vcd.GetPointer(x, y); }

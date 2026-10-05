@@ -127,6 +127,12 @@ private:
 	//behind it draws a full screen of its own, 960 cells of it, over and over, and everything
 	//the person does reaches a program they cannot see.
 	bool _pictureShown = false;
+	//Whether the sound of what was last asked for plays on after the program took the screen
+	//back. A game's background music is asked for this way: the program puts its music
+	//item up with both channels, then says $AA and draws the game over it - and sends the
+	//drive nothing more until it is left. Taking the sound down with the picture made the
+	//music a second long. It runs for as long as the item does - see IsSoundKept.
+	bool _soundKept = false;
 	//Whether what is up is the picture of the menu entry a game was picked from, shown while
 	//the game is read in. A game never asks the drive for anything, so nothing it does will
 	//replace that picture: it comes down when the last of the program has been handed over,
@@ -306,7 +312,8 @@ private:
 				//frame - and then says this, which is the moment the two swap over.
 				if(_pictureShown) {
 					_pictureShown = false;
-					MessageManager::Log("[YuXing] Program took the screen back");
+					_soundKept = GetAudioChannels() != 0 && IsBusy();
+					MessageManager::Log(_soundKept ? "[YuXing] Program took the screen back, its sound plays on" : "[YuXing] Program took the screen back");
 				}
 				break;
 
@@ -385,6 +392,7 @@ private:
 				//and the program it starts draws everything itself and never says $AA, so the
 				//picture named is not one to stand over it.
 				if(_cmd[1] & 0x04) {
+					_soundKept = false;
 					if(_pictureShown) {
 						_pictureShown = false;
 						MessageManager::Log("[YuXing] Program handed the screen with its start");
@@ -538,6 +546,7 @@ private:
 	{
 		_audioChannels = channels;
 		_silentShow = false;
+		_soundKept = false;
 		//Whatever the program asks for is its own picture, not the one put up while it loaded
 		_loadingPicture = false;
 
@@ -573,10 +582,14 @@ private:
 			//from its first frames left the drive busy for that half hour: every page turned
 			//after it was taken for a page turned over something still running, and ignored.
 			//The screen stopped on that page and stayed there.
-			if(channels != 0) {
-				_busySeconds = discSeconds;
-				_busyUntilEnd = false;
-			}
+			//
+			//Nor does it leave the drive busy with what it replaced. The new item takes over the
+			//stream, so whatever was playing has stopped, and its time stops with it: kept, a
+			//three-minute song started from the desktop's CD player went on counting after the
+			//player was closed, and the desktop, which waits for the drive to finish before it
+			//loads a program, sat on its loading box until the song would have ended.
+			_busySeconds = channels != 0 ? discSeconds : 0;
+			_busyUntilEnd = false;
 			_pictureShown = true;
 			MessageManager::Log("[YuXing] Program asked for segment item " + std::to_string(item) +
 				" (number " + std::to_string(number) + ", sector " + std::to_string(lba) + ")");
@@ -662,6 +675,7 @@ public:
 		_busySeconds = 0;
 		_busyUntilEnd = false;
 		_pictureShown = false;
+		_soundKept = false;
 		_loadingPicture = false;
 		_secondsSinceRead = 0;
 		_readStarted = false;
@@ -907,6 +921,7 @@ public:
 
 	void EndPlayback(bool)
 	{
+		_soundKept = false;
 		_busySeconds = 0;
 		_busyUntilEnd = false;
 	}
@@ -916,6 +931,9 @@ public:
 
 	//Whether the screen is the drive's - see _pictureShown
 	bool IsPictureShown() { return _pictureShown; }
+
+	//Whether what is playing is still to be heard with the screen the program's - see _soundKept
+	bool IsSoundKept() { return _soundKept && !_pictureShown && IsBusy(); }
 
 	//Time passing, in seconds, for whatever is still running
 	void TickPlayback(double seconds)
@@ -1612,6 +1630,7 @@ public:
 									_disc.clear();
 									_programIndex = -1;
 									_pictureShown = false;
+									_soundKept = false;
 									_busySeconds = 0;
 									_busyUntilEnd = false;
 									_menu.Restart();
@@ -1675,7 +1694,7 @@ public:
 	void Serialize(Serializer& s)
 	{
 		SVArray(_cmd, 20); SVArray(_baseSector, 3); SVArray(_statusByCmd, 0x100);
-		SV(_cmdSel); SV(_keyByteIndex); SV(_shiftIn); SV(_status); SV(_cmdIndex); SV(_audioChannels); SV(_silentShow); SV(_busySeconds); SV(_busyUntilEnd); SV(_pictureShown);
+		SV(_cmdSel); SV(_keyByteIndex); SV(_shiftIn); SV(_status); SV(_cmdIndex); SV(_audioChannels); SV(_silentShow); SV(_busySeconds); SV(_busyUntilEnd); SV(_pictureShown); SV(_soundKept);
 		SV(_pos); SV(_basePos); SV(_seekPos);
 		SV(_keySend); SV(_keySendBit); SV(_keySelect);
 		SV(_followUp); SV(_hasFollowUp); SV(_shiftCount);
