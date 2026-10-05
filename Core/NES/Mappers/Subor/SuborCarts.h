@@ -42,7 +42,8 @@ public:
 	//The cartridges whose BIOS scans 13 rows: they read row 9's extended-keyboard bit and then rows
 	//10-12. V1.0, V1.1, V3 and V8.0 stop at row 8, and V15.0 / V15.0 V2 (and the card's host) step to row 9
 	//but take anything there for a key: they skip their splash screen and see a held key unless
-	//row 9 is the reduced keyboard's empty gap.
+	//row 9 is the reduced keyboard's empty gap. V12.0 scans 12 rows, and its key table gives row 9's
+	//extended-keyboard bit no key, so it wants that bit there too.
 	static bool HasExtendedKeyboard(uint32_t prgCrc)
 	{
 		switch(prgCrc) {
@@ -57,6 +58,7 @@ public:
 			case 0xE475D89A: //V9.0
 			case 0x900D9E00: //V9.1
 			case 0x12D61CE8: //V11
+			case 0x9EA48F04: //V12.0
 			case 0x5F693117: //V13.0
 			case 0xF18BC238: //V14.0
 				return true;
@@ -108,6 +110,7 @@ public:
 			case 0xE475D89A: //V9.0 (mapper 241)
 			case 0x900D9E00: //V9.1 (mapper 241)
 			case 0x12D61CE8: //V11 (mapper 518)
+			case 0x9EA48F04: //V12.0, Windows 2000 (mapper 241)
 			case 0x5F693117: //V13.0 (mapper 518)
 			case 0xF18BC238: //V14.0, 视窗系统2000 (mapper 178)
 			case 0x6058DB1C: //V15.0, Windows 2002 (mapper 177)
