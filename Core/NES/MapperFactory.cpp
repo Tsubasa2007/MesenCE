@@ -58,6 +58,7 @@
 #include "NES/Mappers/Yuxing/YuxingV40.h"
 #include "NES/Mappers/Subor/Subor168.h"
 #include "NES/Mappers/Subor/Subor560.h"
+#include "NES/Mappers/Subor/SuborLogo.h"
 #include "NES/Mappers/Subor/SuborCarts.h"
 #include "NES/Mappers/Subor/SuborWindows2002.h"
 #include "NES/Mappers/LingTong/LingTongMapper.h"
@@ -292,7 +293,13 @@ BaseMapper* MapperFactory::GetMapperFromID(RomData& romData)
 {
 	// clang-format off
 	switch(romData.Info.MapperID) {
-		case 0: return new NROM();
+		case 0:
+			//The Subor LOGO cartridge's header says NROM; its CHR RAM is 32KB and banked
+			if(romData.Info.Hash.PrgCrc32 == SuborLogo::PrgCrc) {
+				romData.ChrRamSize = 0x8000;
+				return new SuborLogo();
+			}
+			return new NROM();
 		case 1: return new MMC1();
 		case 2: return new UNROM();
 		case 3: return new CNROM();

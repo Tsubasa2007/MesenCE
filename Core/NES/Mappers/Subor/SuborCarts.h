@@ -97,6 +97,7 @@ public:
 	{
 		switch(prgCrc) {
 			case 0xC07ADC88: //V1.0 (Subor560)
+			case 0x366C20D7: //LOGO V1.0 (SuborLogo)
 			case 0xE4460DF2: //V1.1 (mapper 241)
 			case 0x0930349E: //V3 (mapper 241)
 			case 0x41401C6D: //V4 (mapper 167)
