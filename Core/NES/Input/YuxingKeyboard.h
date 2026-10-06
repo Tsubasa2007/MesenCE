@@ -21,6 +21,9 @@ private:
 	//slots to, so it is read straight from the host instead of being remappable. It sits
 	//in an isolated matrix cell (row 10, column 7) and no software is known to use it.
 	uint16_t _scrollLockKey = 0;
+	uint16_t _rightShiftKey = 0;
+	uint16_t _rightCtrlKey = 0;
+	uint16_t _rightAltKey = 0;
 
 protected:
 
@@ -197,6 +200,12 @@ protected:
 		if(_scrollLockKey && KeyManager::IsKeyPressed(_scrollLockKey)) {
 			SetPressedState((uint8_t)Buttons::ScrollLock, true);
 		}
+
+		//The matrix has one Shift/Ctrl/Alt cell each, so the right-hand keys are the same keys as
+		//the left-hand ones the default mapping binds - as on the Subor keyboard. Only ever OR them on.
+		if(_rightShiftKey && KeyManager::IsKeyPressed(_rightShiftKey)) { SetPressedState((uint8_t)Buttons::Shift, true); }
+		if(_rightCtrlKey && KeyManager::IsKeyPressed(_rightCtrlKey)) { SetPressedState((uint8_t)Buttons::Ctrl, true); }
+		if(_rightAltKey && KeyManager::IsKeyPressed(_rightAltKey)) { SetPressedState((uint8_t)Buttons::Alt, true); }
 	}
 
 	void Serialize(Serializer& s) override
@@ -208,6 +217,9 @@ public:
 	YuxingKeyboard(Emulator* emu, KeyMappingSet keyMappings) : BaseControlDevice(emu, ControllerType::YuxingKeyboard, BaseControlDevice::ExpDevicePort, keyMappings)
 	{
 		_scrollLockKey = KeyManager::GetKeyCode("Scroll Lock");
+		_rightShiftKey = KeyManager::GetKeyCode("Right Shift");
+		_rightCtrlKey = KeyManager::GetKeyCode("Right Ctrl");
+		_rightAltKey = KeyManager::GetKeyCode("Right Alt");
 	}
 
 	//The matrix is wired to the mapper, not to the controller port - see GetColumns()
