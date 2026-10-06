@@ -1042,11 +1042,15 @@ protected:
 				UpdatePrgMapping();
 				return;
 			}
-			//HT-DOS pages its buffers in at $6000 through $5508 and $550A, so this board
-			//decodes $5500 without the address' low byte beyond bit 0
-			if((addr & 0xFF01) == 0x5500) {
-				addr = 0x5500;
-			}
+		}
+
+		//$5500 is decoded without the address' low byte beyond bit 0. HT-DOS pages its buffers
+		//in at $6000 through $5508 and $550A, and so does the YuXing BIOS: its WPS selects $6000
+		//page 3 through $550A before it calls the disk routine, which saves the stack pointer
+		//before switching to page 3 itself and reads it back after - on the exact address alone
+		//the two land on different pages and the routine returns into nowhere.
+		if((addr & 0xFF01) == 0x5500) {
+			addr = 0x5500;
 		}
 
 		if(_type != YuxingType::Huatong && YuxingModem::IsModemAddress(addr)) {
