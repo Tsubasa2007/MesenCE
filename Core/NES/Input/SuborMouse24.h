@@ -45,6 +45,7 @@ private:
 	int32_t _yMovement = 0;
 	uint8_t _padBits = 0;
 	uint8_t _padPos = 8;
+	uint32_t _turboSpeed = 0;
 
 protected:
 	bool HasCoordinates() override { return true; }
@@ -82,6 +83,8 @@ protected:
 
 	void InternalSetStateFromInput() override
 	{
+		bool turboOn = IsTurboOn(_turboSpeed);
+
 		for(KeyMapping& keyMapping : _keyMappings) {
 			SetPressedState(Buttons::Left, KeyManager::IsKeyPressed(keyMapping.CustomKeys[0]));
 			SetPressedState(Buttons::Right, KeyManager::IsKeyPressed(keyMapping.CustomKeys[1]));
@@ -93,6 +96,11 @@ protected:
 			SetPressedState(Buttons::PadDown, KeyManager::IsKeyPressed(keyMapping.Down));
 			SetPressedState(Buttons::PadLeft, KeyManager::IsKeyPressed(keyMapping.Left));
 			SetPressedState(Buttons::PadRight, KeyManager::IsKeyPressed(keyMapping.Right));
+
+			if(turboOn) {
+				SetPressedState(Buttons::PadA, KeyManager::IsKeyPressed(keyMapping.TurboA));
+				SetPressedState(Buttons::PadB, KeyManager::IsKeyPressed(keyMapping.TurboB));
+			}
 		}
 		SetMovement(KeyManager::GetMouseMovement(_emu, _emu->GetSettings()->GetInputConfig().MouseSensitivity));
 	}
@@ -116,6 +124,7 @@ protected:
 public:
 	SuborMouse24(Emulator* emu, uint8_t port, KeyMappingSet keyMappings) : BaseControlDevice(emu, ControllerType::SuborMouse24, port, keyMappings)
 	{
+		_turboSpeed = keyMappings.TurboSpeed;
 	}
 
 	uint8_t PadButtons()
