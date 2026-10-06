@@ -203,6 +203,12 @@ public:
 				//when that mouse is there - holding the line high reads as a clock held low, and
 				//the mouse can never answer.
 				uint8_t idle = (_extended || _mouseOnBit0) ? 0xE0 : 0xE1;
+				//Every write of the scan has bit 2 set. A game reading a pad strobes with $01/$00,
+				//which switches the matrix off, and its lines must then read 0: bits 0 and 1 are the
+				//second pad's lines, and held high they read as every button pressed at once.
+				if(!_enabled) {
+					return 0xE0;
+				}
 				if(_scan == 0) {
 					return idle | 0x1E;
 				}
@@ -223,6 +229,8 @@ public:
 		StrobeProcessWrite(value);
 
 		if(_reduced) {
+			_enabled = (value & 0x04) != 0;
+
 			//The reduced keyboard's counter, ported from the VirtuaNES-BBK fork: $05 restarts it,
 			//$04 steps it and flips halves, $06 flips halves only. It wraps at nine, one row
 			//short of the matrix, so the extended-keyboard row is never reached - unless the
