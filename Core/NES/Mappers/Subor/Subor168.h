@@ -6,7 +6,7 @@
 #include "NES/Mappers/Bbk/BbkLpcAudio.h"
 #include "Utilities/Serializer.h"
 
-//Subor V7.0 / V7.1 (小霸王) learning cartridges. Their headers say mapper 168, which in iNES terms
+//Subor V7.0 / V7.1 (小霸王) learning cartridges, and the V7.1 with a 1MB add-on above it. Their headers say mapper 168, which in iNES terms
 //is the Racermate board; this one is the Subor board the reference emulator also numbers 168, so
 //it is picked out by PRG CRC32. Ported from the reference emulator's Mapper168.
 //
@@ -143,6 +143,6 @@ protected:
 public:
 	static bool IsSubor168(uint32_t prgCrc)
 	{
-		return prgCrc == 0x04260DBC || prgCrc == 0x79C85E71;
+		return prgCrc == 0x04260DBC || prgCrc == 0x79C85E71 || prgCrc == 0xD3113B3F;
 	}
 };

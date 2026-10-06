@@ -55,6 +55,7 @@ public:
 			case 0x6F84076D: //V6+
 			case 0x04260DBC: //V7.0
 			case 0x79C85E71: //V7.1
+			case 0xD3113B3F: //V7.1 with an add-on
 			case 0xE475D89A: //V9.0
 			case 0x900D9E00: //V9.1
 			case 0x12D61CE8: //V11
@@ -106,6 +107,7 @@ public:
 			case 0x6F84076D: //V6+ (mapper 178)
 			case 0x04260DBC: //V7.0 (Subor168)
 			case 0x79C85E71: //V7.1 (Subor168)
+			case 0xD3113B3F: //V7.1 with a 1MB add-on (Subor168)
 			case 0xF58761D0: //V8.0 (mapper 177)
 			case 0xE475D89A: //V9.0 (mapper 241)
 			case 0x900D9E00: //V9.1 (mapper 241)
