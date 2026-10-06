@@ -110,7 +110,7 @@ private:
 		{ 0x45, 0 }, { 0x46, 0 }, { 0x47, 0 }, { 0x48, 0 }, { 0x4D, 0 }, { 0x4F, 0 },
 		{ 0x50, 0 }, { 0x54, 0 }, { 0x67, 0 },
 		//One parameter
-		{ 0x19, 1 }, { 0x21, 1 }, { 0x2D, 1 }, { 0x41, 1 }, { 0x49, 1 }, { 0x52, 1 },
+		{ 0x19, 1 }, { 0x21, 1 }, { 0x2D, 1 }, { 0x49, 1 }, { 0x52, 1 },
 		{ 0x51, 1 }, { 0x53, 1 }, { 0x55, 1 }, { 0x57, 1 }, { 0x61, 1 }, { 0x68, 1 },
 		{ 0x6A, 1 }, { 0x6B, 1 }, { 0x6C, 1 }, { 0x70, 1 }, { 0x72, 1 }, { 0x73, 1 },
 		{ 0x74, 1 }, { 0x77, 1 }, { 0x78, 1 },
@@ -451,6 +451,11 @@ private:
 				_lineSpaceUnits = _params[0] * LineFeedUnit();
 				break;
 
+			case 0x41:
+				//ESC A n - line spacing of n/72 (9-pin) or n/60 (24-pin) inch
+				_lineSpaceUnits = _params[0] * (_mode24p ? UnitsPerInch / 60 : UnitsPerInch / 72);
+				break;
+
 			case 0x43:
 				//ESC C n - page length in lines, or ESC C 0 n - page length in inches.
 				//The page size is fixed here; only the parameter count matters.
@@ -562,6 +567,9 @@ public:
 			case DataState::Idle:
 				switch(value) {
 					case 0x0A: //LF
+						//ESC/P's line feed also returns the head to the left margin, so a
+						//driver can print band after band with no CR between them
+						_xUnits = 0;
 						AdvanceY(_lineSpaceUnits);
 						break;
 
@@ -620,7 +628,7 @@ public:
 						_state = DataState::Idle;
 						break;
 
-					case 0x33: case 0x4A: case 0x4E:
+					case 0x33: case 0x41: case 0x4A: case 0x4E:
 						_paramCount = 1;
 						_state = DataState::Param;
 						break;
