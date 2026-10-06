@@ -17,7 +17,10 @@
 //   data, $0F = end of speech. The add-on cards' programs wait on it before they read a key.
 // - a parallel printer driven the way the BBK voice models drive theirs: a byte written to
 //   $480F, after waiting for bit 0 of $4016 - the printer's ready line, and also the port 1
-//   controller's data line, so which of the two is attached is the printer setting.
+//   controller's data line. With the printer attached the line reads ready, except for the
+//   8 reads after a strobe, which carry the pad's buttons: the print routine polls without
+//   strobing and retries for a long time, while the games SB DOS runs off a disk strobe and
+//   read the pad there.
 // - on the V5, a floppy drive for SB DOS: a PC-style uPD765 with the digital output register
 //   written at $5501, the data register written at $5505 and read at $5605, the main status
 //   read at $5604, and its interrupt on the CPU's IRQ line. Disks are 1.44MB PC images.
@@ -118,6 +121,8 @@ private:
 	bool _isSuborCart = false;
 	bool _printerAlways = false;
 	bool _printerNamed = false;
+	//Reads of $4016 since the last strobe that still belong to the pad
+	uint8_t _padReads = 0;
 	BbkPrinter _printer;
 	unique_ptr<BbkLpcAudio> _lpcAudio;
 
@@ -162,6 +167,7 @@ protected:
 		BaseMapper::GetMemoryRanges(ranges);
 		if(_isSuborCart) {
 			ranges.AddHandler(MemoryOperation::Read, 0x4016);
+			ranges.AddHandler(MemoryOperation::Write, 0x4016);
 			ranges.SetAllowOverride();
 		}
 	}
@@ -187,7 +193,8 @@ protected:
 		}
 		if(_isSuborCart) {
 			AddRegisterRange(0x480F, 0x480F, MemoryOperation::Write);
-			AddRegisterRange(0x4016, 0x4016, MemoryOperation::Read);
+			AddRegisterRange(0x4016, 0x4016, MemoryOperation::Any);
+			_padReads = 0;
 			AddRegisterRange(0x5300, 0x53FF, MemoryOperation::Read);
 			_printerNamed = false;
 			_printer.Reset();
@@ -206,6 +213,7 @@ protected:
 		if(_isSuborCart) {
 			SV(_printer);
 			SV(_lpcAudio);
+			SV(_padReads);
 		}
 		if(_hasFloppy) {
 			SV(_fdc);
@@ -273,11 +281,19 @@ protected:
 	uint8_t ReadRegister(uint16_t addr) override
 	{
 		if(addr == 0x4016) {
-			//With the printer on the line it reads ready; with a pad on it, the pad's data - which
-			//the print routine takes for "not ready" and reports as a printer error
+			//With the printer on the line it reads ready, apart from the pad's 8 bits after a strobe;
+			//with only a pad on it, the pad's data - which the print routine takes for "not ready"
+			//and reports as a printer error
 			uint8_t value = ((NesControlManager*)_console->GetControlManager())->ReadRam(addr);
 			bool printer = _printerAlways || _console->GetNesConfig().Yuyin2Printer;
-			return printer ? ((value & 0xFE) | 0x01) : value;
+			if(!printer) {
+				return value;
+			}
+			if(_padReads > 0) {
+				_padReads--;
+				return value;
+			}
+			return (value & 0xFE) | 0x01;
 		}
 		if(_isSuborCart && (addr & 0xFF00) == 0x5300) {
 			return (_lpcAudio->IsBusy() ? 0x00 : 0x80) | (_lpcAudio->IsSpeechEnd() ? 0x0F : 0x00);
@@ -297,6 +313,13 @@ protected:
 
 	void WriteRegister(uint16_t addr, uint8_t value) override
 	{
+		if(addr == 0x4016) {
+			if(value & 0x01) {
+				_padReads = 8;
+			}
+			((NesControlManager*)_console->GetControlManager())->WriteRam(addr, value);
+			return;
+		}
 		if(addr == 0x480F) {
 			Printer().WriteData(value);
 			return;
