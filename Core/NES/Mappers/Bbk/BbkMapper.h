@@ -562,8 +562,27 @@ private:
 			}
 		}
 
+		//The line interrupt is a request the counter makes while it sits at its end value (it
+		//stops at 255 after tripping), and it does not outlive the picture: one still unanswered
+		//when the visible lines end is gone. A raster program that masks interrupts briefly still
+		//gets its band interrupts, but software that keeps interrupts masked across the bottom
+		//of the screen does not take the end-of-screen one tens of lines late - by then the NMI
+		//is due, and its handler restores the program's $FF01 under the line handler that is
+		//running BIOS code with the ROM paged in (the program then executes the RAM beneath,
+		//a BRK storm), or the late handler's scroll write lands in the next picture. The end-of-
+		//screen interrupt itself is raised at the end of line 239 and taken on line 240.
 		if(scanline >= 240) {
+			if(_lineIrqLatch) {
+				_lineIrqLatch = false;
+				_irqPending = false;
+				_irqApplied = false;
+			}
 			return;
+		}
+
+		//Once the counter is reloaded - by the handler, or by the split queue - the request is gone
+		if(_lineIrqLatch && _lineCount != 255) {
+			_lineIrqLatch = false;
 		}
 
 		//The counter itself free-runs while the display is off (below), but the line IRQ must
