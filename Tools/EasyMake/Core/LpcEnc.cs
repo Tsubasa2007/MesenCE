@@ -138,6 +138,10 @@ public static class LpcEnc
 		}
 	}
 
+	/// <summary>One 20 ms frame as analysed: energy index (0 = silence), pitch period in
+	/// samples (0 = unvoiced), and the reflection coefficients in the chip's sign</summary>
+	sealed record Frame(int Energy, int Period, double[] Ks);
+
 	/// <summary>10 kHz samples -> phrase bytes</summary>
 	public static byte[] EncodeSamples(List<double> s, double gain = 1.0)
 	{
@@ -145,10 +149,10 @@ public static class LpcEnc
 		var pre = new double[s.Count];
 		if(s.Count > 0) pre[0] = s[0];
 		for(int i = 1; i < s.Count; i++) pre[i] = s[i] - 0.9375 * s[i - 1];
-		var bw = new BitWriter();
 		int nframes = Math.Max(1, (s.Count + FrameLen - 1) / FrameLen);
 		var win = new double[2 * FrameLen];
 		for(int i = 0; i < win.Length; i++) win[i] = 0.54 - 0.46 * Math.Cos(2 * Math.PI * i / (2 * FrameLen - 1));
+		var frames = new List<Frame>();
 		for(int f = 0; f < nframes; f++) {
 			int a = f * FrameLen - FrameLen / 2;
 			var w = new double[2 * FrameLen];
@@ -172,22 +176,44 @@ public static class LpcEnc
 			//energy indexes came out unbiased against the originals
 			double level = rms * 1.8 * 0x7F00;
 			int e = Nearest(Lpc.Gain, level, 15);
-			if(e == 0 || r[0] <= 1e-9) { bw.Put(0, 4); continue; }
-			e = Math.Max(1, Math.Min(14, e));
+			if(e == 0 || r[0] <= 1e-9) { frames.Add(new Frame(0, 0, null)); continue; }
 			bool voiced = strength > 0.35 && period > 0;
-			int pi = voiced ? Nearest(Lpc.Pitch[1..], period * 16) + 1 : 0;
-			var ks = Levinson(r).Select(k => -k).ToArray();  // the chip's lattice uses the opposite sign
-			bw.Put(e, 4);
+			frames.Add(new Frame(Math.Max(1, Math.Min(14, e)), voiced ? period : 0,
+				Levinson(r).Select(k => -k).ToArray()));  // the chip's lattice uses the opposite sign
+		}
+		SmoothVoicing(frames);
+		var bw = new BitWriter();
+		foreach(var fr in frames) {
+			if(fr.Energy == 0) { bw.Put(0, 4); continue; }
+			int pi = fr.Period > 0 ? Nearest(Lpc.Pitch[1..], fr.Period * 16) + 1 : 0;
+			bw.Put(fr.Energy, 4);
 			bw.Put(0, 1);
 			bw.Put(pi, 7);
-			for(int i = 0; i < 4; i++) bw.Put(Nearest(Lpc.K[i], ks[i] * 32768), Lpc.KBits[i]);
-			if(pi != 0) for(int i = 4; i < 10; i++) bw.Put(Nearest(Lpc.K[i], ks[i] * 32768), Lpc.KBits[i]);
+			for(int i = 0; i < 4; i++) bw.Put(Nearest(Lpc.K[i], fr.Ks[i] * 32768), Lpc.KBits[i]);
+			if(pi != 0) for(int i = 4; i < 10; i++) bw.Put(Nearest(Lpc.K[i], fr.Ks[i] * 32768), Lpc.KBits[i]);
 		}
 		bw.Put(15, 4);
 		//The BIOS sends 'length' bytes starting with the $D6, so the stream's last byte never
 		//reaches the chip - pad so the end frame is sent
 		var stream = bw.Out.Append((byte)0).ToArray();
 		return new byte[] { (byte)(stream.Length >> 8), (byte)stream.Length, 0xD6 }.Concat(stream).ToArray();
+	}
+
+	/// <summary>A sound does not change between voiced and unvoiced for one frame and back: a lone
+	/// frame that disagrees with both neighbours is a misjudged pitch, and on the chip it is a
+	/// 20 ms burst of hiss inside a vowel (or of buzz inside a hissing sound). Such a frame takes
+	/// its neighbours' voicing - a voiced one their average pitch. Silence is left alone.</summary>
+	static void SmoothVoicing(List<Frame> frames)
+	{
+		//Left to right, each decision seeing the one before it, so a run that alternates every
+		//frame settles on its first frame's voicing instead of keeping every other flip
+		for(int i = 1; i + 1 < frames.Count; i++) {
+			Frame p = frames[i - 1], f = frames[i], n = frames[i + 1];
+			if(f.Energy == 0 || p.Energy == 0 || n.Energy == 0) continue;
+			bool pv = p.Period > 0, nv = n.Period > 0;
+			if(pv != nv || (f.Period > 0) == pv) continue;
+			frames[i] = f with { Period = pv ? (p.Period + n.Period) / 2 : 0 };
+		}
 	}
 
 	public static byte[] EncodeWav(string path, double gain = 1.0) => EncodeSamples(ReadWav(path), gain);

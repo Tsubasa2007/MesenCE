@@ -157,5 +157,7 @@ object changes size, the whole pack is laid out afresh.
 - Speech: re-encoding decoded BBK phrases recovers their voicing on 95-99% of frames, the same
   pitch, and unbiased energy; an encoded English sentence plays on MesenCE's speech chip with
   the level envelope of the decoder's preview (correlation 0.82), every stream byte sent.
+  A frame whose voicing disagrees with both its neighbours takes theirs: such lone flips were
+  6% of the frames of a Chinese sentence, each a 20 ms burst of hiss inside a vowel.
 - Not done: authoring for `wait str=` type-in checks is plain script, nothing to convert;
   mode/kind animation transforms are passed through as numbers.
