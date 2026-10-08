@@ -137,7 +137,10 @@ public static class Author
 	/// 16-byte palette) where every bw x bh area uses one of nPal sub-palettes. Unlike
 	/// Background this follows no player's conventions: the backdrop is the commonest colour,
 	/// and transparent pixels take it. dither spreads each pixel's error to its neighbours
-	/// (Floyd-Steinberg), still choosing only among the four colours its area has.</summary>
+	/// (Floyd-Steinberg), still choosing only among the four colours its area has. The error
+	/// stays inside the pixel's own area and is damped: passed on into a neighbouring area, whose
+	/// colours are different, it came out as stray dots (dark specks in a white sky, pink ones in
+	/// grey) and made the area edges stand out.</summary>
 	public static (byte[] index, byte[] pal16) Paint(Picture src, int bw, int bh, int nPal, bool dither = false)
 	{
 		int w = src.W, h = src.H;
@@ -189,15 +192,20 @@ public static class Author
 				idx[y * w + x] = (byte)(sp * 4 + k);
 				var got = Gfx.NesRgb(withBack[sp][k]);
 				double[] e = { want.r - got.r, want.g - got.g, want.b - got.b };
+				bool Here(int yy, int xx) => xx >= 0 && xx < w && yy < h && yy / bh == y / bh && xx / bw == x / bw;
 				for(int ch = 0; ch < 3; ch++) {
-					err[y, x + 2, ch] += e[ch] * 7 / 16;
-					err[y + 1, x, ch] += e[ch] * 3 / 16;
-					err[y + 1, x + 1, ch] += e[ch] * 5 / 16;
-					err[y + 1, x + 2, ch] += e[ch] * 1 / 16;
+					double d = e[ch] * DitherKeep;
+					if(Here(y, x + 1)) err[y, x + 2, ch] += d * 7 / 16;
+					if(Here(y + 1, x - 1)) err[y + 1, x, ch] += d * 3 / 16;
+					if(Here(y + 1, x)) err[y + 1, x + 1, ch] += d * 5 / 16;
+					if(Here(y + 1, x + 1)) err[y + 1, x + 2, ch] += d * 1 / 16;
 				}
 			}
 		return (idx, pal16.ToArray());
 	}
+
+	/// <summary>How much of a pixel's error dithering passes on</summary>
+	const double DitherKeep = 0.75;
 
 	static long Cost(Counter<int> colours, List<int> choices)
 	{
