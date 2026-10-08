@@ -3,10 +3,9 @@
 
 //The Subor (小霸王) learning cartridges. They sit on several boards - mappers 177, 178, 241 and 518,
 //Subor168 and Subor560 - and their headers say nothing about the machine around them, so each is
-//known by its PRG CRC32. All of them want what the Subor Windows 2002 wants (see
-//SuborWindows2002): Dendy timing, the cut-down Subor keyboard on $4016/$4017 and the 24-bit serial
-//mouse answering on $4016. The reference emulator gives every one of these the same keyboard and
-//mouse.
+//known by its PRG CRC32. All of them want Dendy timing and the cut-down Subor keyboard on
+//$4016/$4017; the ones with a mouse driver also want the 24-bit serial mouse answering on $4016 (see
+//HasSerialMouse). The reference emulator gives every one of these the same keyboard and mouse.
 //
 //The 18-pin expansion cards (数奇王) run inside these machines too. One is not a dump of a single
 //chip: built as a 1MB mapper 178 image - the Subor V15.0 V2 ROM as the host in the lower 512KB,
@@ -39,6 +38,26 @@ public:
 		}
 	}
 
+	//The cartridges with a driver for the 24-bit serial mouse (a 24-read loop on $4016). The others
+	//never read one - their $4016 reads are the data recorder (bit 1), the printer and a joypad - so
+	//they get a joypad in the first port instead.
+	static bool HasSerialMouse(uint32_t prgCrc)
+	{
+		switch(prgCrc) {
+			case 0xF58761D0: //V8.0
+			case 0x12D61CE8: //V11
+			case 0x9EA48F04: //V12.0
+			case 0x5F693117: //V13.0
+			case 0xF18BC238: //V14.0
+			case 0x6058DB1C: //V15.0
+			case 0x9B004BF8: //V15.0 V2
+				return true;
+
+			default:
+				return false;
+		}
+	}
+
 	//The cartridges whose BIOS scans 13 rows: they read row 9's extended-keyboard bit and then rows
 	//10-12. V1.0, V1.1, V3 and V8.0 stop at row 8, and V15.0 / V15.0 V2 (and the card's host) step to row 9
 	//but take anything there for a key: they skip their splash screen and see a held key unless
@@ -62,6 +81,14 @@ public:
 			case 0x9EA48F04: //V12.0
 			case 0x5F693117: //V13.0
 			case 0xF18BC238: //V14.0
+			case 0x0A9329B5: //puzzle cartridge, part A
+			case 0x15058291: //puzzle cartridge, part B
+			case 0x8B265862: //English vocabulary cartridge
+			case 0x36A8FDF6: //astronomy and household-accounts cartridge
+			case 0xD3906F32: //third-grade maths cartridge
+			case 0x60E33D27: //character-code input cartridge
+			case 0x669A32F2: //idioms and maze cartridge
+			case 0x957ABE27: //Wubi typing and English cartridge
 				return true;
 
 			default:
@@ -127,6 +154,17 @@ public:
 			case 0x14774592:
 			case 0x4DC15B83:
 			case 0xE520960E:
+			//Single-subject learning cartridges: the same keyboard scan, and no other way in
+			case 0x0A9329B5: //puzzle cartridge, part A (mapper 241)
+			case 0x15058291: //puzzle cartridge, part B (mapper 241)
+			case 0x8B265862: //English vocabulary cartridge (mapper 167)
+			case 0x36A8FDF6: //astronomy and household-accounts cartridge (mapper 241)
+			case 0xD3906F32: //third-grade maths cartridge (mapper 241)
+			case 0x60E33D27: //character-code input cartridge (mapper 167)
+			case 0x669A32F2: //idioms and maze cartridge (mapper 241)
+			case 0x8FA597F8: //typing and dictionary cartridge (mapper 241)
+			case 0x957ABE27: //Wubi typing and English cartridge (mapper 241)
+			case 0x51C41A5A: //16-in-1 study card from another maker (mapper 241)
 				return true;
 
 			default:
