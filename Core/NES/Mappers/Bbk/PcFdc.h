@@ -71,6 +71,12 @@ private:
 
 	enum class Phase : uint8_t { Command = 0, Result = 1, ReadData = 2, WriteData = 3, FormatTrack = 4 };
 
+	//A controller that cannot find the sector it was asked for - no address marks at this data
+	//rate, or no sector with that id - gives up only after two index pulses: two turns of the
+	//disk, 400ms at 300rpm. Drivers time that out themselves; HT-DOS takes its timeout as the
+	//sign to try the disk at the other density.
+	static constexpr int32_t SearchFailCycles = 709000;
+
 	//Command lengths, indexed by (command byte & 0x1F). Zero marks an unsupported command,
 	//which the controller answers as invalid.
 	static constexpr uint8_t _cmdLength[32] = {
@@ -132,6 +138,7 @@ private:
 	bool _previouslyReady[4] = {};
 
 	int32_t _activityCycles = 0;
+	int32_t _searchFailDelay = 0; //CPU cycles until a failed sector search reports its result
 	bool _dirty = false;
 	vector<uint8_t> _diskData;
 	string _diskFilename;
@@ -164,6 +171,19 @@ private:
 	void EndCommandFull(bool raiseIrq)
 	{
 		EndCommand(raiseIrq, { _st0, _st1, _st2, _cylinder, _head, _sectorNumber, _command[CmdSectorSize] });
+	}
+
+	//Ends a command whose sector search failed. With a disk turning the result comes after two
+	//revolutions; with no disk or the motor off there are no index pulses to count, and the
+	//result is reported at once as before.
+	void EndSearch(Drive& d)
+	{
+		if(d.Inserted && d.Running) {
+			_searchFailDelay = SearchFailCycles;
+			_msr &= ~MsrReady;
+		} else {
+			EndCommandFull(true);
+		}
 	}
 
 	//Steps to the next sector of a read/write, ending the command when the track runs out
@@ -207,7 +227,7 @@ private:
 		}
 
 		if(_st0 & St0AbnormalTermination) {
-			EndCommandFull(true);
+			EndSearch(d);
 			return;
 		}
 
@@ -252,7 +272,11 @@ private:
 			}
 			_st0 |= St0NormalTermination;
 		}
-		EndCommandFull(true);
+		if(_st0 & St0AbnormalTermination) {
+			EndSearch(d);
+		} else {
+			EndCommandFull(true);
+		}
 	}
 
 	void CmdSeek()
@@ -507,6 +531,13 @@ public:
 			return;
 		}
 
+		if(_searchFailDelay) {
+			if(--_searchFailDelay == 0) {
+				EndCommandFull(true);
+			}
+			return;
+		}
+
 		switch(_phase) {
 			case Phase::Command: PhaseCommand(); break;
 			case Phase::Result: PhaseResult(); break;
@@ -535,6 +566,7 @@ public:
 		_commandLen = 0;
 		memset(_command, 0, sizeof(_command));
 		_resultCount = _resultPos = 0;
+		_searchFailDelay = 0;
 		_pollTimer = 0;
 		_pollDrive = 0;
 		for(int i = 0; i < 4; i++) {
@@ -710,6 +742,7 @@ public:
 		SV(_sectorSize); SV(_bytesLeft); SV(_dataPos); SV(_dataRate);
 		SV(_resetPin); SV(_useDma); SV(_phase); SV(_commandLen); SV(_resultCount);
 		SV(_resultPos); SV(_pollTimer); SV(_pollDrive); SV(_activityCycles); SV(_dirty);
+		SV(_searchFailDelay);
 		SVArray(_command, 10);
 		SVArray(_results, 8);
 		for(int i = 0; i < 4; i++) {
