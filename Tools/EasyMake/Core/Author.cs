@@ -133,6 +133,114 @@ public static class Author
 		return (idx, pal16.ToArray());
 	}
 
+	/// <summary>Any RGB picture (already the size it will be) -> (indexes = sub-palette*4 + colour,
+	/// 16-byte palette) where every bw x bh area uses one of nPal sub-palettes. Unlike
+	/// Background this follows no player's conventions: the backdrop is the commonest colour,
+	/// and transparent pixels take it. dither spreads each pixel's error to its neighbours
+	/// (Floyd-Steinberg), still choosing only among the four colours its area has.</summary>
+	public static (byte[] index, byte[] pal16) Paint(Picture src, int bw, int bh, int nPal, bool dither = false)
+	{
+		int w = src.W, h = src.H;
+		var col = new int[h, w];
+		var all = new Counter<int>();
+		for(int y = 0; y < h; y++)
+			for(int x = 0; x < w; x++) {
+				var c = src.Get(x, y);
+				col[y, x] = c.a < 128 ? None : Nes((c.r, c.g, c.b));
+				if(col[y, x] != None) all.Add(col[y, x]);
+			}
+		int backdrop = all.Empty ? Black : all.MostCommon().First().key;
+		for(int y = 0; y < h; y++)
+			for(int x = 0; x < w; x++) if(col[y, x] == None) col[y, x] = backdrop;
+		var blocks = new List<Counter<int>>();
+		for(int by = 0; by < h; by += bh)
+			for(int bx = 0; bx < w; bx += bw) {
+				var b = new Counter<int>();
+				for(int y = by; y < Math.Min(by + bh, h); y++) for(int x = bx; x < Math.Min(bx + bw, w); x++) b.Add(col[y, x]);
+				blocks.Add(b);
+			}
+		var pals = Refine(blocks, ChoosePalettes(blocks, backdrop, nPal), backdrop);
+		var pal16 = new List<byte>();
+		foreach(var p in pals) { pal16.Add((byte)backdrop); pal16.AddRange(p.Select(c => (byte)c)); }
+		while(pal16.Count < 16) pal16.AddRange(new[] { (byte)backdrop, (byte)Black, (byte)Black, (byte)Black });
+		var withBack = pals.Select(p => new List<int> { backdrop }.Concat(p).ToList()).ToList();
+		var idx = new byte[w * h];
+		var sub = new int[(h + bh - 1) / bh, (w + bw - 1) / bw];
+		int bi = 0;
+		for(int by = 0; by < h; by += bh)
+			for(int bx = 0; bx < w; bx += bw) sub[by / bh, bx / bw] = BestPalette(blocks[bi++], withBack);
+		if(!dither) {
+			for(int y = 0; y < h; y++)
+				for(int x = 0; x < w; x++) {
+					int sp = sub[y / bh, x / bw], c = col[y, x];
+					idx[y * w + x] = (byte)(sp * 4 + ArgMin(4, k => D(c, withBack[sp][k])));
+				}
+			return (idx, pal16.ToArray());
+		}
+		var err = new double[h + 1, w + 2, 3];
+		for(int y = 0; y < h; y++)
+			for(int x = 0; x < w; x++) {
+				int sp = sub[y / bh, x / bw];
+				var p = src.Get(x, y);
+				if(p.a < 128) { idx[y * w + x] = (byte)(sp * 4); continue; }
+				var want = (r: Math.Clamp(p.r + err[y, x + 1, 0], 0, 255), g: Math.Clamp(p.g + err[y, x + 1, 1], 0, 255), b: Math.Clamp(p.b + err[y, x + 1, 2], 0, 255));
+				var wantRgb = ((byte)want.r, (byte)want.g, (byte)want.b);
+				int k = ArgMin(4, k => Gfx.Dist(Gfx.NesRgb(withBack[sp][k]), wantRgb));
+				idx[y * w + x] = (byte)(sp * 4 + k);
+				var got = Gfx.NesRgb(withBack[sp][k]);
+				double[] e = { want.r - got.r, want.g - got.g, want.b - got.b };
+				for(int ch = 0; ch < 3; ch++) {
+					err[y, x + 2, ch] += e[ch] * 7 / 16;
+					err[y + 1, x, ch] += e[ch] * 3 / 16;
+					err[y + 1, x + 1, ch] += e[ch] * 5 / 16;
+					err[y + 1, x + 2, ch] += e[ch] * 1 / 16;
+				}
+			}
+		return (idx, pal16.ToArray());
+	}
+
+	static long Cost(Counter<int> colours, List<int> choices)
+	{
+		long cost = 0;
+		foreach(var (c, n) in colours.Items()) cost += (long)n * choices.Min(q => D(c, q));
+		return cost;
+	}
+
+	/// <summary>Improve sub-palettes the way k-means does: give every area the sub-palette that
+	/// suits it best, then choose each sub-palette's three colours again for the areas it got
+	/// (greedily, from their commonest colours), while the total error keeps falling</summary>
+	static List<List<int>> Refine(List<Counter<int>> blocks, List<List<int>> pals, int backdrop)
+	{
+		List<int> With(List<int> p) => new List<int> { backdrop }.Concat(p).ToList();
+		long Total(List<List<int>> ps) => blocks.Sum(b => ps.Min(p => Cost(b, With(p))));
+		long best = Total(pals);
+		for(int iter = 0; iter < 8; iter++) {
+			var groups = pals.Select(_ => new Counter<int>()).ToList();
+			foreach(var b in blocks) {
+				int sp = BestPalette(b, pals.Select(With).ToList());
+				foreach(var (c, n) in b.Items()) groups[sp].Add(c, n);
+			}
+			var next = new List<List<int>>();
+			for(int i = 0; i < pals.Count; i++) {
+				var cand = groups[i].MostCommon().Select(x => x.key).Where(c => c != backdrop).Take(16).ToList();
+				var chosen = new List<int>();
+				while(chosen.Count < 3 && cand.Count > 0) {
+					int pick = cand.OrderBy(c => Cost(groups[i], With(chosen.Append(c).ToList()))).First();
+					chosen.Add(pick);
+					cand.Remove(pick);
+				}
+				if(chosen.Count == 0) chosen = new List<int>(pals[i]);
+				while(chosen.Count < 3) chosen.Add(backdrop);
+				next.Add(chosen.OrderBy(c => c).ToList());
+			}
+			long t = Total(next);
+			if(t >= best) break;
+			best = t;
+			pals = next;
+		}
+		return pals;
+	}
+
 	/// <summary>A picture -> BG glyph cells (image type 1) in a given BG palette. One sub-palette per
 	/// 16x16 area; cells that are all black are dropped.</summary>
 	public static List<(byte[] hdr, byte[] cell)> GlyphCells(Picture src, IList<byte> pal16)

@@ -130,6 +130,7 @@ public sealed partial class MainWindow : Window
 		if(shots) {
 			Opened += async (_, _) => {
 				if(args[0] == "--actions") await ShotMode.Actions(this, args);
+				else if(args[0] == "--pictures") await ShotMode.Pictures(this, args);
 				else await ShotMode.Run(this, args);
 			};
 		} else {
@@ -163,7 +164,8 @@ public sealed partial class MainWindow : Window
 					new Separator(), Item("save", SaveAll, "Ctrl+S"), new Separator(), Item("quit", Close) } },
 				new MenuItem { Header = S.Get("make"), ItemsSource = new Control[] {
 					Item("build", () => _ = CmdBuild()), Item("run", () => _ = CmdRun(), "F5"), new Separator(), Item("verify", () => _ = CmdVerify()) } },
-				new MenuItem { Header = S.Get("tools"), ItemsSource = new Control[] { Item("speechtool", () => _ = CmdSpeech()) } },
+				new MenuItem { Header = S.Get("tools"), ItemsSource = new Control[] { Item("speechtool", () => _ = CmdSpeech()),
+					new Separator(), Item("pictools", () => new PictureBrowser(Cfg).Show(this)), Item("convtool", () => new ConvertPicture().Show(this)) } },
 				new MenuItem { Header = S.Get("settings"), ItemsSource = new Control[] {
 					Item("paths", () => _ = PathsDialog.Show(Cfg)),
 					new MenuItem { Header = S.Get("lang"), ItemsSource = new Control[] {

@@ -16,6 +16,31 @@ public static class S
 		["quit"] = ("退出", "Quit"), ["build"] = ("生成软盘…", "Build disk…"),
 		["run"] = ("在 MesenCE 中运行", "Run in MesenCE"), ["verify"] = ("校验软盘…", "Verify a disk…"),
 		["speechtool"] = ("语音编码试听…", "Encode speech…"), ["paths"] = ("路径设置…", "Paths…"),
+		["pictools"] = ("图片浏览…", "Picture browser…"), ["convtool"] = ("图片转换…", "Convert a picture…"),
+		["pb_title"] = ("图片浏览：文件夹里各软盘上的图片", "Picture browser: the pictures on the disks in a folder"),
+		["pb_folder"] = ("文件夹", "Folder"), ["pb_load"] = ("刷新", "Reload"),
+		["pb_subfolders"] = ("包括子文件夹", "Subfolders too"), ["pb_inside"] = ("包括程序里的图片", "Pictures inside programs"),
+		["pb_zoom"] = ("缩放", "Zoom"), ["pb_export"] = ("全部导出为 PNG…", "Export all as PNG…"),
+		["pb_status"] = ("已读 {0}/{1} 张软盘，找到 {2} 张图片；{3} 张软盘上没有图片", "Read {0}/{1} disks, {2} pictures; {3} disks without pictures"),
+		["pb_bad"] = ("无法读取：{0}", "Unreadable: {0}"),
+		["pb_nofolder"] = ("请选择一个文件夹。", "Choose a folder."), ["pb_nodisks"] = ("这个文件夹里没有软盘镜像（.img / .ima）。", "No disk images (.img / .ima) in that folder."),
+		["pb_exported"] = ("已导出 {0} 张图片到 {1}", "Exported {0} pictures to {1}"),
+		["pv_save"] = ("保存为 PNG…", "Save as PNG…"), ["pv_palette"] = ("调色板：", "Palette: "), ["bytes"] = ("字节", "bytes"),
+		["cv_title"] = ("图片转换：电脑图片 → 学习机图片", "Convert a PC picture to a BBK picture"),
+		["cv_format"] = ("格式", "Format"), ["cv_aspect"] = ("保持比例", "Keep the shape"), ["cv_dither"] = ("抖动（适合照片）", "Dither (for photographs)"),
+		["fmt_Grp"] = ("神奇画笔 整幅画 .GRP（224×208）", "Paint program picture .GRP (224 × 208)"),
+		["fmt_Pct"] = ("神奇画笔 剪贴图 .PCT（原大小）", "Paint program cut-out .PCT (its own size)"),
+		["fmt_Gra"] = ("全屏背景 .GRA（256×240）", "Full-screen background .GRA (256 × 240)"),
+		["fmt_GraTiles"] = ("压缩全屏背景 .GRA（瓦片表，256×240）", "Compressed background .GRA (tile map, 256 × 240)"),
+		["cv_note"] = ("学习机每块区域只能用 3 种颜色加底色：GRA 每 16×16 一块、4 组调色板；GRP/PCT 每 8×16 一块、3 组调色板。右边是写入后的实际效果。",
+			"The machine gives each area 3 colours plus the backdrop: 16 × 16 areas and 4 palettes in a GRA, 8 × 16 areas and 3 palettes in a GRP/PCT. The right side is read back from the bytes written."),
+		["cv_before"] = ("原图", "Original"), ["cv_after"] = ("转换后", "Converted"),
+		["cv_info"] = ("{0}，{1}×{2}，{3} 字节", "{0}, {1} × {2}, {3} bytes"),
+		["cv_save"] = ("保存文件…", "Save file…"), ["cv_disk"] = ("写入软盘镜像…", "Put on a disk image…"),
+		["cv_saved"] = ("已保存：", "Saved: "), ["cv_name_q"] = ("软盘上的文件名（8.3 格式）", "File name on the disk (8.3)"),
+		["cv_replace"] = ("软盘上已有 {0}，要替换吗？", "The disk already has {0}. Replace it?"),
+		["cv_written"] = ("已写入 {0} 到 {1}，软盘剩余 {2} 字节", "Wrote {0} to {1}; {2} bytes free on the disk"),
+		["close"] = ("关闭", "Close"),
 		["refresh"] = ("刷新预览", "Refresh preview"),
 		["script"] = ("脚本", "Script"), ["backgrounds"] = ("背景", "Backgrounds"), ["pack"] = ("资源包", "Pack"),
 		["k_img"] = ("精灵图片", "sprite picture"), ["k_glyph"] = ("字符块图片", "glyph picture"),
@@ -86,7 +111,7 @@ public sealed class Config
 	static readonly string PathName = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".easymake_gui.json");
 	public static string OverridePath;
 	public int Lang;
-	public string Mesen = "", Bios = "", Template = "", Recent = "";
+	public string Mesen = "", Bios = "", Template = "", Recent = "", PictureFolder = "";
 
 	static string File => OverridePath ?? PathName;
 
@@ -105,6 +130,7 @@ public sealed class Config
 			c.Bios = j["bios"]?.GetValue<string>() ?? "";
 			c.Template = j["template"]?.GetValue<string>() ?? "";
 			c.Recent = j["recent"]?.GetValue<string>() ?? "";
+			c.PictureFolder = j["picture_folder"]?.GetValue<string>() ?? "";
 		} catch(Exception) {
 		}
 		return c;
@@ -113,7 +139,7 @@ public sealed class Config
 	public void Save()
 	{
 		try {
-			var j = new JsonObject { ["lang"] = Lang, ["mesen"] = Mesen, ["bios"] = Bios, ["template"] = Template, ["recent"] = Recent };
+			var j = new JsonObject { ["lang"] = Lang, ["mesen"] = Mesen, ["bios"] = Bios, ["template"] = Template, ["recent"] = Recent, ["picture_folder"] = PictureFolder };
 			System.IO.File.WriteAllText(File, j.ToJsonString(Core.Project.JsonOut));
 		} catch(Exception) {
 		}

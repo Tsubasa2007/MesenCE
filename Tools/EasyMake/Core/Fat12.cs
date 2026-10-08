@@ -14,13 +14,17 @@ public sealed class Fat12
 		bps = BitConverter.ToUInt16(D, 11); spc = D[13]; res = BitConverter.ToUInt16(D, 14);
 		nfats = D[16]; nroot = BitConverter.ToUInt16(D, 17); total = BitConverter.ToUInt16(D, 19);
 		spf = BitConverter.ToUInt16(D, 22);
-		if((bps != 512 && bps != 1024) || spc == 0 || D.Length < total * bps)
+		if((bps != 512 && bps != 1024) || spc == 0 || total * bps < D.Length / 2)
 			throw new InvalidDataException("not a FAT12 floppy image (a compressed .imz must be unpacked first)");
 		fatOff = res * bps;
 		rootOff = (res + nfats * spf) * bps;
 		dataOff = rootOff + nroot * 32;
 		csize = spc * bps;
-		nclusters = (total * bps - dataOff) / csize + 2;
+		//Some disks claim a few sectors more than a floppy holds; only the clusters the image
+		//really has are used
+		nclusters = (Math.Min(total * bps, D.Length) - dataOff) / csize + 2;
+		if(dataOff >= D.Length || nclusters < 2)
+			throw new InvalidDataException("not a FAT12 floppy image (a compressed .imz must be unpacked first)");
 	}
 
 	int Fat(int c)
@@ -54,6 +58,39 @@ public sealed class Fat12
 	}
 
 	public List<string> Files() => Entries().Where(e => (e.attr & 0x10) == 0).Select(e => e.name).ToList();
+
+	/// <summary>Every file on the disk, subdirectories included, as (path, contents). Names are
+	/// GBK, as the machine shows them; this is for reading only - the other calls see the root.</summary>
+	public IEnumerable<(string path, byte[] data)> AllFiles() => Walk(D[rootOff..dataOff], "", 0);
+
+	IEnumerable<(string path, byte[] data)> Walk(byte[] dir, string prefix, int depth)
+	{
+		for(int o = 0; o + 32 <= dir.Length; o += 32) {
+			if(dir[o] == 0) yield break;
+			if(dir[o] == 0xE5 || (dir[o + 11] & 0x08) != 0 || dir[o] == '.') continue;
+			string name = Gbk.Decode(dir[o..(o + 8)]).TrimEnd(), ext = Gbk.Decode(dir[(o + 8)..(o + 11)]).TrimEnd();
+			if(ext.Length > 0) name += "." + ext;
+			int cluster = BitConverter.ToUInt16(dir, o + 26), size = (int)Math.Min(BitConverter.ToUInt32(dir, o + 28), int.MaxValue);
+			if((dir[o + 11] & 0x10) != 0) {
+				if(depth < 8)
+					foreach(var f in Walk(ReadChain(cluster, int.MaxValue), prefix + name + "/", depth + 1)) yield return f;
+			} else {
+				yield return (prefix + name, ReadChain(cluster, size));
+			}
+		}
+	}
+
+	byte[] ReadChain(int cluster, int size)
+	{
+		var ms = new MemoryStream();
+		foreach(int c in Chain(cluster)) {
+			int o = dataOff + (c - 2) * csize;
+			if(o + csize > D.Length) break;
+			ms.Write(D, o, csize);
+			if(ms.Length >= size) break;
+		}
+		return ms.ToArray()[..(int)Math.Min(size, ms.Length)];
+	}
 
 	List<int> Chain(int c)
 	{

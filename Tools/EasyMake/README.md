@@ -40,6 +40,15 @@ backgrounds and every pack's resources. On the right is an editor for the select
   and flags table slots that point at stale data. `<answer>`/`<easy>` read the pack at fixed
   addresses, so with them in the script some "unused" items may still be drawn (the log says so).
 - Double-clicking an item in the tree plays it (music, speech, animations).
+- **Tools → Picture browser** shows every picture on the disk images in a folder, disk by disk,
+  under the file names they have on the disk (`FILE@offset` for one inside a program). It reads
+  all the BBK picture formats - `.GRA` (plain and tile-map), the paint program's `.Grp` and `.Pct`
+  - by their headers, so files without an extension are found too; click one to see it larger
+  and save it as PNG, or export the lot.
+- **Tools → Convert a picture** turns a PNG/JPG/BMP into a `.GRP` (paint program picture,
+  224 x 208), a `.PCT` (cut-out, its own size), or a `.GRA` (256 x 240, plain or tile-map). The
+  preview is read back from the bytes written; save the file, or put it straight onto a disk
+  image. Dithering helps photographs; keep it off for drawings.
 
 ## The command line
 
@@ -49,6 +58,10 @@ EasyMake extract <disk.img | folder> <project>      unpack an existing title
 EasyMake build <project> <template.img> <out.img> [--repack]
 EasyMake verify <disk.img | folder>                 unpack + rebuild + compare
 EasyMake speech <in.wav> <out.lpc>                  encode a recording for the speech chip
+EasyMake pictures <disk.img | folder> <out> [--inside] [--all]
+                                                    save every picture on the disks as PNG
+EasyMake picture <in.png> <out.gra|grp|pct> [--tiles] [--stretch] [--dither]
+                                                    convert a picture
 ```
 
 `build` writes the title onto a copy of a boot disk that already carries BBGDOS, BBGCDOS,

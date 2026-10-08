@@ -10,7 +10,7 @@ namespace EasyMake.Ui;
 /// writes a report of any errors and quits. Settings go to a file in the out folder.</summary>
 public static class ShotMode
 {
-	public static bool Active(string[] args) => args.Length >= 3 && (args[0] == "--shots" || args[0] == "--actions");
+	public static bool Active(string[] args) => args.Length >= 3 && args[0] is "--shots" or "--actions" or "--pictures";
 
 	public static async Task Run(MainWindow w, string[] args)
 	{
@@ -118,6 +118,42 @@ public static class ShotMode
 		await w.RunNow();
 		File.WriteAllText(Path.Combine(outDir, "report.txt"),
 			$"built {built} {(File.Exists(img) ? new FileInfo(img).Length : 0)}\nlaunched: {string.Join(" | ", launched)}\n{errors.Count} errors\n" + string.Join("\n", errors) + "\nLOG\n" + w.LogText);
+		w.ForceClose();
+	}
+
+	/// <summary>--pictures &lt;folder of disks&gt; &lt;out folder&gt; &lt;a picture&gt;: the picture browser on
+	/// the folder, then the converter in every format, with and without dithering</summary>
+	public static async Task Pictures(MainWindow w, string[] args)
+	{
+		string folder = args[1], outDir = args[2], picture = args[3];
+		var errors = new List<string>();
+		await Task.Delay(500);
+		try {
+			w.Cfg.PictureFolder = folder;
+			var pb = new PictureBrowser(w.Cfg);
+			pb.Show(w);
+			await pb.FirstLoad;
+			await Settle();
+			Grab(pb, Path.Combine(outDir, "browser.png"));
+			pb.Close();
+		} catch(Exception e) {
+			errors.Add("browser: " + e);
+		}
+		try {
+			var cv = new ConvertPicture();
+			cv.Show(w);
+			await cv.Open(picture);
+			for(int f = 0; f < 4; f++)
+				foreach(bool dots in new[] { false, true }) {
+					await cv.Choose(f, dots);
+					await Settle();
+					Grab(cv, Path.Combine(outDir, $"convert{f}{(dots ? "d" : "")}.png"));
+				}
+			cv.Close();
+		} catch(Exception e) {
+			errors.Add("convert: " + e);
+		}
+		File.WriteAllText(Path.Combine(outDir, "report.txt"), $"{errors.Count} errors\n" + string.Join("\n", errors));
 		w.ForceClose();
 	}
 

@@ -148,3 +148,26 @@ db 12 34 ...            raw bytes (hex)
 `"GR"`, 0, 0, width (LE16), height (LE16), 8 zeros; 16-byte BG palette; attribute table
 `(w/32)·⌈h/32⌉` bytes in NES layout; `w/8 × h/8` NES 2bpp tiles, row-major. 256 × 240 = 15456
 bytes. 004's pictures keep entries 0/4/8/12 black (`$0D`) and entry 13 white for text.
+
+**Version 1 (tile map)**: `"GR"`, 1, 0, then the same header, palette and attribute table, then
+bands down the picture, each `lines, count, count x 16-byte tiles, (lines/8) x (w/8) tile numbers`.
+A band has at most 256 tiles of its own, so a picture with more distinct tiles than that is split
+(the bands seen are multiples of 16 lines). The tiles are numbered in the order they first appear.
+Also found inside programs and resource packs, sometimes after a 2-byte load address.
+
+## .Grp / .Pct (the paint program)
+
+The paint program on disk 122 (`BRUSH.EXC`) saves whole pictures as `.Grp` and cut-outs as `.Pct`:
+
+| offset | |
+|---|---|
+| 0 | `".Grp"` or `".Pct"` |
+| 4 | palette bytes used: 4, 8 or 12 |
+| 5 | rows of 16 pixels |
+| 6 | columns of 8 pixels |
+| 7 | 0 |
+| 8 | 12-byte palette: three sub-palettes, entry 0 of each the backdrop |
+| 20 | rows x columns cells, row by row: a sub-palette byte (0-2), then an 8 x 16 cell (two NES tiles, top then bottom) |
+
+A `.Grp` is the 224 x 208 canvas (13 rows x 28 columns, 12032 bytes); a `.Pct` is any size up
+to that. Unlike a GR picture, every 8 x 16 cell picks its own sub-palette.
