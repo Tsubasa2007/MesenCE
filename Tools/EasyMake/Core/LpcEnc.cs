@@ -138,13 +138,49 @@ public static class LpcEnc
 		}
 	}
 
-	/// <summary>One 20 ms frame as analysed: energy index (0 = silence), pitch period in
-	/// samples (0 = unvoiced), and the reflection coefficients in the chip's sign</summary>
-	sealed record Frame(int Energy, int Period, double[] Ks);
+	/// <summary>One 20 ms frame as analysed: Silent, pitch period in samples (0 = unvoiced), the
+	/// reflection coefficients in the chip's sign, and the frame's RMS level</summary>
+	sealed record Frame(bool Silent, int Period, double[] Ks, double Rms);
 
-	/// <summary>10 kHz samples -> phrase bytes</summary>
+	/// <summary>The chip's energy is the level of the excitation, before the lattice filter, and
+	/// the filter's gain is 1 / sqrt(prod(1 - k^2)) - large on strong vowels. So a frame's energy
+	/// comes from its prediction residual (RMS x sqrt(prod(1 - k^2)) over the coefficients the
+	/// frame sends). The scale was fitted by re-encoding BBK's own phrases (disk 004, 179 of
+	/// them) until the energy steps came back unbiased and the output level matched the input.
+	/// Taking the energy from the plain RMS, as before, made vowels about twice as loud as the
+	/// recording and pushed them into the chip's clamp.</summary>
+	const double EnergyScale = 3.8;
+
+	/// <summary>The level speech is encoded at, whatever it was recorded at: the loud end of the
+	/// speech (the 95th percentile of the 20 ms frames above 5% of the loudest one) is brought to
+	/// this RMS. The chip's energy steps are coarse at the bottom and stop at the top, so a quiet
+	/// recording used only a few of them and a loud one sat on the last; over eight recordings
+	/// (Chinese and English, children and adults) the level envelope followed the source best
+	/// around 0.28-0.35 and clipped least at the low end of that; 0.28 is also how loud BBK's
+	/// own phrases come out of the chip.</summary>
+	public const double TargetLevel = 0.28;
+
+	/// <summary>The gain that brings a recording to TargetLevel (1 for silence)</summary>
+	public static double AutoGain(List<double> s)
+	{
+		var rms = new List<double>();
+		for(int i = 0; i + FrameLen <= s.Count; i += FrameLen) {
+			double sq = 0;
+			for(int j = i; j < i + FrameLen; j++) sq += s[j] * s[j];
+			rms.Add(Math.Sqrt(sq / FrameLen));
+		}
+		double max = rms.DefaultIfEmpty().Max();
+		if(max <= 0) return 1;
+		var speech = rms.Where(r => r > max * 0.05).OrderBy(r => r).ToList();
+		double p95 = speech[Math.Min(speech.Count - 1, (int)(speech.Count * 0.95))];
+		return Math.Clamp(TargetLevel / p95, 0.1, 20);
+	}
+
+	/// <summary>10 kHz samples -> phrase bytes. The recording is levelled first (AutoGain); gain
+	/// is a further adjustment on top of that, 1 for none.</summary>
 	public static byte[] EncodeSamples(List<double> s, double gain = 1.0)
 	{
+		gain *= AutoGain(s);
 		//Pre-emphasis flattens the spectrum for the analysis; the chip's tables expect it
 		var pre = new double[s.Count];
 		if(s.Count > 0) pre[0] = s[0];
@@ -172,25 +208,27 @@ public static class LpcEnc
 			for(int i = FrameLen / 2; i < FrameLen / 2 + FrameLen; i++) sq += raw[i] * raw[i];
 			double rms = Math.Sqrt(sq / FrameLen) * gain;
 			var (period, strength) = PitchPeriod(raw);
-			//Energy: the scale was fitted by re-encoding decoded phrases from a BBK disk until the
-			//energy indexes came out unbiased against the originals
-			double level = rms * 1.8 * 0x7F00;
-			int e = Nearest(Lpc.Gain, level, 15);
-			if(e == 0 || r[0] <= 1e-9) { frames.Add(new Frame(0, 0, null)); continue; }
+			//Silence: a frame whose plain level would round to the bottom energy step (the scale
+			//the energy was taken with before it came from the residual)
+			if(Nearest(Lpc.Gain, rms * 1.8 * 0x7F00, 15) == 0 || r[0] <= 1e-9) { frames.Add(new Frame(true, 0, null, 0)); continue; }
 			bool voiced = strength > 0.35 && period > 0;
-			frames.Add(new Frame(Math.Max(1, Math.Min(14, e)), voiced ? period : 0,
-				Levinson(r).Select(k => -k).ToArray()));  // the chip's lattice uses the opposite sign
+			frames.Add(new Frame(false, voiced ? period : 0,
+				Levinson(r).Select(k => -k).ToArray(), rms));  // the chip's lattice uses the opposite sign
 		}
 		SmoothVoicing(frames);
 		var bw = new BitWriter();
 		foreach(var fr in frames) {
-			if(fr.Energy == 0) { bw.Put(0, 4); continue; }
+			if(fr.Silent) { bw.Put(0, 4); continue; }
 			int pi = fr.Period > 0 ? Nearest(Lpc.Pitch[1..], fr.Period * 16) + 1 : 0;
-			bw.Put(fr.Energy, 4);
+			int used = pi != 0 ? 10 : 4;
+			var kix = Enumerable.Range(0, used).Select(i => Nearest(Lpc.K[i], fr.Ks[i] * 32768)).ToArray();
+			double g = 1;
+			for(int i = 0; i < used; i++) { double k = Lpc.K[i][kix[i]] / 32768.0; g *= 1 - k * k; }
+			int energy = Math.Max(1, Math.Min(14, Nearest(Lpc.Gain, fr.Rms * Math.Sqrt(g) * EnergyScale * 0x7F00, 15)));
+			bw.Put(energy, 4);
 			bw.Put(0, 1);
 			bw.Put(pi, 7);
-			for(int i = 0; i < 4; i++) bw.Put(Nearest(Lpc.K[i], fr.Ks[i] * 32768), Lpc.KBits[i]);
-			if(pi != 0) for(int i = 4; i < 10; i++) bw.Put(Nearest(Lpc.K[i], fr.Ks[i] * 32768), Lpc.KBits[i]);
+			for(int i = 0; i < used; i++) bw.Put(kix[i], Lpc.KBits[i]);
 		}
 		bw.Put(15, 4);
 		//The BIOS sends 'length' bytes starting with the $D6, so the stream's last byte never
@@ -209,7 +247,7 @@ public static class LpcEnc
 		//frame settles on its first frame's voicing instead of keeping every other flip
 		for(int i = 1; i + 1 < frames.Count; i++) {
 			Frame p = frames[i - 1], f = frames[i], n = frames[i + 1];
-			if(f.Energy == 0 || p.Energy == 0 || n.Energy == 0) continue;
+			if(f.Silent || p.Silent || n.Silent) continue;
 			bool pv = p.Period > 0, nv = n.Period > 0;
 			if(pv != nv || (f.Period > 0) == pv) continue;
 			frames[i] = f with { Period = pv ? (p.Period + n.Period) / 2 : 0 };

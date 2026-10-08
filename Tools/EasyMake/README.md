@@ -159,5 +159,10 @@ object changes size, the whole pack is laid out afresh.
   the level envelope of the decoder's preview (correlation 0.82), every stream byte sent.
   A frame whose voicing disagrees with both its neighbours takes theirs: such lone flips were
   6% of the frames of a Chinese sentence, each a 20 ms burst of hiss inside a vowel.
+  Each recording is first brought to one level (the loud end of its speech to RMS 0.28, about
+  where BBK's own phrases sit), and a frame's energy comes from its prediction residual, since
+  the chip applies it before the lattice filter. Over eight Chinese and English recordings this
+  raised the level-envelope match from 0.79 to 0.88 on average and cut the samples reaching the
+  chip's clamp from 0.9% to 0.2%. A speech resource's `gain` now adjusts on top of the levelling.
 - Not done: authoring for `wait str=` type-in checks is plain script, nothing to convert;
   mode/kind animation transforms are passed through as numbers.
