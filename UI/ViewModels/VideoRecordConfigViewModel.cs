@@ -17,7 +17,7 @@ namespace Mesen.ViewModels
 		{
 			Config = ConfigManager.Config.VideoRecord.Clone();
 
-			SavePath = Path.Join(ConfigManager.AviFolder, EmuApi.GetRomInfo().GetRomName() + (Config.Codec == VideoCodec.GIF ? ".gif" : ".avi"));
+			SavePath = Path.Join(ConfigManager.AviFolder, MainWindowViewModel.Instance.GetRecordingName() + (Config.Codec == VideoCodec.GIF ? ".gif" : ".avi"));
 
 			AddDisposable(Config.ObserveProp(nameof(VideoRecordConfig.Codec), () => {
 				CompressionAvailable = Config.Codec == VideoCodec.ZMBV || Config.Codec == VideoCodec.CSCD;

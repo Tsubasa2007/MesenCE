@@ -1095,7 +1095,7 @@ namespace Mesen.ViewModels
 						ActionType = ActionType.Record,
 						IsEnabled = () => IsGameRunning && !RecordApi.WaveIsRecording(),
 						OnClick = async () => {
-							string? filename = await FileDialogHelper.SaveFile(ConfigManager.WaveFolder, EmuApi.GetRomInfo().GetRomName() + ".wav", wnd, FileDialogHelper.WaveExt);
+							string? filename = await FileDialogHelper.SaveFile(ConfigManager.WaveFolder, MainWindowViewModel.Instance.GetRecordingName() + ".wav", wnd, FileDialogHelper.WaveExt);
 							if(filename != null) {
 								RecordApi.WaveRecord(filename);
 							}

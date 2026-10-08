@@ -119,6 +119,15 @@ namespace Mesen.Interop
 			}, 2000);
 		}
 
+		[DllImport(DllPath, EntryPoint = "GetNesInsertedDiskPath")] private static extern void GetNesInsertedDiskPathWrapper(IntPtr outPath, Int32 maxLength);
+		//The floppy or disc in the running machine's drive, or an empty string when it has none.
+		public static string GetNesInsertedDiskPath()
+		{
+			return Utf8Utilities.CallStringApi((IntPtr outPath, Int32 maxLength) => {
+				GetNesInsertedDiskPathWrapper(outPath, maxLength);
+			}, 2000);
+		}
+
 		[DllImport(DllPath, EntryPoint = "GetNesVideoReels")] private static extern void GetNesVideoReelsWrapper(IntPtr outList, Int32 maxLength);
 		//Where the video on the mounted disc is. These discs keep nearly all of it as segment
 		//items rather than as tracks, and only the core knows how those are addressed - see

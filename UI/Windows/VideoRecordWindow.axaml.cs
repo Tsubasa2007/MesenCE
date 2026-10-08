@@ -27,7 +27,7 @@ namespace Mesen.Windows
 			VideoRecordConfigViewModel model = (VideoRecordConfigViewModel)DataContext!;
 			bool isGif = model.Config.Codec == VideoCodec.GIF;
 
-			string initFilename = EmuApi.GetRomInfo().GetRomName() + (isGif ? ".gif" : ".avi");
+			string initFilename = MainWindowViewModel.Instance.GetRecordingName() + (isGif ? ".gif" : ".avi");
 			string? filename = await FileDialogHelper.SaveFile(ConfigManager.AviFolder, initFilename, this.GetWindow(), isGif ? FileDialogHelper.GifExt : FileDialogHelper.AviExt);
 
 			if(filename != null) {

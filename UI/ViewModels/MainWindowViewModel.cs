@@ -22,6 +22,9 @@ namespace Mesen.ViewModels
 
 		[ObservableProperty] public partial MainMenuViewModel MainMenu { get; set; }
 		[ObservableProperty] public partial RomInfo RomInfo { get; set; }
+		//The floppy or disc in the drive of a machine that boots from a BIOS, whose name alone
+		//says nothing about what is running. Empty when there is none.
+		[ObservableProperty] public partial string InsertedDisk { get; set; } = "";
 		[ObservableProperty] public partial AudioPlayerViewModel? AudioPlayer { get; private set; }
 		[ObservableProperty] public partial RecentGamesViewModel RecentGames { get; private set; }
 
@@ -106,12 +109,32 @@ namespace Mesen.ViewModels
 			UpdateWindowTitle();
 		}
 
+		partial void OnInsertedDiskChanged(string value)
+		{
+			UpdateWindowTitle();
+		}
+
+		//The name a new recording is offered under. On a machine that boots its software from a
+		//disk that is the BIOS's name and the disk's, as in the title - the BIOS's alone would
+		//give every disk's recordings the same name.
+		public string GetRecordingName()
+		{
+			string name = RomInfo.GetRomName();
+			if(!string.IsNullOrWhiteSpace(InsertedDisk)) {
+				name += " - " + InsertedDisk;
+			}
+			return string.Join("_", name.Split(System.IO.Path.GetInvalidFileNameChars()));
+		}
+
 		private void UpdateWindowTitle()
 		{
 			string title = "MesenCE";
 			string romName = RomInfo.GetRomName();
 			if(!string.IsNullOrWhiteSpace(romName)) {
 				title += " - " + romName;
+				if(!string.IsNullOrWhiteSpace(InsertedDisk)) {
+					title += " - " + InsertedDisk;
+				}
 				if(ConfigManager.Config.Preferences.ShowTitleBarInfo) {
 					FrameInfo baseSize = EmuApi.GetBaseScreenSize();
 					double scale = (double)RendererSize.Height / baseSize.Height;

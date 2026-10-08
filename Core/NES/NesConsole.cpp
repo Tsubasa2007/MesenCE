@@ -466,6 +466,27 @@ void NesConsole::SaveBattery()
 	}
 }
 
+//Whatever is in the machine's drive - a floppy, or a disc on the machines that take one - or
+//"" when it is empty or the machine has no drive. Its name goes in the window title next to
+//the BIOS's, which on its own says nothing about what is running.
+string NesConsole::GetInsertedDiskPath()
+{
+	if(BbkMapper* bbk = dynamic_cast<BbkMapper*>(_mapper.get())) {
+		return bbk->GetCurrentDiskFilename();
+	} else if(Sb2kMapper* sb2k = dynamic_cast<Sb2kMapper*>(_mapper.get())) {
+		return sb2k->GetCurrentDiskFilename();
+	} else if(YuxingMapper* yuxing = dynamic_cast<YuxingMapper*>(_mapper.get())) {
+		return yuxing->GetCurrentDiskFilename();
+	} else if(DrPcJrMapper* pcjr = dynamic_cast<DrPcJrMapper*>(_mapper.get())) {
+		return pcjr->GetCurrentDiskFilename();
+	} else if(LingTongMapper* lingTong = dynamic_cast<LingTongMapper*>(_mapper.get())) {
+		return lingTong->GetCurrentDiskFilename();
+	} else if(Dance2000* subor = dynamic_cast<Dance2000*>(_mapper.get()); subor && subor->HasFloppyDrive()) {
+		return subor->GetCurrentDiskFilename();
+	}
+	return "";
+}
+
 vector<string> NesConsole::GetBbkDiskList(int32_t& currentIndex)
 {
 	currentIndex = -1;
@@ -473,26 +494,20 @@ vector<string> NesConsole::GetBbkDiskList(int32_t& currentIndex)
 	//Match on file name rather than full path: the inserted disk may have been mounted
 	//either from the folder scan (manual swap) or from the auto-mount path builder, which
 	//can format the same file's path slightly differently.
-	string current;
+	string current = FolderUtilities::GetFilename(GetInsertedDiskPath(), true);
 	vector<string> paths;
 	if(BbkMapper* bbk = dynamic_cast<BbkMapper*>(_mapper.get())) {
-		current = FolderUtilities::GetFilename(bbk->GetCurrentDiskFilename(), true);
 		paths = bbk->GetDiskFileList();
 	} else if(Sb2kMapper* sb2k = dynamic_cast<Sb2kMapper*>(_mapper.get())) {
-		current = FolderUtilities::GetFilename(sb2k->GetCurrentDiskFilename(), true);
 		paths = sb2k->GetDiskFileList();
 	} else if(YuxingMapper* yuxing = dynamic_cast<YuxingMapper*>(_mapper.get())) {
 		//The YuXing machines have no floppy drive - the same UI swaps their VCD discs
-		current = FolderUtilities::GetFilename(yuxing->GetCurrentDiskFilename(), true);
 		paths = yuxing->GetDiskFileList();
 	} else if(DrPcJrMapper* pcjr = dynamic_cast<DrPcJrMapper*>(_mapper.get())) {
-		current = FolderUtilities::GetFilename(pcjr->GetCurrentDiskFilename(), true);
 		paths = pcjr->GetDiskFileList();
 	} else if(LingTongMapper* lingTong = dynamic_cast<LingTongMapper*>(_mapper.get())) {
-		current = FolderUtilities::GetFilename(lingTong->GetCurrentDiskFilename(), true);
 		paths = lingTong->GetDiskFileList();
 	} else if(Dance2000* subor = dynamic_cast<Dance2000*>(_mapper.get()); subor && subor->HasFloppyDrive()) {
-		current = FolderUtilities::GetFilename(subor->GetCurrentDiskFilename(), true);
 		paths = subor->GetDiskFileList();
 	}
 	for(size_t i = 0; i < paths.size(); i++) {

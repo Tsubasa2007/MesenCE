@@ -16,7 +16,7 @@ namespace Mesen.ViewModels
 		{
 			Config = ConfigManager.Config.MovieRecord.Clone();
 
-			SavePath = Path.Join(ConfigManager.MovieFolder, EmuApi.GetRomInfo().GetRomName() + "." + FileDialogHelper.MesenMovieExt);
+			SavePath = Path.Join(ConfigManager.MovieFolder, MainWindowViewModel.Instance.GetRecordingName() + "." + FileDialogHelper.MesenMovieExt);
 		}
 
 		public void SaveConfig()

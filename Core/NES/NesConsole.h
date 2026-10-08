@@ -95,6 +95,7 @@ public:
 	//Returns the list of swappable disk image names for BBK games (empty for anything else).
 	//currentIndex is set to the inserted disk's index, or -1 when none/not applicable.
 	vector<string> GetBbkDiskList(int32_t& currentIndex);
+	string GetInsertedDiskPath();
 	bool IsBbkGame();
 	bool HasSuborFloppy();
 	string GetVideoDiscPath();

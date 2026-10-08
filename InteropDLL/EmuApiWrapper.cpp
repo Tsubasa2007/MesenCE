@@ -260,6 +260,17 @@ extern "C"
 		StringUtilities::CopyToBuffer(out.str(), outBuffer, maxLength);
 	}
 
+	//The file in the running machine's drive, for the window title. Empty when the drive is
+	//empty or the machine has none.
+	DllExport void __stdcall GetNesInsertedDiskPath(char* outBuffer, uint32_t maxLength)
+	{
+		string path;
+		if(NesConsole* nes = dynamic_cast<NesConsole*>(_emu->GetConsole().get())) {
+			path = nes->GetInsertedDiskPath();
+		}
+		StringUtilities::CopyToBuffer(path, outBuffer, maxLength);
+	}
+
 	//The path of the disc the running machine has mounted, so the UI can offer its video
 	//tracks to an external player. Empty when there is no disc, or no drive to hold one.
 	DllExport void __stdcall GetNesVideoDiscPath(char* outBuffer, uint32_t maxLength)

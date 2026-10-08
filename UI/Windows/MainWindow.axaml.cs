@@ -322,6 +322,14 @@ namespace Mesen.Windows
 			});
 		}
 
+		private int _insertedDiskPollCounter = 0;
+		private void UpdateInsertedDisk()
+		{
+			string path = EmuApi.GetNesInsertedDiskPath();
+			string name = path.Length > 0 ? Path.GetFileNameWithoutExtension(path) : "";
+			Dispatcher.UIThread.Post(() => _model.InsertedDisk = name);
+		}
+
 		private void OnNotification(NotificationEventArgs e)
 		{
 			DebugWindowManager.ProcessNotification(e);
@@ -330,6 +338,7 @@ namespace Mesen.Windows
 				case ConsoleNotificationType.GameLoaded:
 					CheatCodes.ApplyCheats();
 					RomInfo romInfo = EmuApi.GetRomInfo();
+					UpdateInsertedDisk();
 
 					Dispatcher.UIThread.Post(() => {
 						bool wasAudioFile = _model.AudioPlayer != null;
@@ -407,6 +416,7 @@ namespace Mesen.Windows
 					VideoCdPlayback.Reset();
 					Dispatcher.UIThread.Post(() => {
 						_model.RomInfo = new RomInfo();
+						_model.InsertedDisk = "";
 						_model.RecentGames.Init(GameScreenMode.RecentGames);
 					});
 					break;
@@ -415,6 +425,13 @@ namespace Mesen.Windows
 					//A machine with a video disc can ask for a video to be played. The core shows
 					//it itself unless an external player was chosen - see VideoCdPlayback.
 					VideoCdPlayback.Poll();
+					//A disk can be swapped at any time - by the user, or by a machine that
+					//mounts its own - so keep the title's disk name current. Read on this
+					//thread, which is the machine's, so it never meets a swap half done.
+					if(++_insertedDiskPollCounter >= 30) {
+						_insertedDiskPollCounter = 0;
+						UpdateInsertedDisk();
+					}
 					//The transport over the video the core is showing. Posted rather than read
 					//here: this runs on the thread the machine runs on, and the bar is a
 					//control.

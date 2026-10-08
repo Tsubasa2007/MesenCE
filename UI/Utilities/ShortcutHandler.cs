@@ -220,7 +220,7 @@ namespace Mesen.Utilities
 		private static string GetOutputFilename(string folder, string ext)
 		{
 			DateTime now = DateTime.Now;
-			string baseName = EmuApi.GetRomInfo().GetRomName();
+			string baseName = MainWindowViewModel.Instance.GetRecordingName();
 			string dateTime = " " + now.ToShortDateString() + " " + now.ToLongTimeString();
 			string filename = baseName + dateTime + ext;
 
