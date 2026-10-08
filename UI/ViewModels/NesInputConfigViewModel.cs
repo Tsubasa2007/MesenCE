@@ -114,6 +114,7 @@ namespace Mesen.ViewModels
 			ControllerType.BarcodeBattler,
 			ControllerType.HoriTrack,
 			ControllerType.BandaiHyperShot,
+			ControllerType.CityPatrolmanGun,
 			ControllerType.AsciiTurboFile,
 			ControllerType.BattleBox
 		};

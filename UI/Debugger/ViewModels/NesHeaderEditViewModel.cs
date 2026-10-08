@@ -711,7 +711,7 @@ public partial class NesHeaderEditViewModel : DisposableViewModel
 		RacerMateBicycle = 0x2C, //not supported yet
 		UForce = 0x2D, //not supported yet
 		RobStackUp = 0x2E, //not supported yet
-		CityPatrolmanLightgun = 0x2F, //not supported yet
+		CityPatrolmanLightgun = 0x2F,
 		SharpC1CassetteInterface = 0x30, //not supported yet
 		StandardControllerWithSwappedButtons = 0x31, //not supported yet
 		ExcaliburSudokuPad = 0x32, //not supported yet

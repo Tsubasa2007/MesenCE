@@ -292,7 +292,8 @@ enum class ControllerType
 	SacController,
 
 	//NES - appended at the end to keep existing values stable
-	Ps2Mouse
+	Ps2Mouse,
+	CityPatrolmanGun
 };
 
 struct KeyMapping

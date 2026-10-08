@@ -289,7 +289,8 @@ namespace Mesen.Utilities
 					InputApi.HasControlDevice(ControllerType.NesZapper) ||
 					InputApi.HasControlDevice(ControllerType.SmsLightPhaser) ||
 					InputApi.HasControlDevice(ControllerType.SuperScope) ||
-					InputApi.HasControlDevice(ControllerType.BandaiHyperShot)
+					InputApi.HasControlDevice(ControllerType.BandaiHyperShot) ||
+					InputApi.HasControlDevice(ControllerType.CityPatrolmanGun)
 				);
 
 				if(hasLightGun) {

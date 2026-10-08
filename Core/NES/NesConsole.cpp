@@ -1287,6 +1287,13 @@ void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem syst
 	} else if(inputType == GameInputType::BandaiHypershot) {
 		log("[Input] Bandai Hyper Shot gun connected");
 		expDevice = ControllerType::BandaiHyperShot;
+	} else if(inputType == GameInputType::CityPatrolmanLightgun) {
+		//The gun is the only input, and a joypad would put its own bits on $4016 bit 0 as the
+		//gun's X coordinate goes out there
+		log("[Input] City Patrolman light gun connected");
+		port1 = ControllerType::None;
+		port2 = ControllerType::None;
+		expDevice = ControllerType::CityPatrolmanGun;
 	} else if(inputType == GameInputType::BattleBox) {
 		log("[Input] Battle Box connected");
 		expDevice = ControllerType::BattleBox;

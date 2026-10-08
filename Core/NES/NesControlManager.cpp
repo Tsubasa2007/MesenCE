@@ -35,6 +35,7 @@
 #include "NES/Mappers/Subor/SuborCarts.h"
 #include "NES/Input/BbkMouse.h"
 #include "NES/Input/Ps2Mouse.h"
+#include "NES/Input/CityPatrolmanGun.h"
 #include "NES/Input/BbkKeyboard.h"
 #include "NES/Input/Sb2kMouse.h"
 #include "NES/Input/Sb2kKeyboard.h"
@@ -153,6 +154,7 @@ shared_ptr<BaseControlDevice> NesControlManager::CreateControllerDevice(Controll
 		case ControllerType::BarcodeBattler: device.reset(new BarcodeBattlerReader(_emu)); break;
 		case ControllerType::HoriTrack: device.reset(new HoriTrack(_emu, keys)); break;
 		case ControllerType::BandaiHyperShot: device.reset(new BandaiHyperShot(_console, keys)); break;
+		case ControllerType::CityPatrolmanGun: device.reset(new CityPatrolmanGun(_console, keys)); break;
 		case ControllerType::AsciiTurboFile: device.reset(new AsciiTurboFile(_console)); break;
 		case ControllerType::BattleBox: device.reset(new BattleBox(_console)); break;
 

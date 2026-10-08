@@ -439,6 +439,7 @@ namespace Mesen.Config
 
 		//NES - appended at the end to keep existing values stable
 		Ps2Mouse,
+		CityPatrolmanGun,
 	}
 
 	public static class ControllerTypeExtensions
@@ -534,6 +535,7 @@ namespace Mesen.Config
 				case ControllerType.HoriTrack:
 				case ControllerType.KonamiHyperShot:
 				case ControllerType.BandaiHyperShot:
+				case ControllerType.CityPatrolmanGun:
 				case ControllerType.SuborMouse:
 				case ControllerType.SuborMouse24:
 				case ControllerType.Sb2kMouse:

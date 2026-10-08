@@ -69,6 +69,7 @@ namespace Mesen.Config
 				ControllerType.NesArkanoidController => ArkanoidButtons,
 				ControllerType.FamicomZapper => ZapperButtons,
 				ControllerType.NesZapper => ZapperButtons,
+				ControllerType.CityPatrolmanGun => ZapperButtons,
 				ControllerType.SnesMouse => MouseButtons,
 				ControllerType.SuborMouse => MouseButtons,
 				ControllerType.SuborMouse24 => MouseButtons,
@@ -118,7 +119,7 @@ namespace Mesen.Config
 				ControllerType.VbController => Enum.GetValues<NesVirtualBoyButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.KonamiHyperShot => Enum.GetValues<NesKonamiHyperShotButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.NesArkanoidController or ControllerType.FamicomArkanoidController => Enum.GetValues<NesArkanoidButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
-				ControllerType.NesZapper or ControllerType.FamicomZapper => Enum.GetValues<NesZapperButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
+				ControllerType.NesZapper or ControllerType.FamicomZapper or ControllerType.CityPatrolmanGun => Enum.GetValues<NesZapperButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.SnesMouse or ControllerType.SuborMouse or ControllerType.SuborMouse24 or ControllerType.Sb2kMouse or ControllerType.YuxingMouse or ControllerType.YuxingSerialMouse => Enum.GetValues<GenericMouseButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.OekaKidsTablet => Enum.GetValues<NesOekakidsButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
 				ControllerType.BandaiHyperShot => Enum.GetValues<NesZapperButtons>().Select(val => new CustomKeyMapping(ResourceHelper.GetEnumText(val), buttonMappings, (int)val)).ToList(),
@@ -203,6 +204,7 @@ namespace Mesen.Config
 
 				case ControllerType.FamicomZapper:
 				case ControllerType.NesZapper:
+				case ControllerType.CityPatrolmanGun:
 					ZapperButtons = new UInt16[2];
 					break;
 
@@ -478,6 +480,7 @@ namespace Mesen.Config
 				case ControllerType.FamicomZapper:
 				case ControllerType.NesZapper:
 				case ControllerType.BandaiHyperShot:
+				case ControllerType.CityPatrolmanGun:
 					return new UInt16[2] {
 						InputApi.GetKeyCode("Mouse Left"),
 						InputApi.GetKeyCode("Mouse Right")
@@ -548,6 +551,7 @@ namespace Mesen.Config
 
 				case ControllerType.NesZapper: ZapperButtons = GetDefaultCustomKeys(type, preset); break;
 				case ControllerType.FamicomZapper: ZapperButtons = GetDefaultCustomKeys(type, preset); break;
+				case ControllerType.CityPatrolmanGun: ZapperButtons = GetDefaultCustomKeys(type, preset); break;
 
 				case ControllerType.BandaiMicrophone: BandaiMicrophoneButtons = GetDefaultCustomKeys(type, preset); break;
 
