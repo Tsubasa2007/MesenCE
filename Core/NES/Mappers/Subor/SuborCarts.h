@@ -58,6 +58,16 @@ public:
 		}
 	}
 
+	//Two cartridges wait for vblank in a loop the Dendy frame divides exactly - the karaoke one's song
+	//start polls $2002 with its NMI off in an 8-cycle loop, the Wubi one's text editor with its NMI on -
+	//so the read lands on the dot that suppresses the flag in every frame and they wait for ever. One
+	//more line before the NMI (313 lines, as the YuXing machines have) breaks the lock. Not measured
+	//on the hardware; PAL timing frees them too but lowers the music by about 6%.
+	static bool HasLongDendyFrame(uint32_t prgCrc)
+	{
+		return prgCrc == 0x0A9808AE || prgCrc == 0x957ABE27; //karaoke, Wubi typing
+	}
+
 	//The cartridges whose BIOS scans 13 rows: they read row 9's extended-keyboard bit and then rows
 	//10-12. V1.0, V1.1, V3 and V8.0 stop at row 8, and V15.0 / V15.0 V2 (and the card's host) step to row 9
 	//but take anything there for a key: they skip their splash screen and see a held key unless

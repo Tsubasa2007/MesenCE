@@ -725,7 +725,8 @@ BaseMapper* MapperFactory::GetMapperFromID(RomData& romData)
 		case 487: return new Mapper487();
 
 		case 513: return new Sachen9602();
-		//514-517
+		case 514: return new Subor168(); //Subor karaoke
+		//515-517
 		case 518: return new Dance2000();
 		case 519: return new Eh8813A();
 		//520

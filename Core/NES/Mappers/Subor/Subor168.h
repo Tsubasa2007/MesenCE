@@ -22,11 +22,17 @@
 //
 //8KB of work RAM at $6000 and 8KB of CHR RAM. The keyboard and mouse are the Subor cartridges'
 //(see SuborCarts).
+//
+//The Subor karaoke cartridge (NES 2.0 mapper 514) is the same board driven from a latch at
+//$8000-$FFFF instead (the reference's Rom_Type 1): bits 0-4 pick the 32KB bank, bit 6 is horizontal
+//mirroring, and either of bits 6-7 sends nametables 1-3 to the $1000 patterns.
 class Subor168 : public BaseMapper
 {
 private:
 	uint8_t _reg5000 = 0;
 	uint8_t _reg5200 = 0;
+	uint8_t _reg8000 = 0;
+	bool _karaoke = false;
 
 	//The last nametable byte the picture fetched, which picks the background's pattern table
 	uint16_t _ntAddr = 0;
@@ -35,6 +41,11 @@ private:
 
 	void UpdateState()
 	{
+		if(_karaoke) {
+			SelectPrgPage2x(0, (_reg8000 & 0x1F) * 2);
+			SetMirroringType((_reg8000 & 0x40) ? MirroringType::Horizontal : MirroringType::Vertical);
+			return;
+		}
 		if(_reg5200 & 0x04) {
 			SelectPrgPage2x(0, (_reg5000 & 0x7F) * 2);
 		} else {
@@ -42,6 +53,11 @@ private:
 			SelectPrgPage(1, 0);
 		}
 		SetMirroringType((_reg5200 & 0x01) ? MirroringType::Horizontal : MirroringType::Vertical);
+	}
+
+	bool PatternsFollowNametable()
+	{
+		return _karaoke ? (_reg8000 & 0xC0) != 0 : (_reg5200 & 0x03) == 0x02;
 	}
 
 	bool IsBackgroundFetch()
@@ -60,6 +76,10 @@ protected:
 	uint16_t RegisterStartAddress() override { return 0x5000; }
 	uint16_t RegisterEndAddress() override { return 0x5FFF; }
 	bool AllowRegisterRead() override { return true; }
+
+	//The karaoke cartridge's song start needs one more line (see SuborCarts::HasLongDendyFrame)
+	int32_t GetDendyScanlineCount() override { return _karaoke ? 313 : 312; }
+	int32_t GetDendyNmiScanline() override { return _karaoke ? 292 : 291; }
 	bool EnableCustomVramRead() override { return true; }
 	bool EnableCpuClockHook() override { return true; }
 
@@ -74,6 +94,11 @@ protected:
 		_lpcAudio.reset(new BbkLpcAudio(_console, BbkLpcAudio::LpcVariant::Sb2k));
 		_lpcAudio->Reset();
 
+		_karaoke = IsKaraoke(_romInfo.Hash.PrgCrc32);
+		if(_karaoke) {
+			AddRegisterRange(0x8000, 0xFFFF, MemoryOperation::Write);
+		}
+
 		SetCpuMemoryMapping(0x6000, 0x7FFF, 0, PrgMemoryType::WorkRam);
 		SelectChrPage(0, 0);
 		UpdateState();
@@ -84,6 +109,7 @@ protected:
 		BaseMapper::Reset(softReset);
 		_reg5000 = 0;
 		_reg5200 = 0;
+		_reg8000 = 0;
 		_lpcAudio->Reset();
 		UpdateState();
 	}
@@ -103,7 +129,7 @@ protected:
 				}
 			} else if(IsBackgroundFetch()) {
 				uint8_t nametable = (_ntAddr >> 10) & 0x03;
-				if(nametable == 2 || (nametable != 0 && (_reg5200 & 0x03) == 0x02)) {
+				if(nametable == 2 || (nametable != 0 && PatternsFollowNametable())) {
 					addr |= 0x1000;
 				}
 			}
@@ -121,6 +147,11 @@ protected:
 
 	void WriteRegister(uint16_t addr, uint8_t value) override
 	{
+		if(addr >= 0x8000) {
+			_reg8000 = value;
+			UpdateState();
+			return;
+		}
 		switch(addr & 0xFF00) {
 			case 0x5000: _reg5000 = value; UpdateState(); break;
 			case 0x5200: _reg5200 = value; UpdateState(); break;
@@ -133,6 +164,7 @@ protected:
 		BaseMapper::Serialize(s);
 		SV(_reg5000);
 		SV(_reg5200);
+		SV(_reg8000);
 		SV(_ntAddr);
 		SV(_lpcAudio);
 		if(!s.IsSaving()) {
@@ -141,8 +173,13 @@ protected:
 	}
 
 public:
+	static bool IsKaraoke(uint32_t prgCrc)
+	{
+		return prgCrc == 0x0A9808AE;
+	}
+
 	static bool IsSubor168(uint32_t prgCrc)
 	{
-		return prgCrc == 0x04260DBC || prgCrc == 0x79C85E71 || prgCrc == 0xD3113B3F;
+		return prgCrc == 0x04260DBC || prgCrc == 0x79C85E71 || prgCrc == 0xD3113B3F || IsKaraoke(prgCrc);
 	}
 };
