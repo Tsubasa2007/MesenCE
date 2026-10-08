@@ -1,0 +1,48 @@
+name: Build EasyMake
+
+on:
+  push:
+    paths:
+      - 'Tools/EasyMake/**'
+      - '.github/workflows/easymake.yml'
+  pull_request:
+    paths:
+      - 'Tools/EasyMake/**'
+      - '.github/workflows/easymake.yml'
+  workflow_dispatch:
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+
+jobs:
+  windows:
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository) }}
+    runs-on: windows-2025-vs2026
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+
+      - name: Install .NET Core
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.x
+
+      - name: Publish EasyMake
+        working-directory: Tools/EasyMake
+        run: dotnet publish -c Release -r win-x64
+
+      - name: Collect files
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item Tools/EasyMake/bin/Release/net10.0/win-x64/publish/EasyMake.exe dist/
+          Copy-Item Tools/EasyMake/*.md dist/
+
+      - name: Upload EasyMake
+        uses: actions/upload-artifact@v7
+        if: github.event_name != 'pull_request'
+        with:
+          name: EasyMake (Windows)
+          path: dist/
