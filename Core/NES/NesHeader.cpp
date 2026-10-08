@@ -202,8 +202,10 @@ GameInputType NesHeader::GetInputType()
 			return (GameInputType)Byte15;
 		}
 
+		//The header names a device, just not one known here: fall back to plain controllers rather
+		//than leave the input as unspecified, which would keep whatever the previous game connected
 		MessageManager::Log("[iNes] Unknown controller type.");
-		return GameInputType::Unspecified;
+		return GameInputType::StandardControllers;
 	} else {
 		return GameInputType::Unspecified;
 	}
