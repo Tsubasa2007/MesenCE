@@ -36,7 +36,11 @@ namespace Mesen
 			};
 
 #if DEBUG
-			this.AttachDeveloperTools();
+			//Not on F12, the default: the learning machines' keyboards have an F12 key, and their
+			//software uses it
+			this.AttachDeveloperTools(options => {
+				options.Gesture = new Avalonia.Input.KeyGesture(Avalonia.Input.Key.F12, Avalonia.Input.KeyModifiers.Control | Avalonia.Input.KeyModifiers.Shift);
+			});
 #endif
 			AvaloniaXamlLoader.Load(this);
 			ResourceHelper.LoadResources();
