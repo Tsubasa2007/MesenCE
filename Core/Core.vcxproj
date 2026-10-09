@@ -536,6 +536,7 @@
     <ClInclude Include="NES\Input\Sb2kMouse.h" />
     <ClInclude Include="NES\Input\Sb2kKeyboard.h" />
     <ClInclude Include="NES\Input\PecKeyMatrix.h" />
+    <ClInclude Include="NES\Input\ZechengKeyMatrix.h" />
     <ClInclude Include="NES\Input\SuborMouse.h" />
     <ClInclude Include="NES\Input\TwoPlayerAdapter.h" />
     <ClInclude Include="NES\Input\VirtualBoyController.h" />

@@ -60,6 +60,7 @@ private:
 	//Not _state: a save state would file it under the same key as the device's input state
 	State _busState = State::Idle;
 	uint8_t _out = 0x05;           //the last $4016 write
+	bool _xFirst = false;          //the packet order of two other cartridges (see PackReadData)
 	uint64_t _requestAt = 0;       //Idle with the host holding data low: when the mouse starts clocking
 	bool _requestPending = false;
 
@@ -184,15 +185,23 @@ private:
 		//As on any PS/2 mouse, bit 4 is the sign of the first count and bit 5 of the second. The
 		//expansion cards' driver takes its signs from the counts themselves and never notices; a
 		//driver that reads these bits sends the pointer the wrong way across the screen otherwise.
+		//Y before X - the order BbkMouse's packet has too; a PC's PS/2 mouse sends X first
+		int32_t first = dy;
+		int32_t second = dx;
+		if(_xFirst) {
+			//Two cartridges take X first, as a PC does, but counting leftwards, and then Y counting
+			//downwards
+			first = -dx;
+			second = -dy;
+		}
 		packet[0] = 0x08 |
 			(IsPressed(Buttons::Right) ? 0x01 : 0) |
 			(IsPressed(Buttons::Left) ? 0x02 : 0) |
 			(IsPressed(Buttons::Middle) ? 0x04 : 0) |
-			(dy < 0 ? 0x10 : 0) |
-			(dx < 0 ? 0x20 : 0);
-		//Y before X - the order BbkMouse's packet has too; a PC's PS/2 mouse sends X first
-		packet[1] = (uint8_t)dy;
-		packet[2] = (uint8_t)dx;
+			(first < 0 ? 0x10 : 0) |
+			(second < 0 ? 0x20 : 0);
+		packet[1] = (uint8_t)first;
+		packet[2] = (uint8_t)second;
 	}
 
 	void CommandReceived(uint8_t cmd, uint64_t at)
@@ -337,8 +346,9 @@ protected:
 	}
 
 public:
-	Ps2Mouse(Emulator* emu, uint8_t port, KeyMappingSet keyMappings) : BaseControlDevice(emu, ControllerType::Ps2Mouse, port, keyMappings)
+	Ps2Mouse(Emulator* emu, uint8_t port, KeyMappingSet keyMappings, bool xFirst = false) : BaseControlDevice(emu, ControllerType::Ps2Mouse, port, keyMappings)
 	{
+		_xFirst = xFirst;
 	}
 
 	uint8_t ReadRam(uint16_t addr) override

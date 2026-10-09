@@ -46,6 +46,7 @@ private:
 	uint8_t _padBits = 0;
 	uint8_t _padPos = 8;
 	uint32_t _turboSpeed = 0;
+	bool _invertCounts = false;    //see WriteRam
 
 protected:
 	bool HasCoordinates() override { return true; }
@@ -122,9 +123,10 @@ protected:
 	}
 
 public:
-	SuborMouse24(Emulator* emu, uint8_t port, KeyMappingSet keyMappings) : BaseControlDevice(emu, ControllerType::SuborMouse24, port, keyMappings)
+	SuborMouse24(Emulator* emu, uint8_t port, KeyMappingSet keyMappings, bool invertCounts = false) : BaseControlDevice(emu, ControllerType::SuborMouse24, port, keyMappings)
 	{
 		_turboSpeed = keyMappings.TurboSpeed;
+		_invertCounts = invertCounts;
 	}
 
 	uint8_t PadButtons()
@@ -182,6 +184,12 @@ public:
 
 		uint32_t buttons = (IsPressed(Buttons::Left) ? 0x02 : 0) | (IsPressed(Buttons::Right) ? 0x01 : 0);
 		_bits |= buttons << 22;
+		if(_invertCounts) {
+			//One cartridge's mouse sends the two counts inverted: every copy of its driver flips
+			//bits 0-15 back before using them, and takes the direction and button bits as they come.
+			//Sent plain, a count of 2 reads as 125 and the pointer flies off at the first quick move.
+			_bits ^= 0xFFFF;
+		}
 		_bitPos = 0;
 	}
 

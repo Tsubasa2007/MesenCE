@@ -5,6 +5,7 @@
 #include "NES/NesConsole.h"
 #include "NES/NesControlManager.h"
 #include "NES/Input/PecKeyMatrix.h"
+#include "NES/Input/ZechengKeyMatrix.h"
 #include "Utilities/Serializer.h"
 
 //Dongda (东达) PEC-586 family - the "Pyramid" (金字塔) home computers: PEC-586, PEC-686F and
@@ -43,10 +44,29 @@
 //cursor is drawn in color 1 of a palette whose only visible entry is color 3.
 //
 //Keyboard: the PEC-586 key matrix (see PecKeyMatrix) on $4016/$4017.
+//
+//Two 512KB learning cartridges (BIT Corp. 1989 inside) sit on this board too, with circulating
+//dumps that say mapper 170 - the number the reference emulator gave this board, and a different
+//one in MesenCE - so they are known by their PRG CRC32 (IsZechengCart). They use none of the
+//computers' banking: $5000 bits 3-0 pick a 32KB bank of the whole ROM. The mirroring and bitmap
+//bits work as above. Their keyboard is the ZeCheng type (see ZechengKeyMatrix), and $5500 reads
+//a DIP setting in bits 5-4 (bit 7 is the cassette input, bit 6 unused); the reference emulator
+//steps it on every reset through four values it names after brands, so 0 is used here. They run
+//on Dendy timing.
 class DongdaPec586 : public BaseMapper
 {
+public:
+	static bool IsZechengCart(uint32_t prgCrc)
+	{
+		return prgCrc == 0x836CDDEF || prgCrc == 0x428C1C1D;
+	}
+
 private:
 	static constexpr uint32_t Crc9588 = 0xFE31765B;
+	static constexpr uint8_t ZechengDip = 0x00;
+
+	bool _zecheng = false;
+	bool _kbdArmed = false;
 
 	//What reads of $5000-$5FFF carry, by the last $54xx write's high nibble
 	static constexpr uint8_t ReadBits[16] = { 0x00, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02 };
@@ -84,7 +104,9 @@ private:
 	void UpdateState()
 	{
 		uint8_t reg = _regs[0];
-		if(reg & 0x10) {
+		if(_zecheng) {
+			SetCpuMemoryMapping(0x8000, 0xFFFF, PrgMemoryType::PrgRom, ((reg & 0x0F) * 0x8000) & (_prgSize - 1), MemoryAccessType::Read);
+		} else if(reg & 0x10) {
 			SetCpuMemoryMapping(0x8000, 0xFFFF, PrgMemoryType::PrgRom, ((reg & 0x07) * 0x8000) & (_prgSize - 1), MemoryAccessType::Read);
 		} else if(_is9588) {
 			uint8_t bank = (reg & 0x0F) | ((reg & 0x20) >> 1);
@@ -139,6 +161,7 @@ protected:
 	void InitMapper() override
 	{
 		_is9588 = _romInfo.Hash.PrgCrc32 == Crc9588;
+		_zecheng = IsZechengCart(_romInfo.Hash.PrgCrc32);
 
 		AddRegisterRange(0x4016, 0x4016, MemoryOperation::Write);
 		AddRegisterRange(0x4017, 0x4017, MemoryOperation::Read);
@@ -154,6 +177,7 @@ protected:
 		memset(_regs, 0, sizeof(_regs));
 		_kbdRow = 0;
 		_kbdColumn = 0;
+		_kbdArmed = false;
 		UpdateState();
 	}
 
@@ -187,8 +211,15 @@ protected:
 			}
 		}
 		if(addr == 0x4017) {
-			uint8_t key = PecKeyMatrix::Read(NesControls()->GetControlDevice<Sb2kKeyboard>().get(), _kbdRow, _kbdColumn);
+			Sb2kKeyboard* kbd = NesControls()->GetControlDevice<Sb2kKeyboard>().get();
+			if(_zecheng) {
+				return (NesControls()->ReadRam(addr) & ~0x02) | ZechengKeyMatrix::Read(kbd, _kbdRow, _kbdColumn);
+			}
+			uint8_t key = PecKeyMatrix::Read(kbd, _kbdRow, _kbdColumn);
 			return (NesControls()->ReadRam(addr) & ~0x12) | key;
+		}
+		if(_zecheng && addr == 0x5500) {
+			return ZechengDip << 4;
 		}
 		return (_console->GetMemoryManager()->GetOpenBus() & 0xD8) | ReadBits[_regs[4] >> 4];
 	}
@@ -197,7 +228,11 @@ protected:
 	{
 		if(addr == 0x4016) {
 			NesControls()->WriteRam(addr, value);
-			PecKeyMatrix::Write(value, _kbdRow, _kbdColumn);
+			if(_zecheng) {
+				ZechengKeyMatrix::Write(value, _kbdRow, _kbdColumn, _kbdArmed);
+			} else {
+				PecKeyMatrix::Write(value, _kbdRow, _kbdColumn);
+			}
 			return;
 		}
 
@@ -218,6 +253,7 @@ protected:
 		SV(_diskMotorOn);
 		SV(_kbdRow);
 		SV(_kbdColumn);
+		SV(_kbdArmed);
 		if(!s.IsSaving()) {
 			UpdateState();
 		}

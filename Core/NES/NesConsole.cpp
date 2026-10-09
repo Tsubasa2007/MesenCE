@@ -1265,6 +1265,11 @@ void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem syst
 				log("[Input] PS/2 mouse connected");
 				port1 = ControllerType::NesController;
 				port2 = ControllerType::Ps2Mouse;
+			} else if(SuborCarts::HasSerialMouseOnPort2(mapper->GetRomInfo().Hash.PrgCrc32)) {
+				//The 24-bit mouse read on $4017 bit 0, beside the keyboard's bits 1-4
+				log("[Input] Subor mouse (24-bit) connected");
+				port1 = ControllerType::NesController;
+				port2 = ControllerType::SuborMouse24;
 			} else if(!SuborCarts::HasSerialMouse(mapper->GetRomInfo().Hash.PrgCrc32)) {
 				//No mouse driver in this one: a joypad in each port
 				port1 = ControllerType::NesController;

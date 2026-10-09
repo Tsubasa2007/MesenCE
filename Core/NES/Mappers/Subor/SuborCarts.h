@@ -18,10 +18,13 @@ class SuborCarts
 public:
 	static constexpr uint32_t Ps2MouseCard = 0x90257DA1;
 
-	//The expansion cards, whose mouse is the PS/2 one instead of the 24-bit serial mouse
+	//The expansion cards, whose mouse is the PS/2 one instead of the 24-bit serial mouse - and other
+	//makers' learning cartridges with the same 10-row keyboard scan and PS/2 driver ($EB, then a
+	//check for the $FA acknowledge, the data line driven through $4016 bit 0)
 	static bool HasPs2Mouse(uint32_t prgCrc)
 	{
 		switch(prgCrc) {
+			case 0x5DD45CFA: //Kingwon learning cartridge (mapper 241)
 			case 0x5E660855: //multimedia card 1 in a V15.0 V2 host
 			case 0xFDA673F6: //multimedia card 2 in a V15.0 V2 host
 			case 0xBD8ACE09: //multimedia card 4 in a V15.0 V2 host
@@ -31,11 +34,28 @@ public:
 			case 0x14774592: //multimedia card 2
 			case 0x4DC15B83: //multimedia card 4
 			case 0xE520960E: //Windows 98 practice card
+			case 0x8B23F1AA: //other makers' learning cartridges (mapper 241)
+			case 0x77E83AE2: //(mapper 178)
+			case 0x488482C0: //(mapper 241)
+			case 0x24DC1303: //(mapper 241)
+			case 0x6DAD612B: //(mapper 241)
+			case 0xD58CDBDA: //(mapper 178)
+			case 0x6AA52ED1: //(mapper 241)
+			case 0x5CE9864D: //(mapper 241)
+			case 0x85FD927E: //(mapper 178)
+			case 0x0BEB8BCD: //the previous one as a mapper 241 image
+			case 0xBACB4CDE: //(mapper 241)
 				return true;
 
 			default:
 				return false;
 		}
+	}
+
+	//Two of those read the packet the other way round (see Ps2Mouse)
+	static bool HasPs2MouseXFirst(uint32_t prgCrc)
+	{
+		return prgCrc == 0x6DAD612B || prgCrc == 0x5CE9864D;
 	}
 
 	//The cartridges with a driver for the 24-bit serial mouse (a 24-read loop on $4016). The others
@@ -44,6 +64,9 @@ public:
 	static bool HasSerialMouse(uint32_t prgCrc)
 	{
 		switch(prgCrc) {
+			case 0x1A13AB55: //another maker's learning cartridge (mapper 178)
+			case 0x34D9C9F2: //another maker's learning cartridge (mapper 241, 1MB)
+			case 0x935CE367: //another maker's learning cartridge (mapper 241, 1MB)
 			case 0xF58761D0: //V8.0
 			case 0x12D61CE8: //V11
 			case 0x9EA48F04: //V12.0
@@ -58,14 +81,70 @@ public:
 		}
 	}
 
-	//Two cartridges wait for vblank in a loop the Dendy frame divides exactly - the karaoke one's song
-	//start polls $2002 with its NMI off in an 8-cycle loop, the Wubi one's text editor with its NMI on -
+	//The cartridges with the LPC speech chip at $5000-$5FFF (see Mapper241): their speech routine
+	//waits for bit 6 of $5FF0 and sends each byte as two $5x nibbles, low first
+	static bool HasLpcSpeech(uint32_t prgCrc)
+	{
+		switch(prgCrc) {
+			case 0x2B74253D: //another maker's learning cartridge (mapper 241)
+			case 0x8FA597F8: //typing and dictionary cartridge (mapper 241)
+			case 0x957ABE27: //Wubi typing and English cartridge (mapper 241)
+				return true;
+
+			default:
+				return false;
+		}
+	}
+
+	//One of those whose mouse sends its two counts inverted (see SuborMouse24)
+	static bool HasInvertedMouseCounts(uint32_t prgCrc)
+	{
+		return prgCrc == 0x34D9C9F2;
+	}
+
+	//One cartridge reads the same 24-bit mouse in the second port instead: its 24-read loop is on
+	//$4017, bit 0 beside the keyboard's bits 1-4
+	static bool HasSerialMouseOnPort2(uint32_t prgCrc)
+	{
+		return prgCrc == 0x328A2876; //another maker's learning cartridge (mapper 178)
+	}
+
+	//A study card from another maker whose menus and programs read the Family BASIC keyboard's
+	//matrix instead of the Subor one (the letters pick its menu entries), on a Dendy-timed machine
+	static bool HasFamilyBasicKeyboard(uint32_t prgCrc)
+	{
+		return prgCrc == 0x9D91BF0F; //mapper 241
+	}
+
+	//Three cartridges wait for vblank in a loop the Dendy frame divides exactly - the karaoke one's song
+	//start polls $2002 with its NMI off in an 8-cycle loop, the Wubi one's text editor and the study
+	//card's menu (after leaving its editor) with their NMI on -
 	//so the read lands on the dot that suppresses the flag in every frame and they wait for ever. One
 	//more line before the NMI (313 lines, as the YuXing machines have) breaks the lock. Not measured
 	//on the hardware; PAL timing frees them too but lowers the music by about 6%.
 	static bool HasLongDendyFrame(uint32_t prgCrc)
 	{
-		return prgCrc == 0x0A9808AE || prgCrc == 0x957ABE27; //karaoke, Wubi typing
+		return prgCrc == 0x0A9808AE || prgCrc == 0x957ABE27 || //karaoke, Wubi typing
+			prgCrc == 0x9D91BF0F; //study card with the Family BASIC keyboard
+	}
+
+	//The cartridges with the cut-down keyboard whose text editor reads its Alt modifier from row 1
+	//bit 3, where the full keyboard has End (see SuborKeyboard)
+	static bool HasAltAtEnd(uint32_t prgCrc)
+	{
+		switch(prgCrc) {
+			case 0x5F2FA921: //its help page lists Alt+F1-F4
+			case 0x5C422ED2:
+			case 0x6B03AC00:
+			case 0xB72B17ED:
+			case 0x389785A0:
+			case 0xD58CDBDA:
+			case 0x5CE9864D:
+				return true;
+
+			default:
+				return false;
+		}
 	}
 
 	//The cartridges whose BIOS scans 13 rows: they read row 9's extended-keyboard bit and then rows
@@ -175,6 +254,34 @@ public:
 			case 0x8FA597F8: //typing and dictionary cartridge (mapper 241)
 			case 0x957ABE27: //Wubi typing and English cartridge (mapper 241)
 			case 0x51C41A5A: //16-in-1 study card from another maker (mapper 241)
+			case 0x5DD45CFA: //Kingwon learning cartridge, with a PS/2 mouse (mapper 241)
+			//Other makers' learning cartridges with the same 10-row keyboard scan. Most bring a
+			//mouse too (see HasPs2Mouse, HasSerialMouse and HasSerialMouseOnPort2); these ten don't.
+			case 0xE406218A: //(mapper 241)
+			case 0xCC330906: //(mapper 241)
+			case 0x2726FC11: //(mapper 178)
+			case 0xE90A6AEB: //(mapper 241)
+			case 0x2B74253D: //(mapper 241)
+			case 0xB72B17ED: //(mapper 178)
+			case 0x389785A0: //the previous one as a mapper 241 image
+			case 0x5F2FA921: //(mapper 241)
+			case 0x5C422ED2: //(mapper 241)
+			case 0x6B03AC00: //(mapper 241)
+			case 0x8B23F1AA: //PS/2 mouse
+			case 0x77E83AE2:
+			case 0x488482C0:
+			case 0x24DC1303:
+			case 0x6DAD612B:
+			case 0xD58CDBDA:
+			case 0x6AA52ED1:
+			case 0x5CE9864D:
+			case 0x85FD927E:
+			case 0x0BEB8BCD:
+			case 0xBACB4CDE:
+			case 0x1A13AB55: //24-bit mouse
+			case 0x34D9C9F2:
+			case 0x328A2876: //24-bit mouse in the second port
+			case 0x935CE367: //24-bit mouse
 				return true;
 
 			default:

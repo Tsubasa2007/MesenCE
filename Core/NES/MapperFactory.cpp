@@ -482,7 +482,15 @@ BaseMapper* MapperFactory::GetMapperFromID(RomData& romData)
 			//devices apart from the Subor/BBK ones by the mapper type
 			romData.Info.InputType = GameInputType::SuborKeyboardMouse1;
 			return new YuxingMapper();
-		case 170: return new Mapper170();
+		case 170:
+			//Two learning cartridges on the PEC-586 board come with this number (see DongdaPec586)
+			if(DongdaPec586::IsZechengCart(romData.Info.Hash.PrgCrc32)) {
+				romData.Info.System = GameSystem::Dendy;
+				//Asking for the input type here is what gets the keyboard auto-configured
+				romData.Info.InputType = GameInputType::SuborKeyboardMouse1;
+				return new DongdaPec586();
+			}
+			return new Mapper170();
 		case 171:
 			//The VirtuaNES-BBK fork reuses mapper 171 for the BBK learning machine.
 			//Real Kaiser KS-7058 games have 32K PRG + CHR ROM; the BBK BIOS is 128K PRG with CHR-RAM only.
@@ -795,6 +803,9 @@ unique_ptr<BaseMapper> MapperFactory::InitializeFromFile(NesConsole* console, Vi
 		if(SuborCarts::IsSuborCart(romData.Info.Hash.PrgCrc32)) {
 			romData.Info.System = GameSystem::Dendy;
 			romData.Info.InputType = GameInputType::SuborKeyboardMouse1;
+		} else if(SuborCarts::HasFamilyBasicKeyboard(romData.Info.Hash.PrgCrc32)) {
+			romData.Info.System = GameSystem::Dendy;
+			romData.Info.InputType = GameInputType::FamilyBasicKeyboard;
 		}
 
 		unique_ptr<BaseMapper> mapper(GetMapperFromID(romData));

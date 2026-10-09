@@ -110,9 +110,13 @@ shared_ptr<BaseControlDevice> NesControlManager::CreateControllerDevice(Controll
 
 		case ControllerType::SnesMouse: device.reset(new SnesMouse(_emu, port, keys)); break;
 		case ControllerType::SuborMouse: device.reset(new SuborMouse(_emu, port, keys)); break;
-		case ControllerType::SuborMouse24: device.reset(new SuborMouse24(_emu, port, keys)); break;
+		case ControllerType::SuborMouse24:
+			device.reset(new SuborMouse24(_emu, port, keys, SuborCarts::HasInvertedMouseCounts(_console->GetMapper()->GetRomInfo().Hash.PrgCrc32)));
+			break;
 		case ControllerType::BbkMouse: device.reset(new BbkMouse(_emu, port, keys)); break;
-		case ControllerType::Ps2Mouse: device.reset(new Ps2Mouse(_emu, port, keys)); break;
+		case ControllerType::Ps2Mouse:
+			device.reset(new Ps2Mouse(_emu, port, keys, SuborCarts::HasPs2MouseXFirst(_console->GetMapper()->GetRomInfo().Hash.PrgCrc32)));
+			break;
 		case ControllerType::Sb2kMouse: device.reset(new Sb2kMouse(_emu, port, keys)); break;
 		case ControllerType::YuxingMouse: device.reset(new YuxingMouse(_emu, port, keys)); break;
 		case ControllerType::YuxingSerialMouse: device.reset(new YuxingSerialMouse(_emu, port, keys)); break;
@@ -145,7 +149,8 @@ shared_ptr<BaseControlDevice> NesControlManager::CreateControllerDevice(Controll
 			uint32_t prgCrc = _console->GetMapper()->GetRomInfo().Hash.PrgCrc32;
 			bool isSuborCart = SuborCarts::IsSuborCart(prgCrc);
 			bool reduced = YuxingMapper::IsV10OrV11(prgCrc) || isSuborCart;
-			device.reset(new SuborKeyboard(_emu, keys, reduced, SuborCarts::HasExtendedKeyboard(prgCrc), SuborCarts::HasPs2Mouse(prgCrc)));
+			bool mouseOnBit0 = SuborCarts::HasPs2Mouse(prgCrc) || SuborCarts::HasSerialMouseOnPort2(prgCrc);
+			device.reset(new SuborKeyboard(_emu, keys, reduced, SuborCarts::HasExtendedKeyboard(prgCrc), mouseOnBit0, SuborCarts::HasAltAtEnd(prgCrc)));
 			break;
 		}
 		case ControllerType::BbkKeyboard: device.reset(new BbkKeyboard(_emu, keys)); break;

@@ -928,6 +928,9 @@
     <ClInclude Include="NES\Input\PecKeyMatrix.h">
       <Filter>NES\Input</Filter>
     </ClInclude>
+    <ClInclude Include="NES\Input\ZechengKeyMatrix.h">
+      <Filter>NES\Input</Filter>
+    </ClInclude>
     <ClInclude Include="NES\Input\SuborMouse.h">
       <Filter>NES\Input</Filter>
     </ClInclude>

@@ -13,6 +13,7 @@ private:
 	bool _reduced = false;
 	bool _extended = false;
 	bool _mouseOnBit0 = false;
+	bool _altAtEnd = false;
 	uint8_t _scan = 0;
 	bool _out = false;
 	uint16_t _rightShiftKey = 0;
@@ -141,6 +142,13 @@ protected:
 			}
 		}
 
+		//Some cut-down keyboards have their Alt where the full one has End (row 1 bit 3): the
+		//cartridges' text editor takes that bit as its Alt modifier (Alt+F1-F4 pick the input
+		//method), and the reduced scan never reaches the extended keyboard's Alt row
+		if(_altAtEnd && row == 1 && !column && IsPressed(Buttons::Alt)) {
+			result |= 0x08;
+		}
+
 		if(row == 9 && column) {
 			//This bit is used to indicate that this is an "extended" version of
 			//the keyboard which has four more rows to read from (numpad, etc.)
@@ -178,11 +186,12 @@ public:
 
 	//'extended' lets the reduced keyboard's counter run on through rows 9-12, the full keyboard's
 	//numpad/Alt/F11/F12 rows, with row 9 carrying the bit that says they are there
-	SuborKeyboard(Emulator* emu, KeyMappingSet keyMappings, bool reduced = false, bool extended = false, bool mouseOnBit0 = false) : BaseControlDevice(emu, ControllerType::SuborKeyboard, BaseControlDevice::ExpDevicePort, keyMappings)
+	SuborKeyboard(Emulator* emu, KeyMappingSet keyMappings, bool reduced = false, bool extended = false, bool mouseOnBit0 = false, bool altAtEnd = false) : BaseControlDevice(emu, ControllerType::SuborKeyboard, BaseControlDevice::ExpDevicePort, keyMappings)
 	{
 		_reduced = reduced;
 		_extended = reduced && extended;
 		_mouseOnBit0 = reduced && mouseOnBit0;
+		_altAtEnd = reduced && !_extended && altAtEnd;
 		_rightShiftKey = KeyManager::GetKeyCode("Right Shift");
 		_rightCtrlKey = KeyManager::GetKeyCode("Right Ctrl");
 		_rightAltKey = KeyManager::GetKeyCode("Right Alt");
