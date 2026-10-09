@@ -163,7 +163,7 @@ public sealed class PictureBrowser : Window
 				string sub = Path.Combine(dir, PictureScan.SafeName(Path.GetFileNameWithoutExtension(disk)));
 				Directory.CreateDirectory(sub);
 				foreach(var (name, f) in pics) {
-					Png.WriteIndexed(Path.Combine(sub, PictureScan.SafeName(name) + ".png"), f.Pic.W, f.Pic.H, f.Pic.Index, Gfx.PaletteRgb(f.Pic.Pal16));
+					PictureScan.SavePng(Path.Combine(sub, PictureScan.SafeName(name) + ".png"), f);
 					n++;
 				}
 			}
@@ -183,7 +183,7 @@ public sealed class PictureViewer : Window
 		var save = new Button { Content = S.Get("pv_save") };
 		save.Click += async (_, _) => {
 			var path = await Dialogs.SaveFile(S.Get("pv_save"), PictureScan.SafeName(name) + ".png", "png", "PNG");
-			if(path != null) Png.WriteIndexed(path, f.Pic.W, f.Pic.H, f.Pic.Index, Gfx.PaletteRgb(f.Pic.Pal16));
+			if(path != null) PictureScan.SavePng(path, f);
 		};
 		var colours = string.Join("  ", Enumerable.Range(0, 4).Select(i => string.Join(" ", f.Pic.Pal16.Skip(i * 4).Take(4).Select(c => c.ToString("X2")))));
 		Content = new StackPanel {

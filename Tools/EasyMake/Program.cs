@@ -84,7 +84,7 @@ public static class Program
 					string dir = Path.Combine(a[2], Path.GetFileNameWithoutExtension(disk));
 					Directory.CreateDirectory(dir);
 					foreach(var (name, f) in pics)
-						Png.WriteIndexed(Path.Combine(dir, PictureScan.SafeName(name) + ".png"), f.Pic.W, f.Pic.H, f.Pic.Index, Gfx.PaletteRgb(f.Pic.Pal16));
+						PictureScan.SavePng(Path.Combine(dir, PictureScan.SafeName(name) + ".png"), f);
 					Console.WriteLine($"{Path.GetFileName(disk)}: {pics.Count} ({string.Join(", ", pics.GroupBy(p => p.pic.Kind).Select(g => $"{g.Count()} {Pictures.Name(g.Key)}"))})");
 					total += pics.Count;
 				}

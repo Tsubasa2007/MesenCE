@@ -46,7 +46,8 @@ backgrounds and every pack's resources. On the right is an editor for the select
   - by their headers, so files without an extension are found too; click one to see it larger
   and save it as PNG, or export the lot.
 - **Tools → Convert a picture** turns a PNG/JPG/BMP into a `.GRP` (paint program picture,
-  224 x 208), a `.PCT` (cut-out, its own size), or a `.GRA` (256 x 240, plain or tile-map). The
+  224 x 208, the picture in the 216 columns the program shows), a `.PCT` (cut-out, its own size),
+  or a `.GRA` (256 x 240, plain or tile-map). Colours follow the machine's 16 x 16 areas. The
   preview is read back from the bytes written; save the file, or put it straight onto a disk
   image. Dithering helps photographs; keep it off for drawings.
 

@@ -17,8 +17,11 @@ public static class Pictures
 		Format.Gra => "GRA", Format.GraTiles => "GRA (tiles)", Format.Grp => "Grp", _ => "Pct"
 	};
 
-	/// <summary>The paint program's canvas; a .Grp is always this size and a .Pct fits in it</summary>
-	public const int CanvasW = 224, CanvasH = 208;
+	/// <summary>The paint program's canvas; a .Grp is always this size. The program shows only
+	/// the first ShownW columns (its pointer stops at x 215; the last 8-pixel column is left
+	/// blank on screen), so pictures are converted into that width and a .Pct fits in it. The
+	/// tools still show all of a file's columns.</summary>
+	public const int CanvasW = 224, CanvasH = 208, ShownW = 216;
 
 	/// <summary>A picture as indexes = sub-palette * 4 + colour, with a 16-byte palette</summary>
 	public sealed record Indexed(int W, int H, byte[] Index, byte[] Pal16)
@@ -91,7 +94,11 @@ public static class Pictures
 
 	/// <summary>.Grp / .Pct: magic, palette length (4, 8 or 12), rows of 16 pixels, columns of 8,
 	/// 0, a 12-byte palette (three sub-palettes), then the cells row by row: a sub-palette byte
-	/// and an 8x16 cell (two NES tiles, top then bottom).</summary>
+	/// and an 8x16 cell (two NES tiles, top then bottom).
+	/// Each cell stores a sub-palette, but the machine colours 16x16 areas: two neighbouring
+	/// cells share one, and the right one's (written last) is what shows - a left cell whose
+	/// own differs comes out in its neighbour's colours. The picture is returned as shown, pairs
+	/// counted from its left edge (where the paint program's canvas puts them).</summary>
 	static Found TryCells(byte[] d, int o)
 	{
 		int npal = d[o + 4], rows = d[o + 5], cols = d[o + 6];
@@ -105,7 +112,7 @@ public static class Pictures
 		int w = cols * 8, h = rows * 16;
 		var idx = new byte[w * h];
 		for(int i = 0; i < rows * cols; i++) {
-			int c = o + 20 + i * 33, sub = d[c] & 3;
+			int c = o + 20 + i * 33, shown = i % cols % 2 == 0 && i % cols + 1 < cols ? c + 33 : c, sub = d[shown] & 3;
 			var cell = Gfx.DecodeCell(d, c + 1);
 			int x0 = i % cols * 8, y0 = i / cols * 16;
 			for(int y = 0; y < 16; y++)
@@ -200,20 +207,28 @@ public static class Pictures
 		var cells = new List<byte[]>();
 		for(int i = 0; i < rows * cols; i++) {
 			int x0 = i % cols * 8, y0 = i / cols * 16;
-			var used = new HashSet<int>();
 			var px = new int[16, 8];
 			for(int y = 0; y < 16; y++)
-				for(int x = 0; x < 8; x++) {
-					int v = p.Index[(y0 + y) * p.W + x0 + x];
-					px[y, x] = v & 3;
-					if((v & 3) != 0) used.Add(v >> 2);
-				}
-			if(used.Count > 1) throw new ArgumentException($"the cell at ({x0},{y0}) uses more than one sub-palette");
-			int sub = used.Count == 1 ? used.First() : 0;
-			if(sub > 2) throw new ArgumentException("a Grp/Pct picture has three sub-palettes");
-			subs[i] = (byte)sub;
+				for(int x = 0; x < 8; x++) px[y, x] = p.Index[(y0 + y) * p.W + x0 + x] & 3;
 			cells.Add(Gfx.EncodeCell(px));
 		}
+		//One sub-palette per 16x16 area (see TryCells): both cells of a pair get it, a blank cell
+		//too - its own would otherwise be the one that shows
+		for(int r = 0; r < rows; r++)
+			for(int c = 0; c < cols; c += 2) {
+				int x0 = c * 8, y0 = r * 16, x1 = Math.Min(p.W, x0 + 16);
+				var used = new HashSet<int>();
+				for(int y = y0; y < y0 + 16; y++)
+					for(int x = x0; x < x1; x++) {
+						int v = p.Index[y * p.W + x];
+						if((v & 3) != 0) used.Add(v >> 2);
+					}
+				if(used.Count > 1) throw new ArgumentException($"the 16x16 area at ({x0},{y0}) uses more than one sub-palette");
+				int sub = used.Count == 1 ? used.First() : 0;
+				if(sub > 2) throw new ArgumentException("a Grp/Pct picture has three sub-palettes");
+				subs[r * cols + c] = (byte)sub;
+				if(c + 1 < cols) subs[r * cols + c + 1] = (byte)sub;
+			}
 		int npal = (subs.DefaultIfEmpty().Max() + 1) * 4;
 		var o = new List<byte>(System.Text.Encoding.ASCII.GetBytes(f == Format.Grp ? ".Grp" : ".Pct")) {
 			(byte)npal, (byte)rows, (byte)cols, 0 };
@@ -223,24 +238,31 @@ public static class Pictures
 	}
 
 	/// <summary>Any picture -> the format's picture: GRA fills the 256 x 240 screen and a Grp the
-	/// paint program's 224 x 208 canvas; a Pct keeps its size (made smaller to fit the canvas, and
-	/// padded to whole cells). keepAspect pads with the backdrop rather than stretching; dither
+	/// 216 x 208 of the paint program's canvas it shows (the hidden last column takes the
+	/// backdrop); a Pct keeps its size (made smaller to fit, and padded to whole cells). Grp and
+	/// Pct get 16x16 colour areas, as the machine shows them. keepAspect pads with the backdrop
+	/// rather than stretching; dither
 	/// trades flat areas for a dot pattern that is closer in colour (good for photographs).</summary>
 	public static Indexed Convert(Picture src, Format f, bool keepAspect, bool dither = false)
 	{
 		int w, h;
 		if(f == Format.Pct) {
-			double s = Math.Min(1.0, Math.Min((double)CanvasW / src.W, (double)CanvasH / src.H));
+			double s = Math.Min(1.0, Math.Min((double)ShownW / src.W, (double)CanvasH / src.H));
 			w = (int)Math.Round(src.W * s); h = (int)Math.Round(src.H * s);
 			src = Fit(src, Math.Max(1, w), Math.Max(1, h), false);
 			w = (w + 7) / 8 * 8; h = (h + 15) / 16 * 16;
 			src = Pad(src, w, h);
+		} else if(f == Format.Grp) {
+			(w, h) = (CanvasW, CanvasH);
+			var shown = Fit(src, ShownW, CanvasH, keepAspect);
+			src = new Picture(w, h);
+			for(int y = 0; y < h; y++) Array.Copy(shown.Rgba, y * ShownW * 4, src.Rgba, y * w * 4, ShownW * 4);
 		} else {
-			(w, h) = f == Format.Grp ? (CanvasW, CanvasH) : (256, 240);
+			(w, h) = (256, 240);
 			src = Fit(src, w, h, keepAspect);
 		}
 		bool cells = f is Format.Grp or Format.Pct;
-		var (idx, pal) = Author.Paint(src, cells ? 8 : 16, 16, cells ? 3 : 4, dither);
+		var (idx, pal) = Author.Paint(src, 16, 16, cells ? 3 : 4, dither);
 		return new Indexed(w, h, idx, pal);
 	}
 
@@ -283,6 +305,10 @@ public static class PictureScan
 			return (new(), e.Message);
 		}
 	}
+
+	/// <summary>A picture as an indexed PNG</summary>
+	public static void SavePng(string path, Pictures.Found f)
+		=> Png.WriteIndexed(path, f.Pic.W, f.Pic.H, f.Pic.Index, Gfx.PaletteRgb(f.Pic.Pal16));
 
 	/// <summary>A disk path as a file name here: folders and offsets joined with _</summary>
 	public static string SafeName(string name)

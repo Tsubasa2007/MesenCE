@@ -170,4 +170,8 @@ The paint program on disk 122 (`BRUSH.EXC`) saves whole pictures as `.Grp` and c
 | 20 | rows x columns cells, row by row: a sub-palette byte (0-2), then an 8 x 16 cell (two NES tiles, top then bottom) |
 
 A `.Grp` is the 224 x 208 canvas (13 rows x 28 columns, 12032 bytes); a `.Pct` is any size up
-to that. Unlike a GR picture, every 8 x 16 cell picks its own sub-palette.
+to that. Every 8 x 16 cell stores its own sub-palette, but the machine colours 16 x 16 areas: two
+neighbouring cells (columns 0+1, 2+3, ...) share one, and the right one's - written last - is what
+shows; a left cell whose own differs comes out in its neighbour's colours. The paint program
+shows the canvas at (32, 16) and only its first 27 columns: the pointer stops at x 215 and the
+last column stays blank on screen, though files often hold picture there.
