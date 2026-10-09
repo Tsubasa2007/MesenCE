@@ -24,7 +24,8 @@ private:
 	bool _active = false;
 	uint8_t _read4016Count = 0;
 	uint8_t _read4017Count = 0;
-	uint8_t _state = EmState::Idle;
+	//Not _state: a save state would file it under the same key as the device's input state
+	uint8_t _emState = EmState::Idle;
 	uint32_t _command = 0;
 	uint8_t _bitCount = 0;
 	uint32_t _txData = 0;
@@ -71,7 +72,7 @@ protected:
 	void Serialize(Serializer& s) override
 	{
 		BaseControlDevice::Serialize(s);
-		SV(_active); SV(_read4016Count); SV(_read4017Count); SV(_state);
+		SV(_active); SV(_read4016Count); SV(_read4017Count); SV(_emState);
 		SV(_command); SV(_bitCount); SV(_txData); SV(_txCount);
 		SVArray(_data, 3);
 		SV(_accumX); SV(_accumY);
@@ -136,13 +137,13 @@ public:
 				_read4016Count++;
 				if(_read4016Count == 9) {
 					_active = true;
-					_state = EmState::Idle;
+					_emState = EmState::Idle;
 				}
 			}
 		} else if(addr == 0x4017) {
 			_read4016Count = 0;
 			if(_active) {
-				switch(_state) {
+				switch(_emState) {
 					case EmState::Idle:
 						data |= 0x01;
 						break;
@@ -167,7 +168,7 @@ public:
 								_txData = GenTxData(_data[3 - _txCount]);
 							} else {
 								_active = false;
-								_state = EmState::Idle;
+								_emState = EmState::Idle;
 							}
 						}
 						break;
@@ -188,13 +189,13 @@ public:
 			return;
 		}
 
-		switch(_state) {
+		switch(_emState) {
 			case EmState::Idle:
 				if(value == 0x05) {
 					_read4017Count = 0;
 					_command = 0;
 					_bitCount = 0;
-					_state = EmState::RxCommand;
+					_emState = EmState::RxCommand;
 				}
 				break;
 
@@ -215,7 +216,7 @@ public:
 						}
 						_read4017Count = 0;
 						_bitCount = 0;
-						_state = EmState::TxData;
+						_emState = EmState::TxData;
 					}
 				}
 				break;

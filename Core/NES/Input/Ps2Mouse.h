@@ -12,7 +12,8 @@
 //($EB) whenever it wants a position, checks for the $FA acknowledge, and takes a 3-byte packet:
 //the PS/2 status byte (bit 3 set, buttons in bits 0-2, signs in bits 4-5), then Y counting
 //upwards, then X. Y comes first and the left and right buttons trade bits compared with a PC's
-//PS/2 mouse - which is how its driver reads it, and how BbkMouse's packet is laid out too.
+//PS/2 mouse - which is how its driver reads it, and how BbkMouse's packet is laid out too. Other
+//makers' learning cartridges read the same packet; theirs also takes each sign from the status byte.
 //
 //This is the same family of device as BbkMouse (an EM84502-style mouse on $4016/$4017), but
 //BbkMouse reproduces the BBK BIOS's own read pattern by counting reads, which only works for a
@@ -56,7 +57,8 @@ private:
 
 	enum class State : uint8_t { Idle, Receive, Transmit };
 
-	State _state = State::Idle;
+	//Not _state: a save state would file it under the same key as the device's input state
+	State _busState = State::Idle;
 	uint8_t _out = 0x05;           //the last $4016 write
 	uint64_t _requestAt = 0;       //Idle with the host holding data low: when the mouse starts clocking
 	bool _requestPending = false;
@@ -78,6 +80,44 @@ private:
 	int32_t _accumY = 0;
 	int32_t _seenX = 0;
 	int32_t _seenY = 0;
+
+	//A real mouse counts while it moves, so two reads a few milliseconds apart both see movement
+	//in the direction it is going. Here movement arrives a frame at a time, so it is let out into
+	//_accumX/_accumY in proportion to the time since it arrived, over about a frame. A driver that
+	//polls twice and acts only when both reports agree (one learning cartridge redraws its pointer
+	//that way) otherwise sees the whole frame's movement and then none, and almost never draws.
+	static constexpr uint32_t ReleaseCycles = 29000;
+	int32_t _windowX = 0;
+	int32_t _windowY = 0;
+	int32_t _releasedX = 0;
+	int32_t _releasedY = 0;
+	uint64_t _windowStart = 0;
+
+	void ReleaseMovement(uint64_t now)
+	{
+		double part = now >= _windowStart + ReleaseCycles ? 1.0 : (double)(now - _windowStart) / ReleaseCycles;
+		int32_t x = (int32_t)(_windowX * part);
+		int32_t y = (int32_t)(_windowY * part);
+		_accumX += x - _releasedX;
+		_accumY += y - _releasedY;
+		_releasedX = x;
+		_releasedY = y;
+	}
+
+	void AddMovement(int32_t dx, int32_t dy)
+	{
+		if(dx == 0 && dy == 0) {
+			return;
+		}
+		//Whatever the last frame's movement has not let out yet goes first
+		_accumX += _windowX - _releasedX;
+		_accumY += _windowY - _releasedY;
+		_windowX = dx;
+		_windowY = dy;
+		_releasedX = 0;
+		_releasedY = 0;
+		_windowStart = _emu->GetMasterClock();
+	}
 
 	//The movement a queued READ_DATA reply carries, handed back if the reply is cancelled
 	int32_t _replyX = 0;
@@ -104,22 +144,22 @@ private:
 			_txData[_txLen++] = b;
 		}
 		_txStart = at;
-		_state = State::Transmit;
+		_busState = State::Transmit;
 	}
 
 	void CatchUpMovement()
 	{
 		MousePosition pos = GetCoordinates();
-		_accumX += pos.X - _seenX;
-		_accumY += pos.Y - _seenY;
+		AddMovement(pos.X - _seenX, pos.Y - _seenY);
 		_seenX = pos.X;
 		_seenY = pos.Y;
+		ReleaseMovement(_emu->GetMasterClock());
 	}
 
 	//A reply that never reached the host gives its movement back
 	void CancelReply()
 	{
-		if(_state == State::Transmit) {
+		if(_busState == State::Transmit) {
 			_accumX += _replyX;
 			_accumY += _replyY;
 		}
@@ -141,12 +181,15 @@ private:
 
 		//Right in bit 0 and left in bit 1, the reverse of a PC's PS/2 mouse: right is bit 0 on
 		//BbkMouse as well, and the card's driver opens what it points at on bit 1
+		//As on any PS/2 mouse, bit 4 is the sign of the first count and bit 5 of the second. The
+		//expansion cards' driver takes its signs from the counts themselves and never notices; a
+		//driver that reads these bits sends the pointer the wrong way across the screen otherwise.
 		packet[0] = 0x08 |
 			(IsPressed(Buttons::Right) ? 0x01 : 0) |
 			(IsPressed(Buttons::Left) ? 0x02 : 0) |
 			(IsPressed(Buttons::Middle) ? 0x04 : 0) |
-			(dx < 0 ? 0x10 : 0) |
-			(dy < 0 ? 0x20 : 0);
+			(dy < 0 ? 0x10 : 0) |
+			(dx < 0 ? 0x20 : 0);
 		//Y before X - the order BbkMouse's packet has too; a PC's PS/2 mouse sends X first
 		packet[1] = (uint8_t)dy;
 		packet[2] = (uint8_t)dx;
@@ -175,11 +218,11 @@ private:
 	void Advance(uint64_t now)
 	{
 		while(true) {
-			switch(_state) {
+			switch(_busState) {
 				case State::Idle:
 					if(_requestPending && now >= _requestAt) {
 						_requestPending = false;
-						_state = State::Receive;
+						_busState = State::Receive;
 						_rxStart = _requestAt;
 						_rxNext = 1;
 						_rxBits = 0;
@@ -192,7 +235,7 @@ private:
 						uint16_t bit = HostHoldsDataLow() ? 0 : 1;
 						if(_rxNext == 1 && bit) {
 							//The host let go before the first clock: nothing to receive
-							_state = State::Idle;
+							_busState = State::Idle;
 							return;
 						}
 						_rxBits |= bit << (_rxNext - 1);
@@ -201,7 +244,7 @@ private:
 					if(_rxNext > 11 && RxRise(12) <= now) {
 						uint8_t cmd = (uint8_t)(_rxBits >> 1);
 						uint8_t parity = (_rxBits >> 9) & 1;
-						_state = State::Idle;
+						_busState = State::Idle;
 						if(parity == OddParity(cmd)) {
 							CommandReceived(cmd, RxRise(12));
 						}
@@ -213,7 +256,7 @@ private:
 					if(now >= _txStart + (uint64_t)FrameCycles * _txLen) {
 						_replyX = 0;
 						_replyY = 0;
-						_state = State::Idle;
+						_busState = State::Idle;
 						continue;
 					}
 					return;
@@ -223,13 +266,13 @@ private:
 
 	bool IsClockLow(uint64_t now)
 	{
-		if(_state == State::Receive) {
+		if(_busState == State::Receive) {
 			for(uint8_t k = 1; k <= 12; k++) {
 				if(now >= RxFall(k) && now < RxRise(k)) {
 					return true;
 				}
 			}
-		} else if(_state == State::Transmit && now >= _txStart) {
+		} else if(_busState == State::Transmit && now >= _txStart) {
 			uint32_t offset = (uint32_t)((now - _txStart) % FrameCycles);
 			return offset < Period * 11 && (offset % Period) >= HalfPeriod;
 		}
@@ -238,9 +281,9 @@ private:
 
 	bool IsMouseHoldingDataLow(uint64_t now)
 	{
-		if(_state == State::Receive) {
+		if(_busState == State::Receive) {
 			return now >= RxFall(12) && now < RxRise(12);
-		} else if(_state == State::Transmit && now >= _txStart) {
+		} else if(_busState == State::Transmit && now >= _txStart) {
 			uint64_t elapsed = now - _txStart;
 			uint8_t byte = _txData[elapsed / FrameCycles];
 			uint32_t bit = (uint32_t)(elapsed % FrameCycles) / Period;
@@ -265,11 +308,12 @@ protected:
 	void Serialize(Serializer& s) override
 	{
 		BaseControlDevice::Serialize(s);
-		SV(_state); SV(_out); SV(_requestAt); SV(_requestPending);
+		SV(_busState); SV(_out); SV(_requestAt); SV(_requestPending);
 		SV(_rxStart); SV(_rxNext); SV(_rxBits);
 		SV(_txStart); SV(_txLen);
 		SVArray(_txData, 4);
 		SV(_accumX); SV(_accumY); SV(_seenX); SV(_seenY);
+		SV(_windowX); SV(_windowY); SV(_releasedX); SV(_releasedY); SV(_windowStart);
 		SV(_replyX); SV(_replyY);
 	}
 
@@ -287,8 +331,7 @@ protected:
 	{
 		//Reads the coordinates without clearing them - the input recorder runs after this
 		MousePosition pos = GetCoordinates();
-		_accumX += pos.X;
-		_accumY += pos.Y;
+		AddMovement(pos.X, pos.Y);
 		_seenX = pos.X;
 		_seenY = pos.Y;
 	}
@@ -321,10 +364,10 @@ public:
 
 		bool wasLow = HostHoldsDataLow();
 		_out = value;
-		if(HostHoldsDataLow() && !wasLow && _state != State::Receive) {
+		if(HostHoldsDataLow() && !wasLow && _busState != State::Receive) {
 			//A request to send: it takes precedence over anything the mouse was about to say
 			CancelReply();
-			_state = State::Idle;
+			_busState = State::Idle;
 			_requestPending = true;
 			_requestAt = now + RequestDelay;
 		} else if(!HostHoldsDataLow()) {
