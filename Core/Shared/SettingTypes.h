@@ -769,7 +769,6 @@ struct NesConfig
 	bool RestrictPpuAccessOnFirstFrame = false;
 	bool EnableDmcSampleDuplicationGlitch = false;
 	bool EnableCpuTestMode = false;
-	bool BbkAttributeLag = false;
 
 	bool RandomizeMapperPowerOnState = false;
 	bool RandomizeCpuPpuAlignment = false;

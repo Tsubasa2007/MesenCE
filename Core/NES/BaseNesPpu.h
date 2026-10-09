@@ -62,7 +62,6 @@ protected:
 	uint16_t _nmiScanline = 0;
 	uint8_t _currentTilePalette = 0;
 	uint8_t _previousTilePalette = 0;
-	uint8_t _pendingTilePalette = 0; //extra pipeline stage, only used when _attributeLagEnabled
 	uint16_t _intensifyColorBits = 0;
 	uint8_t _paletteRamMask = 0;
 	uint8_t _updateVramAddrDelay = 0;
@@ -78,7 +77,6 @@ protected:
 	bool _oamAddrEvaluationLeak = true; //2C02 leaves OAMADDR where sprite evaluation got to when rendering is turned off; see BaseMapper::EnablePpuOamAddrEvaluationLeak
 	bool _nmiSuppressRaceEnabled = true; //2C02 suppresses the NMI when $2002 is read one dot before vblank; some famiclone PPUs (BBK) lack this race
 	bool _paletteMirroringEnabled = true; //2C02 mirrors $3F10/$14/$18/$1C onto $3F00/$04/$08/$0C; on some famiclone PPUs all 32 entries are independent
-	bool _attributeLagEnabled = false; //Test switch - color a tile with the previous tile column's attribute
 	bool _vramWriteGlitchEnabled = true; //A $2007 write during rendering smears the bus address' LSB into VRAM (2C02; unconfirmed, and some famiclone PPUs simply drop the write)
 	bool _vramAddrRealignEnabled = false; //A $2007 access re-aligns the $2006 write latch on some famiclone PPUs (see EnablePpuVramAddrRealign)
 	uint8_t _splitBgFetchMode = 0; //YuXing video chip split screen: 0 = 2C02 fetch, 1 = 2-screen (1bpp), 2 = 4-band (see YuxingMapper)

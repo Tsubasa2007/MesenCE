@@ -81,7 +81,6 @@ namespace Mesen.Config
 		[ObservableProperty] public partial bool RestrictPpuAccessOnFirstFrame { get; set; } = false;
 		[ObservableProperty] public partial bool EnableDmcSampleDuplicationGlitch { get; set; } = false;
 		[ObservableProperty] public partial bool EnableCpuTestMode { get; set; } = false;
-		[ObservableProperty] public partial bool BbkAttributeLag { get; set; } = false;
 
 		[ObservableProperty] public partial NesConsoleType ConsoleType { get; set; } = NesConsoleType.Nes001;
 		[ObservableProperty] public partial bool DisablePpuReset { get; set; } = false;
@@ -222,7 +221,6 @@ namespace Mesen.Config
 				RestrictPpuAccessOnFirstFrame = RestrictPpuAccessOnFirstFrame,
 				EnableDmcSampleDuplicationGlitch = EnableDmcSampleDuplicationGlitch,
 				EnableCpuTestMode = EnableCpuTestMode,
-				BbkAttributeLag = BbkAttributeLag,
 
 				RandomizeMapperPowerOnState = RandomizeMapperPowerOnState,
 				RandomizeCpuPpuAlignment = RandomizeCpuPpuAlignment,
@@ -370,7 +368,6 @@ namespace Mesen.Config
 		[MarshalAs(UnmanagedType.I1)] public bool RestrictPpuAccessOnFirstFrame;
 		[MarshalAs(UnmanagedType.I1)] public bool EnableDmcSampleDuplicationGlitch;
 		[MarshalAs(UnmanagedType.I1)] public bool EnableCpuTestMode;
-		[MarshalAs(UnmanagedType.I1)] public bool BbkAttributeLag;
 
 		[MarshalAs(UnmanagedType.I1)] public bool RandomizeMapperPowerOnState;
 		[MarshalAs(UnmanagedType.I1)] public bool RandomizeCpuPpuAlignment;

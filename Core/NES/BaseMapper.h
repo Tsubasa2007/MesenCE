@@ -255,12 +255,6 @@ public:
 	//(see BaseNesPpu::ReadPaletteRam / WritePaletteRam)
 	virtual bool EnablePpuPaletteMirroring() { return true; }
 
-	//Experimental, off everywhere by default: color a tile with the attribute fetched for the
-	//tile column before it. Investigated for the BBK's banded-framebuffer screens; it helps some
-	//titles and harms others with no hardware-visible difference between them, so it is not
-	//correct behaviour - kept only as a test switch (see BbkMapper::EnablePpuAttributeLag)
-	virtual bool EnablePpuAttributeLag() { return false; }
-
 	//A $2007 write while rendering is active writes the PPU bus address' own LSB into VRAM at
 	//whatever address the render pipeline has the bus pointing at. Return false for PPUs that
 	//simply drop the write instead (see BbkMapper::EnablePpuVramWriteGlitch).

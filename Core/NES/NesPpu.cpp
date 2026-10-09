@@ -40,7 +40,6 @@ template<class T> NesPpu<T>::NesPpu(NesConsole* console)
 	_nmiOnEnableInVblank = _mapper == nullptr || _mapper->EnablePpuNmiOnEnableInVblank();
 	_oamAddrEvaluationLeak = _mapper == nullptr || _mapper->EnablePpuOamAddrEvaluationLeak();
 	_paletteMirroringEnabled = _mapper == nullptr || _mapper->EnablePpuPaletteMirroring();
-	_attributeLagEnabled = _mapper != nullptr && _mapper->EnablePpuAttributeLag();
 	_vramWriteGlitchEnabled = _mapper == nullptr || _mapper->EnablePpuVramWriteGlitch();
 	_vramAddrRealignEnabled = _mapper != nullptr && _mapper->EnablePpuVramAddrRealign();
 	_masterClock = 0;
@@ -89,8 +88,6 @@ template<class T> void NesPpu<T>::Reset(bool softReset)
 	//Reset OAM decay timestamps regardless of the reset PPU option
 	memset(_oamDecayCycles, 0, sizeof(_oamDecayCycles));
 	_enableOamDecay = _console->GetNesConfig().EnableOamDecay;
-	//Re-read here as well as in the constructor, so toggling it takes effect on a power cycle
-	_attributeLagEnabled = _mapper != nullptr && _mapper->EnablePpuAttributeLag();
 
 	if(softReset && _settings->GetNesConfig().DisablePpuReset) {
 		return;
@@ -125,7 +122,6 @@ template<class T> void NesPpu<T>::Reset(bool softReset)
 	_tile = {};
 	_currentTilePalette = 0;
 	_previousTilePalette = 0;
-	_pendingTilePalette = 0;
 
 	_ppuBusAddress = 0;
 	_intensifyColorBits = 0;
@@ -714,19 +710,7 @@ template<class T> void NesPpu<T>::LoadTileInfo()
 			_lowBitShift |= _tile.LowByte;
 
 			_previousTilePalette = _currentTilePalette;
-			if(_attributeLagEnabled) {
-				//Test switch: hand the pixel pipeline the attribute fetched one tile column
-				//earlier. The pre-render line flattens the pipeline instead - the extra stage
-				//would otherwise leave scanline 0 colored from the previous frame's last tile.
-				if(_scanline < 0) {
-					_currentTilePalette = _pendingTilePalette = _tile.PaletteOffset;
-				} else {
-					_currentTilePalette = _pendingTilePalette;
-					_pendingTilePalette = _tile.PaletteOffset;
-				}
-			} else {
-				_currentTilePalette = _tile.PaletteOffset;
-			}
+			_currentTilePalette = _tile.PaletteOffset;
 			((T*)this)->PushTileInformation(); //Used by HD packs
 			break;
 
@@ -1765,7 +1749,6 @@ template<class T> void NesPpu<T>::Serialize(Serializer& s)
 		SV(_tile.PaletteOffset);
 		SV(_tile.TileAddr);
 		SV(_previousTilePalette);
-		SV(_pendingTilePalette);
 
 		SV(_spriteIndex);
 		SV(_spriteCount);
