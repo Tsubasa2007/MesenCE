@@ -170,5 +170,11 @@ object changes size, the whole pack is laid out afresh.
   error 0.144 -> 0.074, voicing 93.8% -> 96.0%, energy steps unbiased. Over eight Chinese and
   English recordings: spectral distance 7.3 -> 6.9 dB, level-envelope match 0.79 -> 0.92, samples
   at the chip's clamp 0.9% -> 0.1%. A speech resource's `gain` adjusts on top of the levelling.
+  The pitch of each voiced stretch is chosen as a whole (dynamic programming over each frame's
+  correlation peaks, an octave between frames costing as much as a perfect peak is worth):
+  picked frame by frame it jumped to the octave whenever two peaks were close, a squeak or growl
+  inside a vowel. Re-encoding disk 004: octave jumps 45 -> 0 (BBK's phrases have none), voicing
+  unchanged at 96.0%, spectral distance 2.93 -> 2.69 dB; the eight recordings: octave jumps
+  188 -> 26, pitch steps over 3 semitones 9.6% -> 4.7%.
 - Not done: authoring for `wait str=` type-in checks is plain script, nothing to convert;
   mode/kind animation transforms are passed through as numbers.

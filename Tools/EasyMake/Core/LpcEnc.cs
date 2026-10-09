@@ -110,7 +110,9 @@ public static class LpcEnc
 		return best;
 	}
 
-	/// <summary>Autocorrelation pitch on a centre-clipped frame: (period in samples, strength 0-1)</summary>
+	/// <summary>Autocorrelation pitch on a centre-clipped frame: (period in samples, strength 0-1).
+	/// The strength decides voicing; the period is only one of the candidates TrackPitch chooses
+	/// from - on its own it often lands on the octave below (or above)</summary>
 	static (int period, double strength) PitchPeriod(double[] x)
 	{
 		double peak = x.Length == 0 ? 0 : x.Max(Math.Abs);
@@ -144,9 +146,89 @@ public static class LpcEnc
 		}
 	}
 
+	/// <summary>Pitch candidates of one frame: (period in samples, correlation). The peaks of the
+	/// normalised cross-correlation between the frame and itself shifted by each period the chip
+	/// can play (16-160 samples), on a low-passed, centre-clipped copy, each peak placed between
+	/// samples - at high pitches one sample is several percent, coarser than the chip's table</summary>
+	static List<(double period, double v)> PitchCandidates(double[] raw)
+	{
+		var x = (double[])raw.Clone();
+		//Two passes of a one-pole low-pass near 1 kHz: the formants' ripples weaken, the pitch stays
+		double a = Math.Exp(-2 * Math.PI * 1000.0 / Rate);
+		for(int pass = 0; pass < 2; pass++) {
+			double y = 0;
+			for(int i = 0; i < x.Length; i++) { y = (1 - a) * x[i] + a * y; x[i] = y; }
+		}
+		double peak = x.Length == 0 ? 0 : x.Max(Math.Abs);
+		if(peak == 0) return new();
+		double cl = 0.3 * peak;
+		for(int i = 0; i < x.Length; i++) x[i] = x[i] > cl ? x[i] - cl : x[i] < -cl ? x[i] + cl : 0;
+		const int lo = 16, hi = 160;
+		int w = x.Length - hi;
+		double e0 = 0;
+		for(int i = 0; i < w; i++) e0 += x[i] * x[i];
+		if(e0 <= 0) return new();
+		var r = new double[hi + 2];
+		for(int lag = lo - 1; lag + w <= x.Length; lag++) {
+			double acc = 0, el = 0;
+			for(int i = 0; i < w; i++) { acc += x[i] * x[i + lag]; el += x[i + lag] * x[i + lag]; }
+			r[lag] = el > 0 ? acc / Math.Sqrt(e0 * el) : 0;
+		}
+		var c = new List<(double period, double v)>();
+		for(int lag = lo; lag <= hi; lag++) {
+			if(r[lag] <= 0.1 || r[lag] < r[lag - 1] || r[lag] < r[lag + 1]) continue;
+			double d = r[lag - 1] - 2 * r[lag] + r[lag + 1], off = d < 0 ? 0.5 * (r[lag - 1] - r[lag + 1]) / d : 0;
+			c.Add((lag + Math.Clamp(off, -0.5, 0.5), r[lag]));
+		}
+		return c.OrderByDescending(t => t.v).Take(6).ToList();
+	}
+
+	/// <summary>The pitch of each run of voiced frames, chosen for the whole run at once (dynamic
+	/// programming): a candidate costs 1 - its correlation, and moving between frames costs the
+	/// interval in octaves. Frame by frame, the pitch flipped to its octave whenever the two peaks
+	/// were close - on the chip a squeak or growl inside a vowel. Re-encoding disk 004's phrases:
+	/// 45 octave jumps -> 0 (the originals have none); voicing is left as each frame decided it.</summary>
+	static void TrackPitch(List<Frame> frames)
+	{
+		for(int from = 0; from < frames.Count; from++) {
+			if(frames[from].Period <= 0) continue;
+			int to = from;
+			while(to < frames.Count && frames[to].Period > 0) to++;
+			var cost = new List<double[]>();
+			var back = new List<int[]>();
+			for(int f = from; f < to; f++) {
+				var cs = frames[f].Cands;
+				var cur = new double[cs.Count];
+				var bk = new int[cs.Count];
+				for(int s = 0; s < cs.Count; s++) {
+					double best = 0;
+					if(f > from) {
+						var pc = frames[f - 1].Cands;
+						var prev = cost[^1];
+						best = double.MaxValue;
+						for(int p = 0; p < pc.Count; p++) {
+							double t = prev[p] + Math.Abs(Math.Log2(cs[s].period / pc[p].period));
+							if(t < best) { best = t; bk[s] = p; }
+						}
+					}
+					cur[s] = best + 1 - cs[s].v;
+				}
+				cost.Add(cur);
+				back.Add(bk);
+			}
+			int st = Array.IndexOf(cost[^1], cost[^1].Min());
+			for(int f = to - 1; f >= from; f--) {
+				frames[f] = frames[f] with { Period = frames[f].Cands[st].period };
+				st = back[f - from][st];
+			}
+			from = to;
+		}
+	}
+
 	/// <summary>One 20 ms frame as analysed: Silent, pitch period in samples (0 = unvoiced), the
-	/// power spectrum around the frame's start, and the RMS level there</summary>
-	sealed record Frame(bool Silent, int Period, double[] Spectrum, double Rms);
+	/// power spectrum around the frame's start, the RMS level there, and the pitch candidates
+	/// (for a voiced frame, always including its own period)</summary>
+	sealed record Frame(bool Silent, double Period, double[] Spectrum, double Rms, List<(double period, double v)> Cands = null);
 
 	const int N = 512;
 
@@ -310,8 +392,11 @@ public static class LpcEnc
 			Fft(x);
 			var spectrum = new double[N / 2 + 1];
 			for(int k = 0; k <= N / 2; k++) spectrum[k] = x[k].Magnitude * x[k].Magnitude;
-			frames.Add(new Frame(false, strength > 0.35 && period > 0 ? period : 0, spectrum, rms));
+			var cands = PitchCandidates(raw);
+			if(period > 0 && !cands.Any(t => Math.Abs(t.period - period) < 1.5)) cands.Add((period, Math.Min(strength, 0.99)));
+			frames.Add(new Frame(false, strength > 0.35 && period > 0 ? period : 0, spectrum, rms, cands));
 		}
+		TrackPitch(frames);
 		SmoothVoicing(frames);
 		var bw = new BitWriter();
 		foreach(var fr in frames) {
