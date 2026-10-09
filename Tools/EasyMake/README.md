@@ -161,9 +161,14 @@ object changes size, the whole pack is laid out afresh.
   A frame whose voicing disagrees with both its neighbours takes theirs: such lone flips were
   6% of the frames of a Chinese sentence, each a 20 ms burst of hiss inside a vowel.
   Each recording is first brought to one level (the loud end of its speech to RMS 0.28, about
-  where BBK's own phrases sit), and a frame's energy comes from its prediction residual, since
-  the chip applies it before the lattice filter. Over eight Chinese and English recordings this
-  raised the level-envelope match from 0.79 to 0.88 on average and cut the samples reaching the
-  chip's clamp from 0.9% to 0.2%. A speech resource's `gain` now adjusts on top of the levelling.
+  where BBK's own phrases sit). The analysis then follows the chip rather than the textbook:
+  a frame is analysed around its start (where the chip applies it), the voiced pulse's spectrum
+  is divided out before the filter is fitted (it is a smooth, strongly low-pass bump, which had
+  pushed K2 0.2 too high on vowels), and the energy is the one that makes the chip's output -
+  that pulse per pitch period, or the noise generator, through the quantized filter - as loud as
+  the recording, with no fitted scale. Re-encoding the 179 phrases of disk 004: coefficient
+  error 0.144 -> 0.074, voicing 93.8% -> 96.0%, energy steps unbiased. Over eight Chinese and
+  English recordings: spectral distance 7.3 -> 6.9 dB, level-envelope match 0.79 -> 0.92, samples
+  at the chip's clamp 0.9% -> 0.1%. A speech resource's `gain` adjusts on top of the levelling.
 - Not done: authoring for `wait str=` type-in checks is plain script, nothing to convert;
   mode/kind animation transforms are passed through as numbers.

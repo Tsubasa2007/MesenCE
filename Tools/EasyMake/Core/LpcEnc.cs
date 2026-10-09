@@ -1,9 +1,15 @@
 namespace EasyMake.Core;
 
 /// <summary>Encode speech (a WAV file) into a phrase for the BBK speech chip: per 20 ms frame,
-/// 10 reflection coefficients (Levinson-Durbin on the autocorrelation), a voiced/unvoiced
-/// decision with a pitch period, and an energy, each quantized to the chip's tables. A phrase
-/// is the big-endian length of the stream, the $D6 sync byte and the stream.</summary>
+/// 10 reflection coefficients (Levinson-Durbin), a voiced/unvoiced decision with a pitch period,
+/// and an energy, each quantized to the chip's tables. A phrase is the big-endian length of the
+/// stream, the $D6 sync byte and the stream.
+///
+/// The analysis follows how the chip (Lpc.Synth) makes its sound rather than the textbook:
+/// a frame's values apply from the start of its 20 ms, the voiced excitation is a smooth pulse
+/// whose spectrum is taken out before the filter is fitted, and the energy is whatever makes the
+/// chip's output as loud as the recording. Re-encoding BBK's own phrases (disk 004) is the test:
+/// coefficient error halved and its bias gone, voicing 96% right, energy unbiased.</summary>
 public static class LpcEnc
 {
 	public const int Rate = 10000, FrameLen = 200;
@@ -139,17 +145,114 @@ public static class LpcEnc
 	}
 
 	/// <summary>One 20 ms frame as analysed: Silent, pitch period in samples (0 = unvoiced), the
-	/// reflection coefficients in the chip's sign, and the frame's RMS level</summary>
-	sealed record Frame(bool Silent, int Period, double[] Ks, double Rms);
+	/// power spectrum around the frame's start, and the RMS level there</summary>
+	sealed record Frame(bool Silent, int Period, double[] Spectrum, double Rms);
 
-	/// <summary>The chip's energy is the level of the excitation, before the lattice filter, and
-	/// the filter's gain is 1 / sqrt(prod(1 - k^2)) - large on strong vowels. So a frame's energy
-	/// comes from its prediction residual (RMS x sqrt(prod(1 - k^2)) over the coefficients the
-	/// frame sends). The scale was fitted by re-encoding BBK's own phrases (disk 004, 179 of
-	/// them) until the energy steps came back unbiased and the output level matched the input.
-	/// Taking the energy from the plain RMS, as before, made vowels about twice as loud as the
-	/// recording and pushed them into the chip's clamp.</summary>
-	const double EnergyScale = 3.8;
+	const int N = 512;
+
+	static void Fft(System.Numerics.Complex[] a)
+	{
+		int n = a.Length;
+		for(int i = 1, j = 0; i < n; i++) {
+			int bit = n >> 1;
+			for(; (j & bit) != 0; bit >>= 1) j ^= bit;
+			j ^= bit;
+			if(i < j) (a[i], a[j]) = (a[j], a[i]);
+		}
+		for(int len = 2; len <= n; len <<= 1) {
+			var wl = System.Numerics.Complex.FromPolarCoordinates(1, -2 * Math.PI / len);
+			for(int i = 0; i < n; i += len) {
+				var w = System.Numerics.Complex.One;
+				for(int j = 0; j < len / 2; j++) {
+					var u = a[i + j]; var v = a[i + j + len / 2] * w;
+					a[i + j] = u + v; a[i + j + len / 2] = u - v;
+					w *= wl;
+				}
+			}
+		}
+	}
+
+	/// <summary>The voiced excitation's power spectrum, N/2+1 bins: one pulse as the chip plays it
+	/// (Lpc.Excit read every 16th entry as the pitch counter runs down, scaled as Synth scales it,
+	/// for a Gain value of 1, in output units of 1/32768), averaged over the 16 phases the counter
+	/// can start at. Far from flat - a ~1 ms bump, strongly low-pass - so a filter fitted to the
+	/// recording as it is gets the pulse's slope twice: on vowels K2 came out 0.2 too high.</summary>
+	static double[] pulse;
+	static double[] PulsePower()
+	{
+		if(pulse != null) return pulse;
+		var acc = new double[N / 2 + 1];
+		for(int start = 144; start < 160; start++) {
+			var x = new System.Numerics.Complex[N];
+			int i = 0;
+			for(int v = start; v >= 0; v -= 16) x[i++] = Lpc.Excit[v] / 32768.0 * Lpc.Volume / 2 / 32768;
+			Fft(x);
+			for(int k = 0; k <= N / 2; k++) acc[k] += x[k].Magnitude * x[k].Magnitude / 16;
+		}
+		return pulse = acc;
+	}
+
+	/// <summary>The filter's power response |1/A|^2 for chip coefficients (Q15, the chip's sign)</summary>
+	static double[] FilterPower(int[] kq, int used)
+	{
+		var a = new double[11];
+		for(int i = 1; i <= used; i++) {
+			double k = -kq[i - 1] / 32768.0;
+			var nw = (double[])a.Clone();
+			nw[i] = k;
+			for(int j = 1; j < i; j++) nw[j] = a[j] - k * a[i - j];
+			a = nw;
+		}
+		var x = new System.Numerics.Complex[N];
+		x[0] = 1;
+		for(int j = 1; j <= used; j++) x[j] = -a[j];
+		Fft(x);
+		var o = new double[N / 2 + 1];
+		for(int k = 0; k <= N / 2; k++) o[k] = 1 / Math.Max(1e-12, x[k].Magnitude * x[k].Magnitude);
+		return o;
+	}
+
+	/// <summary>A frame's reflection coefficients (Levinson's sign) from its power spectrum. For a
+	/// voiced frame the pulse's spectrum is divided out first (floored at -30 dB, where the pulse
+	/// has next to nothing to give); the noise of an unvoiced frame is flat. A 40 Hz lag window
+	/// keeps the formants from sharpening past what 20 ms can tell.</summary>
+	static double[] FitFilter(double[] spectrum, bool voiced)
+	{
+		var e = PulsePower();
+		double floor = e.Max() * 1e-3;
+		var d = new double[N / 2 + 1];
+		for(int k = 0; k <= N / 2; k++) d[k] = voiced ? spectrum[k] / Math.Max(e[k], floor) : spectrum[k];
+		var r = new double[11];
+		for(int l = 0; l <= 10; l++) {
+			double acc = d[0] + d[N / 2] * Math.Cos(Math.PI * l);
+			for(int k = 1; k < N / 2; k++) acc += 2 * d[k] * Math.Cos(2 * Math.PI * k * l / N);
+			r[l] = acc / N * Math.Exp(-0.5 * Math.Pow(2 * Math.PI * 40 * l / Rate, 2));
+		}
+		r[0] *= 1.0001;
+		return Levinson(r);
+	}
+
+	/// <summary>The Gain value that makes the chip's output for this frame as loud as rms: the
+	/// excitation's power through the filter - for a voiced frame one pulse per pitch period,
+	/// for an unvoiced one the noise generator's fixed level. No fitted scale: re-encoding BBK's
+	/// own phrases gives their energy steps back unbiased (voiced +0.1, unvoiced -0.1).</summary>
+	static double NeededGain(double rms, int[] kq, int used, int pitchIndex)
+	{
+		var h = FilterPower(kq, used);
+		var e = PulsePower();
+		double acc, power;
+		if(pitchIndex != 0) {
+			acc = e[0] * h[0] + e[N / 2] * h[N / 2];
+			for(int k = 1; k < N / 2; k++) acc += 2 * e[k] * h[k];
+			power = acc / N / (Lpc.Pitch[pitchIndex] / 16.0);
+		} else {
+			double amp = (double)Lpc.Noise / 32768 * Lpc.Volume / 2 / 32768;
+			acc = h[0] + h[N / 2];
+			for(int k = 1; k < N / 2; k++) acc += 2 * h[k];
+			power = amp * amp * acc / N;
+		}
+		return rms / Math.Sqrt(power);
+	}
 
 	/// <summary>The level speech is encoded at, whatever it was recorded at: the loud end of the
 	/// speech (the 95th percentile of the 20 ms frames above 5% of the loudest one) is brought to
@@ -181,39 +284,33 @@ public static class LpcEnc
 	public static byte[] EncodeSamples(List<double> s, double gain = 1.0)
 	{
 		gain *= AutoGain(s);
-		//Pre-emphasis flattens the spectrum for the analysis; the chip's tables expect it
-		var pre = new double[s.Count];
-		if(s.Count > 0) pre[0] = s[0];
-		for(int i = 1; i < s.Count; i++) pre[i] = s[i] - 0.9375 * s[i - 1];
 		int nframes = Math.Max(1, (s.Count + FrameLen - 1) / FrameLen);
 		var win = new double[2 * FrameLen];
 		for(int i = 0; i < win.Length; i++) win[i] = 0.54 - 0.46 * Math.Cos(2 * Math.PI * i / (2 * FrameLen - 1));
 		var frames = new List<Frame>();
 		for(int f = 0; f < nframes; f++) {
-			int a = f * FrameLen - FrameLen / 2;
-			var w = new double[2 * FrameLen];
+			//The chip applies a frame's values from the start of its 20 ms (moving towards the
+			//next frame's over them), so the analysis is centred there
+			int a = f * FrameLen - FrameLen;
 			var raw = new double[2 * FrameLen];
+			var x = new System.Numerics.Complex[N];
+			double energy = 0;
 			for(int i = 0; i < 2 * FrameLen; i++) {
 				int k = a + i;
-				w[i] = (k >= 0 && k < pre.Length ? pre[k] : 0.0) * win[i];
 				raw[i] = k >= 0 && k < s.Count ? s[k] : 0.0;
-			}
-			var r = new double[11];
-			for(int lag = 0; lag < 11; lag++) {
-				double acc = 0;
-				for(int i = 0; i < w.Length - lag; i++) acc += w[i] * w[i + lag];
-				r[lag] = acc;
+				x[i] = raw[i] * win[i];
+				energy += raw[i] * win[i] * raw[i] * win[i];
 			}
 			double sq = 0;
 			for(int i = FrameLen / 2; i < FrameLen / 2 + FrameLen; i++) sq += raw[i] * raw[i];
 			double rms = Math.Sqrt(sq / FrameLen) * gain;
 			var (period, strength) = PitchPeriod(raw);
-			//Silence: a frame whose plain level would round to the bottom energy step (the scale
-			//the energy was taken with before it came from the residual)
-			if(Nearest(Lpc.Gain, rms * 1.8 * 0x7F00, 15) == 0 || r[0] <= 1e-9) { frames.Add(new Frame(true, 0, null, 0)); continue; }
-			bool voiced = strength > 0.35 && period > 0;
-			frames.Add(new Frame(false, voiced ? period : 0,
-				Levinson(r).Select(k => -k).ToArray(), rms));  // the chip's lattice uses the opposite sign
+			//Silence: a frame whose level would round to the bottom of the chip's old energy scale
+			if(Nearest(Lpc.Gain, rms * 1.8 * 0x7F00, 15) == 0 || energy <= 1e-12) { frames.Add(new Frame(true, 0, null, 0)); continue; }
+			Fft(x);
+			var spectrum = new double[N / 2 + 1];
+			for(int k = 0; k <= N / 2; k++) spectrum[k] = x[k].Magnitude * x[k].Magnitude;
+			frames.Add(new Frame(false, strength > 0.35 && period > 0 ? period : 0, spectrum, rms));
 		}
 		SmoothVoicing(frames);
 		var bw = new BitWriter();
@@ -221,10 +318,10 @@ public static class LpcEnc
 			if(fr.Silent) { bw.Put(0, 4); continue; }
 			int pi = fr.Period > 0 ? Nearest(Lpc.Pitch[1..], fr.Period * 16) + 1 : 0;
 			int used = pi != 0 ? 10 : 4;
-			var kix = Enumerable.Range(0, used).Select(i => Nearest(Lpc.K[i], fr.Ks[i] * 32768)).ToArray();
-			double g = 1;
-			for(int i = 0; i < used; i++) { double k = Lpc.K[i][kix[i]] / 32768.0; g *= 1 - k * k; }
-			int energy = Math.Max(1, Math.Min(14, Nearest(Lpc.Gain, fr.Rms * Math.Sqrt(g) * EnergyScale * 0x7F00, 15)));
+			var ks = FitFilter(fr.Spectrum, pi != 0);
+			var kix = Enumerable.Range(0, used).Select(i => Nearest(Lpc.K[i], -ks[i] * 32768)).ToArray();  // the chip's lattice uses the opposite sign
+			var kq = Enumerable.Range(0, used).Select(i => Lpc.K[i][kix[i]]).ToArray();
+			int energy = Math.Max(1, Math.Min(14, Nearest(Lpc.Gain, NeededGain(fr.Rms, kq, used, pi), 15)));
 			bw.Put(energy, 4);
 			bw.Put(0, 1);
 			bw.Put(pi, 7);
