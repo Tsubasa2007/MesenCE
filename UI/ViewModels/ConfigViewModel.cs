@@ -76,8 +76,19 @@ namespace Mesen.ViewModels
 			ConfigManager.Config.Preferences.UpdateFileAssociations();
 		}
 
+		//The disk folder is changed from the disk list, not from this window, and can change while
+		//this window is open. Its snapshot takes the current value so that neither Cancel nor
+		//declining to save puts back the folder from when the window opened.
+		private void KeepChangesMadeElsewhere()
+		{
+			if(Nes != null) {
+				Nes.OriginalConfig.BbkDiskFolder = ConfigManager.Config.Nes.BbkDiskFolder;
+			}
+		}
+
 		public void RevertConfig()
 		{
+			KeepChangesMadeElsewhere();
 			ConfigManager.Config.Audio = Audio?.OriginalConfig ?? ConfigManager.Config.Audio;
 			ConfigManager.Config.Input = Input?.OriginalConfig ?? ConfigManager.Config.Input;
 			ConfigManager.Config.Video = Video?.OriginalConfig ?? ConfigManager.Config.Video;
@@ -97,6 +108,7 @@ namespace Mesen.ViewModels
 
 		public bool IsDirty()
 		{
+			KeepChangesMadeElsewhere();
 			return (
 				Audio?.OriginalConfig.IsIdentical(ConfigManager.Config.Audio) == false ||
 				Input?.OriginalConfig.IsIdentical(ConfigManager.Config.Input) == false ||

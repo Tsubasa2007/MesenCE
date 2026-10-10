@@ -179,7 +179,9 @@ namespace Mesen.Windows
 		{
 			(int currentIndex, List<string> disks) = EmuApi.GetNesDiskList();
 			_entries = disks.Select((name, i) => new BbkDiskEntry(i, name, i == currentIndex)).ToList();
-			HasInsertedDisk = currentIndex >= 0;
+			//Asked of the drive, not the list: a disk mounted from beside the ROM is not in a list
+			//of another folder, and it can still be ejected
+			HasInsertedDisk = currentIndex >= 0 || !string.IsNullOrEmpty(EmuApi.GetNesInsertedDiskPath());
 			ApplyFilter();
 		}
 

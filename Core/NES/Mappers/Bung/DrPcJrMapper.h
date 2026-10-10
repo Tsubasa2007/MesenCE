@@ -762,14 +762,12 @@ public:
 	//step through.
 	vector<string> GetDiskFileList()
 	{
-		//Both the rom's own folder and the configured one, rather than only the configured
-		//one: this machine's disks tend to sit beside the rom while that setting is pointed
-		//at another machine's collection, and a list that silently excluded them is what
-		//"no disk selection" looks like from the outside.
-		vector<string> folders = { FolderUtilities::GetFolderName(_emu->GetRomInfo().RomFile.GetFilePath()) };
-		string configured = GetConfiguredDiskFolder();
-		if(!configured.empty() && !SameFolder(configured, folders[0])) {
-			folders.push_back(configured);
+		//The configured folder alone, or the rom's own when none is set - the same as every
+		//other machine's list. Adding the rom's folder to a configured one mixed whatever sits
+		//beside the BIOS into the folder the user picked, so the list changed with the machine.
+		string folder = GetConfiguredDiskFolder();
+		if(folder.empty()) {
+			folder = FolderUtilities::GetFolderName(_emu->GetRomInfo().RomFile.GetFilePath());
 		}
 
 		//The KW machines read a CD too, so their list offers discs alongside floppies; the
@@ -781,12 +779,7 @@ public:
 			extensions.insert(".iso");
 		}
 
-		vector<string> files;
-		for(string& folder : folders) {
-			for(string& file : FolderUtilities::GetFilesInFolder(folder, extensions, false)) {
-				files.push_back(file);
-			}
-		}
+		vector<string> files = FolderUtilities::GetFilesInFolder(folder, extensions, false);
 		std::sort(files.begin(), files.end());
 
 		//A .cue and the image it names are one disc; drop the image so the list has one

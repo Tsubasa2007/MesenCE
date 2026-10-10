@@ -186,7 +186,19 @@ extern "C"
 
 	DllExport void __stdcall TakeScreenshot()
 	{
-		_emu->GetVideoDecoder()->TakeScreenshot();
+		//On a machine that boots its software from a disk the BIOS's name alone says nothing about
+		//what is on screen, so the file is named after both, as the window title and recordings are.
+		//The screenshot code drops the name's extension, so one is added for it to drop - a dot in
+		//the disk's own name survives.
+		string name;
+		if(NesConsole* nes = dynamic_cast<NesConsole*>(_emu->GetConsole().get())) {
+			string disk = nes->GetInsertedDiskPath();
+			if(!disk.empty()) {
+				name = FolderUtilities::GetFilename(_emu->GetRomInfo().RomFile.GetFileName(), false) + " - " +
+					FolderUtilities::GetFilename(disk, false) + ".png";
+			}
+		}
+		_emu->GetVideoDecoder()->TakeScreenshot(name);
 	}
 
 	DllExport void __stdcall ProcessAudioPlayerAction(AudioPlayerActionParams p)
