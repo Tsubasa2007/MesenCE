@@ -10,7 +10,9 @@ protected:
 	uint16_t GetPrgPageSize() override { return 0x4000; }
 	uint16_t GetChrPageSize() override { return 0x2000; }
 	uint16_t RegisterStartAddress() override { return 0x4800; }
-	uint16_t RegisterEndAddress() override { return 0x4FFF; }
+	//Only $4800-$4803: a learning cartridge on this board writes $480D as one of its programs
+	//starts, which as a mirror of $4801 would switch that program's code out from under it
+	uint16_t RegisterEndAddress() override { return 0x4803; }
 	uint32_t GetWorkRamSize() override { return 0x8000; }
 
 	void InitMapper() override
