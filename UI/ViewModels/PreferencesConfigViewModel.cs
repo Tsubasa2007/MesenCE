@@ -99,6 +99,10 @@ namespace Mesen.ViewModels
 				EmulatorShortcut.RecordTape,
 				EmulatorShortcut.StopRecordTape,
 
+				EmulatorShortcut.TapePlayPause,
+				EmulatorShortcut.TapeSeekBack,
+				EmulatorShortcut.TapeSeekForward,
+
 				EmulatorShortcut.MoveToPreviousStateSlot,
 				EmulatorShortcut.MoveToNextStateSlot,
 				EmulatorShortcut.SaveState,

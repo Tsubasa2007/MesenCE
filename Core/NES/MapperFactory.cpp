@@ -204,6 +204,7 @@
 #include "NES/Mappers/Unlicensed/ColorDreams.h"
 #include "NES/Mappers/Unlicensed/ColorDreams46.h"
 #include "NES/Mappers/Unlicensed/Dance2000.h"
+#include "NES/Mappers/Unlicensed/PlqAvCard.h"
 #include "NES/Mappers/Unlicensed/DaouInfosys.h"
 #include "NES/Mappers/Unlicensed/DongdaPec586.h"
 #include "NES/Mappers/Unlicensed/DreamTech01.h"
@@ -524,7 +525,12 @@ BaseMapper* MapperFactory::GetMapperFromID(RomData& romData)
 				return new BbkMapper();
 			}
 			return new Kaiser7058();
-		case 172: return new Txc22211B();
+		case 172:
+			//The audio-visual cassette cards carry this number too
+			if(PlqAvCard::IsAvCard(romData.Info.Hash.PrgCrc32)) {
+				return new PlqAvCard();
+			}
+			return new Txc22211B();
 		case 173:
 			//The VirtuaNES-BBK fork reuses 173 for the Bung Doctor PC Jr. family, and routes
 			//the whole mapper there - it has no Idea-Tek support to keep. A real Idea-Tek 173
@@ -800,6 +806,11 @@ unique_ptr<BaseMapper> MapperFactory::InitializeFromFile(NesConsole* console, Vi
 
 		//The Subor learning cartridges likewise, and their keyboard and mouse - asking for the input
 		//type here is what gets the auto-configure step to run at all (see SuborCarts)
+		//The cassette cards' timing is the reference emulator's: a 1.66MHz CPU against the tape
+		if(PlqAvCard::IsAvCard(romData.Info.Hash.PrgCrc32)) {
+			romData.Info.System = GameSystem::NesPal;
+		}
+
 		if(SuborCarts::IsSuborCart(romData.Info.Hash.PrgCrc32)) {
 			romData.Info.System = GameSystem::Dendy;
 			romData.Info.InputType = GameInputType::SuborKeyboardMouse1;

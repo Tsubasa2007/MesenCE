@@ -1163,6 +1163,11 @@ enum class EmulatorShortcut
 	StartRecordHdPack,
 	StopRecordHdPack,
 
+	//The audio-visual cassette cards' tape player
+	TapePlayPause,
+	TapeSeekBack,
+	TapeSeekForward,
+
 	ShortcutCount,
 };
 

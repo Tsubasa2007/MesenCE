@@ -202,6 +202,7 @@
     <ClInclude Include="Audio\StereoDelayFilter.h" />
     <ClInclude Include="Audio\StereoPanningFilter.h" />
     <ClInclude Include="Audio\WavReader.h" />
+    <ClInclude Include="Audio\AudioFileReader.h" />
     <ClInclude Include="Audio\ymfm\ymfm.h" />
     <ClInclude Include="Audio\ymfm\ymfm_adpcm.h" />
     <ClInclude Include="Audio\ymfm\ymfm_fm.h" />
@@ -289,6 +290,7 @@
     <ClCompile Include="Audio\StereoDelayFilter.cpp" />
     <ClCompile Include="Audio\StereoPanningFilter.cpp" />
     <ClCompile Include="Audio\WavReader.cpp" />
+    <ClCompile Include="Audio\AudioFileReader.cpp" />
     <ClCompile Include="Audio\ymfm\ymfm_adpcm.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>

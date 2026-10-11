@@ -110,6 +110,13 @@ namespace Mesen.Interop
 		//Queue a .img/.ima to mount on the next BBK boot (call before loading the BBK BIOS ROM).
 		[DllImport(DllPath)] public static extern void SetBbkBootDisk([MarshalAs(UnmanagedType.LPUTF8Str)] string path);
 
+		//True while one of the audio-visual cassette cards is running
+		[DllImport(DllPath)][return: MarshalAs(UnmanagedType.I1)] public static extern bool IsNesTapeCard();
+		[DllImport(DllPath)] public static extern void InsertNesTape([MarshalAs(UnmanagedType.LPUTF8Str)] string path);
+		//0 = no cassette card / can't tell, 1 = the 普里奇 card, 2 = the 奇老师 card
+		[DllImport(DllPath)] public static extern int GetNesTapeCardKind();
+		[DllImport(DllPath)] public static extern int ChooseNesTapeCardKind([MarshalAs(UnmanagedType.LPUTF8Str)] string path);
+
 		[DllImport(DllPath, EntryPoint = "GetNesVideoDiscPath")] private static extern void GetNesVideoDiscPathWrapper(IntPtr outPath, Int32 maxLength);
 		//The disc the running machine has mounted, or an empty string when it has none.
 		public static string GetNesVideoDiscPath()

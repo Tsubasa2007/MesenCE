@@ -370,6 +370,37 @@ extern "C"
 		return false;
 	}
 
+	DllExport bool __stdcall IsNesTapeCard()
+	{
+		if(NesConsole* nes = dynamic_cast<NesConsole*>(_emu->GetConsole().get())) {
+			return nes->IsTapeCard();
+		}
+		return false;
+	}
+
+	//The running cassette card: 0 for none, 1 for the PLQ card, 2 for the QLS one
+	DllExport int32_t __stdcall GetNesTapeCardKind()
+	{
+		if(NesConsole* nes = dynamic_cast<NesConsole*>(_emu->GetConsole().get())) {
+			return nes->GetTapeCardKind();
+		}
+		return 0;
+	}
+
+	//Which cassette card a tape is for, from its recording (same numbering; 0 = can't tell)
+	DllExport int32_t __stdcall ChooseNesTapeCardKind(char* path)
+	{
+		return NesConsole::ChooseTapeCardKind(path ? path : "");
+	}
+
+	//Puts a tape in the running cassette card's player and starts it
+	DllExport void __stdcall InsertNesTape(char* path)
+	{
+		if(NesConsole* nes = dynamic_cast<NesConsole*>(_emu->GetConsole().get())) {
+			nes->InsertTape(path ? path : "");
+		}
+	}
+
 	//Queue a specific floppy image to mount on the next boot of a learning machine (used when a
 	//.img is opened directly from the UI, which then loads that machine's BIOS ROM). The slot
 	//lives on the shared floppy controller: no mapper - and so no machine - exists yet here.

@@ -138,7 +138,9 @@ namespace Mesen.Windows
 		//The machines that read a CD list their discs with the floppies (see the cores' disk
 		//lists): the extension tells the two apart
 		public bool IsDisc { get; }
-		public bool IsFloppy => !IsDisc;
+		//The cassette cards list their tapes here too
+		public bool IsTape { get; }
+		public bool IsFloppy => !IsDisc && !IsTape;
 		public string DisplayName => ToString();
 
 		public BbkDiskEntry(int index, string name, bool isInserted)
@@ -148,6 +150,7 @@ namespace Mesen.Windows
 			IsInserted = isInserted;
 			string ext = System.IO.Path.GetExtension(name).ToLowerInvariant();
 			IsDisc = ext == ".cue" || ext == ".bin" || ext == ".iso" || ext == ".cdv";
+			IsTape = LoadRomHelper.IsTapeFile(name);
 		}
 
 		public override string ToString()

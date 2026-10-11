@@ -147,6 +147,8 @@ namespace Mesen.Utilities
 					RecordApi.MoviePlay(filename);
 				} else if(ext == ".img" || ext == ".ima") {
 					OpenLearningMachineDisk(filename);
+				} else if(IsTapeFile(filename)) {
+					OpenCassetteTape(filename);
 				} else {
 					LoadRom(filename);
 				}
@@ -169,6 +171,60 @@ namespace Mesen.Utilities
 			}
 			EmuApi.SetBbkBootDisk(imgPath);
 			LoadRom(bios);
+		}
+
+		private static readonly HashSet<string> _tapeExtensions = new() { ".mp3", ".m4a", ".aac", ".wav", ".wma", ".flac", ".ogg" };
+
+		public static bool IsTapeFile(string path)
+		{
+			return _tapeExtensions.Contains(Path.GetExtension(path).ToLowerInvariant());
+		}
+
+		//A recording of a cassette for the audio-visual cards. The card that plays it is chosen by
+		//the code its data is recorded in (the core reads the start of the tape); when that card
+		//is already running the tape goes in its player, otherwise the card is looked for beside
+		//Mesen.exe and started with it. A tape that doesn't say goes in a running card, or else
+		//starts the 普里奇 card, which shows at least the still pictures of either brand's tapes.
+		private static async void OpenCassetteTape(string tapePath)
+		{
+			int wanted = await Task.Run(() => EmuApi.ChooseNesTapeCardKind(tapePath));
+			string? wantedCard = wanted == 0 ? null : FindCassetteCard(wanted == 2);
+			int running = EmuApi.IsRunning() ? EmuApi.GetNesTapeCardKind() : 0;
+			if(running != 0 && (wantedCard == null || wanted == running)) {
+				EmuApi.InsertNesTape(tapePath);
+				return;
+			}
+
+			string? card = wantedCard ?? FindCassetteCard(false) ?? FindCassetteCard(true);
+			if(card == null) {
+				await MesenMsgBox.Show(null, "TapeCardMissing", MessageBoxButtons.OK, MessageBoxIcon.Error);
+				return;
+			}
+			EmuApi.SetBbkBootDisk(tapePath);
+			LoadRom(card);
+		}
+
+		//The cards are mapper 172 with no CHR ROM; the 奇老师 dump is 32KB, the 普里奇 one 16KB
+		private static string? FindCassetteCard(bool qls)
+		{
+			try {
+				string? exeFolder = Path.GetDirectoryName(Program.ExePath);
+				if(exeFolder == null) {
+					return null;
+				}
+				foreach(string nes in Directory.EnumerateFiles(exeFolder, "*.nes")) {
+					using FileStream fs = File.OpenRead(nes);
+					byte[] h = new byte[16];
+					if(fs.Read(h, 0, 16) < 16 || h[0] != 'N' || h[1] != 'E' || h[2] != 'S' || h[3] != 0x1A) {
+						continue;
+					}
+					int mapper = (h[6] >> 4) | (h[7] & 0xF0);
+					if(mapper == 172 && h[5] == 0 && h[4] == (qls ? 2 : 1)) {
+						return nes;
+					}
+				}
+			} catch { }
+			return null;
 		}
 
 		//Tell the two machines' floppies apart by the boot sector's OEM name: a BBK disk carries the

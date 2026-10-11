@@ -141,6 +141,10 @@ namespace Mesen.Config.Shortcuts
 		StartRecordHdPack,
 		StopRecordHdPack,
 
+		TapePlayPause,
+		TapeSeekBack,
+		TapeSeekForward,
+
 		LastValidValue,
 		[Obsolete] LoadRandomGame,
 	}

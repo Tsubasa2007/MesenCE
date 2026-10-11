@@ -1076,6 +1076,7 @@ bank 越小，通常 PNG 文件越少
 		<Message ID="MesenUpToDate">你正在运行最新版本的 Mesen。</Message>
 		<Message ID="PatchAndReset">打补丁并重置当前游戏？</Message>
 		<Message ID="SelectRomIps">请为此补丁文件选择一个 ROM。</Message>
+		<Message ID="TapeCardMissing">未找到声像卡 ROM。&#xA;&#xA;磁带录音需要读取它的声像卡。请将声像卡的 ROM（iNES .nes 文件：mapper 172，16 KB 或 32 KB PRG，无 CHR ROM）放在 Mesen 可执行文件所在的文件夹，或者先载入声像卡再打开磁带。</Message>
 		<Message ID="BbkBiosMissing">找不到 {0} 学习机的 BIOS ROM。
 
 磁盘镜像无法单独启动——它需要所属机型的 BIOS。请把 {0} 的 BIOS ROM（iNES .nes 文件：mapper 171，PRG 至少 128 KB，没有 CHR ROM）放到 Mesen 程序所在的文件夹，然后重新打开磁盘镜像。</Message>
@@ -1236,6 +1237,9 @@ bank 越小，通常 PNG 文件越少
 			<Value ID="LoadTape">从文件载入磁带</Value>
 			<Value ID="RecordTape">开始录制磁带到文件</Value>
 			<Value ID="StopRecordTape">停止录制磁带</Value>
+			<Value ID="TapePlayPause">声像卡 - 播放/暂停磁带</Value>
+			<Value ID="TapeSeekBack">声像卡 - 磁带后退 10 秒</Value>
+			<Value ID="TapeSeekForward">声像卡 - 磁带前进 10 秒</Value>
 		</Enum>
 		<Enum ID="ControllerType">
 			<Value ID="None">无</Value>
@@ -1806,6 +1810,9 @@ bank 越小，通常 PNG 文件越少
 			<Value ID="PlayVideoTrack">从光盘播放</Value>
 			<Value ID="ShowDiscMenu">菜单画面</Value>
 			<Value ID="EjectDisk">弹出磁盘</Value>
+			<Value ID="TapePlayPause">播放/暂停磁带</Value>
+			<Value ID="TapeSeekBack">磁带后退 10 秒</Value>
+			<Value ID="TapeSeekForward">磁带前进 10 秒</Value>
 			<Value ID="InsertCoin1">投币（1）</Value>
 			<Value ID="InsertCoin2">投币（2）</Value>
 			<Value ID="InsertCoin3">投币（3 - DualSystem）</Value>

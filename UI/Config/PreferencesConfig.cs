@@ -160,6 +160,12 @@ namespace Mesen.Config
 			AddShortcut(new ShortcutKeyInfo { Shortcut = EmulatorShortcut.LoadStateSlotAuto, KeyCombination = new KeyCombination() { Key1 = InputApi.GetKeyCode("F8") } });
 			AddShortcut(new ShortcutKeyInfo { Shortcut = EmulatorShortcut.LoadStateFromFile, KeyCombination = new KeyCombination() { Key1 = ctrl, Key2 = InputApi.GetKeyCode("L") } });
 
+			//The keys the reference emulator gives the cassette cards' tape player. They only act
+			//while one of those cards is running.
+			AddShortcut(new ShortcutKeyInfo { Shortcut = EmulatorShortcut.TapePlayPause, KeyCombination = new KeyCombination() { Key1 = InputApi.GetKeyCode("Home") } });
+			AddShortcut(new ShortcutKeyInfo { Shortcut = EmulatorShortcut.TapeSeekBack, KeyCombination = new KeyCombination() { Key1 = InputApi.GetKeyCode("Page Up") } });
+			AddShortcut(new ShortcutKeyInfo { Shortcut = EmulatorShortcut.TapeSeekForward, KeyCombination = new KeyCombination() { Key1 = InputApi.GetKeyCode("Page Down") } });
+
 			foreach(EmulatorShortcut value in Enum.GetValues<EmulatorShortcut>()) {
 				if(value < EmulatorShortcut.LastValidValue) {
 					AddShortcut(new ShortcutKeyInfo { Shortcut = value });

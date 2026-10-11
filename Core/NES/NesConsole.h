@@ -98,6 +98,10 @@ public:
 	string GetInsertedDiskPath();
 	bool IsBbkGame();
 	bool HasSuborFloppy();
+	bool IsTapeCard();
+	int GetTapeCardKind();
+	static int ChooseTapeCardKind(const string& path);
+	void InsertTape(const string& path);
 	string GetVideoDiscPath();
 	vector<CdVideoReel> GetVideoReels();
 

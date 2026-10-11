@@ -32,6 +32,7 @@
 #include "NES/Mappers/Subor/SuborWindows2002.h"
 #include "NES/Mappers/LingTong/LingTongMapper.h"
 #include "NES/Mappers/Unlicensed/Dance2000.h"
+#include "NES/Mappers/Unlicensed/PlqAvCard.h"
 #include "NES/Mappers/Unlicensed/DongdaPec586.h"
 #include "NES/Mappers/Bung/DrPcJrMapper.h"
 #include "NES/Mappers/Bbk/Yuyin2Mapper.h"
@@ -195,9 +196,10 @@ LoadRomResult NesConsole::LoadRom(VirtualFile& romFile)
 			}
 		}
 
-		//The V10/V11 are identified by their PRG CRC32 rather than by anything in the header,
-		//which leaves their input type unspecified - so they have to be asked for by name here.
-		bool needsInputByCrc = YuxingMapper::IsV10OrV11(romData.Info.Hash.PrgCrc32);
+		//The V10/V11 and the cassette cards are identified by their PRG CRC32 rather than by
+		//anything in the header, which leaves their input type unspecified - so they have to be
+		//asked for by name here.
+		bool needsInputByCrc = YuxingMapper::IsV10OrV11(romData.Info.Hash.PrgCrc32) || PlqAvCard::IsAvCard(romData.Info.Hash.PrgCrc32);
 		if(GetNesConfig().AutoConfigureInput && (romData.Info.InputType != GameInputType::Unspecified || needsInputByCrc)) {
 			//Auto-configure the inputs (if option is enabled)
 			InitializeInputDevices(romData.Info.InputType, romData.Info.System, mapper.get());
@@ -483,6 +485,8 @@ string NesConsole::GetInsertedDiskPath()
 		return lingTong->GetCurrentDiskFilename();
 	} else if(Dance2000* subor = dynamic_cast<Dance2000*>(_mapper.get()); subor && subor->HasFloppyDrive()) {
 		return subor->GetCurrentDiskFilename();
+	} else if(PlqAvCard* card = dynamic_cast<PlqAvCard*>(_mapper.get())) {
+		return card->GetCurrentTapeFilename();
 	}
 	return "";
 }
@@ -509,6 +513,9 @@ vector<string> NesConsole::GetBbkDiskList(int32_t& currentIndex)
 		paths = lingTong->GetDiskFileList();
 	} else if(Dance2000* subor = dynamic_cast<Dance2000*>(_mapper.get()); subor && subor->HasFloppyDrive()) {
 		paths = subor->GetDiskFileList();
+	} else if(PlqAvCard* card = dynamic_cast<PlqAvCard*>(_mapper.get())) {
+		//The cassette cards' tapes go in the same list
+		paths = card->GetTapeFileList();
 	}
 	for(size_t i = 0; i < paths.size(); i++) {
 		string name = FolderUtilities::GetFilename(paths[i], true);
@@ -951,7 +958,30 @@ bool NesConsole::IsBbkGame()
 	Sb2kMapper* sb2k = dynamic_cast<Sb2kMapper*>(_mapper.get());
 	return dynamic_cast<BbkMapper*>(_mapper.get()) != nullptr || (sb2k && !sb2k->IsUm6578Cart()) ||
 		dynamic_cast<YuxingMapper*>(_mapper.get()) != nullptr || dynamic_cast<DrPcJrMapper*>(_mapper.get()) != nullptr ||
-		dynamic_cast<LingTongMapper*>(_mapper.get()) != nullptr || HasSuborFloppy();
+		dynamic_cast<LingTongMapper*>(_mapper.get()) != nullptr || HasSuborFloppy() || IsTapeCard();
+}
+
+bool NesConsole::IsTapeCard()
+{
+	return dynamic_cast<PlqAvCard*>(_mapper.get()) != nullptr;
+}
+
+int NesConsole::GetTapeCardKind()
+{
+	PlqAvCard* card = dynamic_cast<PlqAvCard*>(_mapper.get());
+	return card ? card->GetCardKind() : 0;
+}
+
+int NesConsole::ChooseTapeCardKind(const string& path)
+{
+	return PlqAvCard::ChooseCardKind(path);
+}
+
+void NesConsole::InsertTape(const string& path)
+{
+	if(PlqAvCard* card = dynamic_cast<PlqAvCard*>(_mapper.get())) {
+		card->InsertTape(path);
+	}
 }
 
 bool NesConsole::HasSuborFloppy()
@@ -997,8 +1027,16 @@ ShortcutState NesConsole::IsShortcutAllowed(EmulatorShortcut shortcut, uint32_t 
 				if(Dance2000* subor = dynamic_cast<Dance2000*>(_mapper.get()); subor && subor->HasFloppyDrive()) {
 					return (ShortcutState)(shortcutParam < subor->GetDiskCount());
 				}
+				if(PlqAvCard* card = dynamic_cast<PlqAvCard*>(_mapper.get())) {
+					return (ShortcutState)(shortcutParam < card->GetTapeCount());
+				}
 			}
 			return ShortcutState::Disabled;
+
+		case EmulatorShortcut::TapePlayPause:
+		case EmulatorShortcut::TapeSeekBack:
+		case EmulatorShortcut::TapeSeekForward:
+			return (ShortcutState)(isRunning && !isNetplayClient && !isMoviePlaying && IsTapeCard());
 
 		case EmulatorShortcut::VsInsertCoin1:
 		case EmulatorShortcut::VsInsertCoin2:
@@ -1139,6 +1177,10 @@ void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem syst
 		port2 = ControllerType::None;
 		log("[Input] Subor keyboard connected");
 		expDevice = ControllerType::SuborKeyboard;
+	} else if(PlqAvCard::IsAvCard(prgCrc)) {
+		//The cassette cards read no controller, but a keyboard left plugged in from another
+		//machine would take the keys the tape is worked with (play/pause, seek)
+		log("[Input] Cassette card: standard controllers, no keyboard");
 	} else if(inputType == GameInputType::VsZapper) {
 		//VS Duck Hunt, etc. need the zapper in the first port
 		log("[Input] VS Zapper connected");

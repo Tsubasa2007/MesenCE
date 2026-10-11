@@ -695,6 +695,10 @@ namespace Mesen.Debugger.Utilities
 		ShowDiscMenu,
 		[IconFile("MediaEject")]
 		EjectDisk,
+		[IconFile("MediaPlay")]
+		TapePlayPause,
+		TapeSeekBack,
+		TapeSeekForward,
 
 		[IconFile("Coins")]
 		InsertCoin1,

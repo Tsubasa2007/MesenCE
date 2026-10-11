@@ -1873,6 +1873,7 @@ E
 		<Message ID="MesenUpToDate">You are running the latest version of Mesen.</Message>
 		<Message ID="PatchAndReset">Patch and reset the current game?</Message>
 		<Message ID="SelectRomIps">Please select a ROM for this patch file.</Message>
+		<Message ID="TapeCardMissing">No cassette card ROM was found.&#xA;&#xA;A tape recording needs the card that reads it. Place the card's ROM (an iNES .nes file: mapper 172, 16 KB or 32 KB PRG, no CHR ROM) in the same folder as the Mesen executable, or load the card first and then open the tape.</Message>
 		<Message ID="BbkBiosMissing">No {0} learning machine BIOS ROM was found.&#xA;&#xA;A disk image cannot boot on its own - it needs the BIOS of the machine it belongs to. Place the {0} BIOS ROM (an iNES .nes file: mapper 171, 128 KB or larger PRG, no CHR ROM) in the same folder as the Mesen executable, then open the disk image again.</Message>
 		<Message ID="UnableToStartMissingSdl">Mesen could not launch because SDL2 could not be found. Install SDL2 using your package manager and try again.&#xA;&#xA;Error details:&#xA;{0}</Message>
 		<Message ID="UnableToStartMissingDependencies">Mesen could not launch because of missing dependencies.&#xA;&#xA;Error details:&#xA;{0}</Message>
@@ -2039,6 +2040,9 @@ E
 			<Value ID="LoadTape">Load Tape From File</Value>
 			<Value ID="RecordTape">Start Recording Tape To File</Value>
 			<Value ID="StopRecordTape">Stop Recording Tape</Value>
+			<Value ID="TapePlayPause">Cassette Card - Play/Pause Tape</Value>
+			<Value ID="TapeSeekBack">Cassette Card - Tape Back 10 Seconds</Value>
+			<Value ID="TapeSeekForward">Cassette Card - Tape Forward 10 Seconds</Value>
 		</Enum>
 		<Enum ID="ControllerType">
 			<Value ID="None">None</Value>
@@ -3881,6 +3885,9 @@ E
 			<Value ID="PlayVideoTrack">Play from the Disc</Value>
 			<Value ID="ShowDiscMenu">Menu Screens</Value>
 			<Value ID="EjectDisk">Eject Disk</Value>
+			<Value ID="TapePlayPause">Play/Pause Tape</Value>
+			<Value ID="TapeSeekBack">Tape Back 10 Seconds</Value>
+			<Value ID="TapeSeekForward">Tape Forward 10 Seconds</Value>
 			
 			<Value ID="InsertCoin1">Insert Coin (1)</Value>
 			<Value ID="InsertCoin2">Insert Coin (2)</Value>

@@ -40,6 +40,7 @@ namespace Mesen.ViewModels
 		//Shown whenever a BBK game/BIOS is running, even with no disk images in the current folder -
 		//the Select Disk window's Change Folder button lets the user point at a folder that has some.
 		private bool IsBbkGame => IsGameRunning && EmuApi.IsNesBbkGame();
+		private bool IsTapeCard => IsGameRunning && EmuApi.IsNesTapeCard();
 		private bool IsVsSystemGame => RomInfo.Format == RomFormat.VsSystem || RomInfo.Format == RomFormat.VsDualSystem;
 		private bool IsVsDualSystemGame => RomInfo.Format == RomFormat.VsDualSystem;
 		private List<RecentItem> RecentItems => ConfigManager.Config.RecentFiles.Items;
@@ -285,6 +286,19 @@ namespace Mesen.ViewModels
 				new MainMenuAction(EmulatorShortcut.FdsEjectDisk) {
 					ActionType = ActionType.EjectDisk,
 					IsVisible = () => IsBbkGame,
+				},
+
+				new MainMenuAction(EmulatorShortcut.TapePlayPause) {
+					ActionType = ActionType.TapePlayPause,
+					IsVisible = () => IsTapeCard,
+				},
+				new MainMenuAction(EmulatorShortcut.TapeSeekBack) {
+					ActionType = ActionType.TapeSeekBack,
+					IsVisible = () => IsTapeCard,
+				},
+				new MainMenuAction(EmulatorShortcut.TapeSeekForward) {
+					ActionType = ActionType.TapeSeekForward,
+					IsVisible = () => IsTapeCard,
 				},
 
 				//A disc can carry video tracks the machine itself cannot show - its picture comes
