@@ -484,8 +484,8 @@ BaseMapper* MapperFactory::GetMapperFromID(RomData& romData)
 			romData.Info.InputType = GameInputType::SuborKeyboardMouse1;
 			return new YuxingMapper();
 		case 170:
-			//Two learning cartridges on the PEC-586 board come with this number (see DongdaPec586)
-			if(DongdaPec586::IsZechengCart(romData.Info.Hash.PrgCrc32)) {
+			//Three learning cartridges on the PEC-586 board come with this number (see DongdaPec586)
+			if(DongdaPec586::HasZechengKeyboard(romData.Info.Hash.PrgCrc32)) {
 				romData.Info.System = GameSystem::Dendy;
 				//Asking for the input type here is what gets the keyboard auto-configured
 				romData.Info.InputType = GameInputType::SuborKeyboardMouse1;
@@ -758,14 +758,13 @@ BaseMapper* MapperFactory::GetMapperFromID(RomData& romData)
 		case 552: return new TaitoX1017();
 
 		case 560:
-			//Only the Subor V1.0 (submapper 1) - the plain C/E BASIC cartridges need the reference
-			//emulator's rendering special cases, which are not ported
-			if(romData.Info.SubMapperID == 1 || romData.Info.Hash.PrgCrc32 == 0xC07ADC88) {
-				//Its NES 2.0 header declares no CHR RAM, but the board has the 8KB its ordinary tiles live in
+			//The Subor V1.0 (submapper 1) and the plain C/E BASIC cartridges (see Subor560). The
+			//Subor's NES 2.0 header declares no CHR RAM, but its board has the 8KB its ordinary tiles
+			//live in.
+			if(Subor560::IsSuborV1(romData.Info)) {
 				romData.ChrRamSize = 0x2000;
-				return new Subor560();
 			}
-			break;
+			return new Subor560();
 
 		case 682: return new Rainbow();
 
@@ -811,7 +810,17 @@ unique_ptr<BaseMapper> MapperFactory::InitializeFromFile(NesConsole* console, Vi
 			romData.Info.System = GameSystem::NesPal;
 		}
 
+		//The 4MB learning cartridge on the FK23C board (see Fk23C) scans the Subor keyboard and moves
+		//its pointer with the joypad. Its header asks for a mouse too, but it never reads one, and one
+		//on $4016 would cost it the joypad.
+		if(romData.Info.MapperID == 176 && romData.Info.SubMapperID == 4) {
+			romData.Info.InputType = GameInputType::SuborKeyboard;
+		}
+
 		if(SuborCarts::IsSuborCart(romData.Info.Hash.PrgCrc32)) {
+			romData.Info.System = GameSystem::Dendy;
+			romData.Info.InputType = GameInputType::SuborKeyboardMouse1;
+		} else if(SuborCarts::HasKingwonKeyboard(romData.Info.Hash.PrgCrc32)) {
 			romData.Info.System = GameSystem::Dendy;
 			romData.Info.InputType = GameInputType::SuborKeyboardMouse1;
 		} else if(SuborCarts::HasFamilyBasicKeyboard(romData.Info.Hash.PrgCrc32)) {

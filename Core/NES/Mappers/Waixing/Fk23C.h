@@ -3,10 +3,30 @@
 #include "NES/BaseMapper.h"
 #include "NES/NesConsole.h"
 #include "NES/NesCpu.h"
+#include "NES/Mappers/Bbk/BbkLpcAudio.h"
 
+//Submapper 4 is a 4MB learning cartridge with an LPC speech chip: $5012 bit 7 is the top bit of
+//the PRG base, and every address in $4800-$5FFF with A11 set is the speech chip instead of a
+//register - a write of $5x hands it the four bits x, low bit first, any other write resets it,
+//and a read has bit 6 set while it can take more. Its program never writes $A001 and keeps code
+//in $6000-$7FFF, so the work RAM comes up enabled, as it does on NintendulatorNRS's FK23C.
 class Fk23C : public BaseMapper
 {
 private:
+	unique_ptr<BbkLpcAudio> _lpcAudio;
+	uint8_t _lpcByte = 0;
+	bool _lpcHalf = false;
+
+	bool HasSpeech() { return _romInfo.SubMapperID == 4; }
+
+	void ResetSpeech()
+	{
+		_lpcByte = 0;
+		_lpcHalf = false;
+		_lpcAudio->WriteControl(0);
+		_lpcAudio->WriteControl(1);
+	}
+
 	uint8_t _prgBankingMode = 0;
 	uint8_t _outerChrBankSize = 0;
 	bool _selectChrRam = false;
@@ -54,6 +74,7 @@ protected:
 
 	bool EnableCpuClockHook() override { return true; }
 	bool EnableVramAddressHook() override { return true; }
+	bool AllowRegisterRead() override { return HasSpeech(); }
 
 	void InitMapper() override
 	{
@@ -80,7 +101,7 @@ protected:
 		_allowSingleScreenMirroring = false;
 		_wramConfigEnabled = false;
 		_fk23RegistersEnabled = false;
-		_wramEnabled = false;
+		_wramEnabled = HasSpeech();
 		_wramWriteProtected = false;
 
 		_currentRegister = 0;
@@ -104,11 +125,23 @@ protected:
 		_irqDelay = 0;
 
 		AddRegisterRange(0x5000, 0x5FFF, MemoryOperation::Write);
+		if(HasSpeech()) {
+			_lpcAudio.reset(new BbkLpcAudio(_console, BbkLpcAudio::LpcVariant::Yuxing));
+			_lpcAudio->Reset();
+			RemoveRegisterRange(0x8000, 0xFFFF, MemoryOperation::Read);
+			AddRegisterRange(0x4800, 0x4FFF, MemoryOperation::Any);
+			AddRegisterRange(0x5800, 0x5FFF, MemoryOperation::Read);
+		}
 		UpdateState();
 	}
 
 	void Reset(bool softReset) override
 	{
+		if(_lpcAudio) {
+			_lpcAudio->Reset();
+			_lpcByte = 0;
+			_lpcHalf = false;
+		}
 		if(softReset) {
 			if(_wramConfigEnabled && _selectChrRam && HasBattery()) {
 				_prgBaseBits = 0;
@@ -149,6 +182,11 @@ protected:
 		SV(_mirroringReg);
 		SV(_cnromChrReg);
 		SV(_irqDelay);
+		if(_lpcAudio) {
+			SV(_lpcAudio);
+			SV(_lpcByte);
+			SV(_lpcHalf);
+		}
 
 		if(!s.IsSaving()) {
 			UpdateState();
@@ -260,9 +298,28 @@ protected:
 		};
 	}
 
+	uint8_t ReadRegister(uint16_t addr) override
+	{
+		if(addr & 0x800) {
+			return _lpcAudio->IsReady() ? 0x40 : 0x00;
+		}
+		return _console->GetMemoryManager()->GetOpenBus();
+	}
+
 	void WriteRegister(uint16_t addr, uint8_t value) override
 	{
-		if(addr < 0x8000) {
+		if(_lpcAudio && addr < 0x6000 && (addr & 0x800)) {
+			if((value & 0xF0) == 0x50) {
+				if(_lpcHalf) {
+					_lpcAudio->WriteData(_lpcByte | (uint8_t)((value & 0x0F) << 4));
+				} else {
+					_lpcByte = value & 0x0F;
+				}
+				_lpcHalf = !_lpcHalf;
+			} else {
+				ResetSpeech();
+			}
+		} else if(addr < 0x8000) {
 			if(_fk23RegistersEnabled || !_wramConfigEnabled) {
 				uint16_t mask = 0x5010;
 				if((addr & mask) != mask) {
@@ -276,7 +333,9 @@ protected:
 						_outerChrBankSize = (value & 0x10) >> 4;
 						_selectChrRam = (value & 0x20) != 0;
 						_mmc3ChrMode = (value & 0x40) == 0;
-						_prgBaseBits = (_prgBaseBits & ~0x180) | ((value & 0x80) << 1) | ((value & 0x08) << 4);
+						if(!HasSpeech()) {
+							_prgBaseBits = (_prgBaseBits & ~0x180) | ((value & 0x80) << 1) | ((value & 0x08) << 4);
+						}
 						break;
 
 					case 1:
@@ -284,7 +343,11 @@ protected:
 						break;
 
 					case 2:
-						_prgBaseBits = (_prgBaseBits & ~0x200) | ((value & 0x40) << 3);
+						if(HasSpeech()) {
+							_prgBaseBits = (_prgBaseBits & ~0x80) | (value & 0x80);
+						} else {
+							_prgBaseBits = (_prgBaseBits & ~0x200) | ((value & 0x40) << 3);
+						}
 						_chrBaseBits = value;
 						_cnromChrReg = 0;
 						break;
@@ -375,6 +438,9 @@ public:
 	void ProcessCpuClock() override
 	{
 		BaseProcessCpuClock();
+		if(_lpcAudio) {
+			_lpcAudio->Clock();
+		}
 
 		if(_irqDelay > 0) {
 			_irqDelay--;

@@ -53,6 +53,9 @@
 //a DIP setting in bits 5-4 (bit 7 is the cassette input, bit 6 unused); the reference emulator
 //steps it on every reset through four values it names after brands, so 0 is used here. They run
 //on Dendy timing.
+//
+//A third learning cartridge with the same keyboard (BIT Corp. 1989 inside as well) comes as mapper
+//170, but banks as the PEC-586/686F do: its reset code is in the upper 256KB's swapped window.
 class DongdaPec586 : public BaseMapper
 {
 public:
@@ -61,11 +64,17 @@ public:
 		return prgCrc == 0x836CDDEF || prgCrc == 0x428C1C1D;
 	}
 
+	static bool HasZechengKeyboard(uint32_t prgCrc)
+	{
+		return IsZechengCart(prgCrc) || prgCrc == 0x44479A27;
+	}
+
 private:
 	static constexpr uint32_t Crc9588 = 0xFE31765B;
 	static constexpr uint8_t ZechengDip = 0x00;
 
 	bool _zecheng = false;
+	bool _zechengKeyboard = false;
 	bool _kbdArmed = false;
 
 	//What reads of $5000-$5FFF carry, by the last $54xx write's high nibble
@@ -162,6 +171,7 @@ protected:
 	{
 		_is9588 = _romInfo.Hash.PrgCrc32 == Crc9588;
 		_zecheng = IsZechengCart(_romInfo.Hash.PrgCrc32);
+		_zechengKeyboard = HasZechengKeyboard(_romInfo.Hash.PrgCrc32);
 
 		AddRegisterRange(0x4016, 0x4016, MemoryOperation::Write);
 		AddRegisterRange(0x4017, 0x4017, MemoryOperation::Read);
@@ -212,13 +222,13 @@ protected:
 		}
 		if(addr == 0x4017) {
 			Sb2kKeyboard* kbd = NesControls()->GetControlDevice<Sb2kKeyboard>().get();
-			if(_zecheng) {
+			if(_zechengKeyboard) {
 				return (NesControls()->ReadRam(addr) & ~0x02) | ZechengKeyMatrix::Read(kbd, _kbdRow, _kbdColumn);
 			}
 			uint8_t key = PecKeyMatrix::Read(kbd, _kbdRow, _kbdColumn);
 			return (NesControls()->ReadRam(addr) & ~0x12) | key;
 		}
-		if(_zecheng && addr == 0x5500) {
+		if(_zechengKeyboard && addr == 0x5500) {
 			return ZechengDip << 4;
 		}
 		return (_console->GetMemoryManager()->GetOpenBus() & 0xD8) | ReadBits[_regs[4] >> 4];
@@ -228,7 +238,7 @@ protected:
 	{
 		if(addr == 0x4016) {
 			NesControls()->WriteRam(addr, value);
-			if(_zecheng) {
+			if(_zechengKeyboard) {
 				ZechengKeyMatrix::Write(value, _kbdRow, _kbdColumn, _kbdArmed);
 			} else {
 				PecKeyMatrix::Write(value, _kbdRow, _kbdColumn);

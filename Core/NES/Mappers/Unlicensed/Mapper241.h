@@ -3,6 +3,10 @@
 #include "NES/BaseMapper.h"
 #include "NES/Mappers/Subor/SuborCarts.h"
 #include "NES/Mappers/Bbk/BbkLpcAudio.h"
+#include "NES/NesConsole.h"
+#include "NES/NesControlManager.h"
+#include "NES/Input/Sb2kKeyboard.h"
+#include "NES/Input/ZechengKeyMatrix.h"
 
 class Mapper241 : public BaseMapper
 {
@@ -16,6 +20,16 @@ private:
 	bool _lpcHalf = false;
 
 	bool HasSpeech() { return SuborCarts::HasLpcSpeech(_romInfo.Hash.PrgCrc32); }
+
+	//The Kingwon-type keyboard (see SuborCarts::HasKingwonKeyboard): the same 8-key rows as the
+	//ZeCheng type (see ZechengKeyMatrix) but its own strobes - $4016 = 7 goes back to row 0, 4
+	//rewinds the column and 5 steps to the next row - and each $4017 read has bit 1 clear while
+	//its key is down. The cartridge scans rows 0-9.
+	bool _kingwon = false;
+	uint8_t _kbdRow = 0;
+	uint8_t _kbdColumn = 0;
+
+	NesControlManager* NesControls() { return (NesControlManager*)_console->GetControlManager(); }
 
 	void ResetSpeech()
 	{
@@ -32,11 +46,27 @@ protected:
 
 	uint16_t GetPrgPageSize() override { return 0x8000; }
 	uint16_t GetChrPageSize() override { return 0x2000; }
-	bool AllowRegisterRead() override { return HasSpeech(); }
+	bool AllowRegisterRead() override { return HasSpeech() || SuborCarts::HasKingwonKeyboard(_romInfo.Hash.PrgCrc32); }
+
+	void GetMemoryRanges(MemoryRanges& ranges) override
+	{
+		BaseMapper::GetMemoryRanges(ranges);
+		if(SuborCarts::HasKingwonKeyboard(_romInfo.Hash.PrgCrc32)) {
+			ranges.AddHandler(MemoryOperation::Write, 0x4016);
+			ranges.AddHandler(MemoryOperation::Read, 0x4017);
+			ranges.SetAllowOverride();
+		}
+	}
 	bool EnableCpuClockHook() override { return HasSpeech(); }
 
 	void InitMapper() override
 	{
+		_kingwon = SuborCarts::HasKingwonKeyboard(_romInfo.Hash.PrgCrc32);
+		if(_kingwon) {
+			RemoveRegisterRange(0x8000, 0xFFFF, MemoryOperation::Read);
+			AddRegisterRange(0x4016, 0x4016, MemoryOperation::Write);
+			AddRegisterRange(0x4017, 0x4017, MemoryOperation::Read);
+		}
 		if(HasSpeech()) {
 			_lpcAudio.reset(new BbkLpcAudio(_console, BbkLpcAudio::LpcVariant::Yuxing));
 			_lpcAudio->Reset();
@@ -62,6 +92,8 @@ protected:
 			_lpcByte = 0;
 			_lpcHalf = false;
 		}
+		_kbdRow = 0;
+		_kbdColumn = 0;
 	}
 
 	void ProcessCpuClock() override
@@ -74,13 +106,30 @@ protected:
 
 	uint8_t ReadRegister(uint16_t addr) override
 	{
-		return _lpcAudio->IsReady() ? 0x40 : 0x00;
+		if(addr == 0x4017) {
+			uint8_t value = NesControls()->ReadRam(addr) | 0x02;
+			if(_kbdRow <= 9) {
+				Sb2kKeyboard* kbd = NesControls()->GetControlDevice<Sb2kKeyboard>().get();
+				value ^= ZechengKeyMatrix::Read(kbd, _kbdRow, _kbdColumn);
+			}
+			return value;
+		}
+		return _lpcAudio && _lpcAudio->IsReady() ? 0x40 : 0x00;
 	}
 
 	void WriteRegister(uint16_t addr, uint8_t value) override
 	{
-		if(addr >= 0x8000) {
+		if(addr == 0x4016) {
+			NesControls()->WriteRam(addr, value);
+			switch(value) {
+				case 0x04: _kbdColumn = 0; break;
+				case 0x05: if(++_kbdRow > 12) { _kbdRow = 0; } break;
+				case 0x07: _kbdRow = 0; break;
+			}
+		} else if(addr >= 0x8000) {
 			SelectPrgPage(0, value);
+		} else if(!_lpcAudio) {
+			//No speech chip
 		} else if((value & 0xF0) == 0x50) {
 			if(_lpcHalf) {
 				_lpcAudio->WriteData(_lpcByte | (uint8_t)((value & 0x0F) << 4));
@@ -100,6 +149,10 @@ protected:
 			SV(_lpcAudio);
 			SV(_lpcByte);
 			SV(_lpcHalf);
+		}
+		if(_kingwon) {
+			SV(_kbdRow);
+			SV(_kbdColumn);
 		}
 	}
 };

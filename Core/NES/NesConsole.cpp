@@ -30,6 +30,7 @@
 #include "NES/Mappers/Bbk/Bbk928Mapper.h"
 #include "NES/Mappers/Subor/SuborCarts.h"
 #include "NES/Mappers/Subor/SuborWindows2002.h"
+#include "NES/Mappers/Subor/Subor560.h"
 #include "NES/Mappers/LingTong/LingTongMapper.h"
 #include "NES/Mappers/Unlicensed/Dance2000.h"
 #include "NES/Mappers/Unlicensed/PlqAvCard.h"
@@ -1231,6 +1232,14 @@ void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem syst
 	} else if(inputType == GameInputType::ExcitingBoxing) {
 		log("[Input] Exciting Boxing controller connected");
 		expDevice = ControllerType::ExcitingBoxing;
+	} else if(inputType == GameInputType::KedaKeyboard && dynamic_cast<Subor560*>(mapper)) {
+		//Subor560 runs this keyboard's scan; the device only says which keys are down
+		log("[Input] Keda keyboard connected");
+		expDevice = ControllerType::Sb2kKeyboard;
+	} else if(inputType == GameInputType::SuborKeyboard) {
+		//The keyboard alone, both joypads still plugged in
+		log("[Input] Subor keyboard connected");
+		expDevice = ControllerType::SuborKeyboard;
 	} else if(inputType == GameInputType::SuborKeyboardMouse1) {
 		if(dynamic_cast<Sb2kMapper*>(mapper)) {
 			//The SB-2000 has a PS/2-style keyboard and an HT6513B serial mouse, both
@@ -1297,6 +1306,12 @@ void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem syst
 		} else if(dynamic_cast<DongdaPec586*>(mapper)) {
 			//The same key matrix as the LingTong machines, read by DongdaPec586
 			log("[Input] PEC-586 keyboard connected");
+			expDevice = ControllerType::Sb2kKeyboard;
+		} else if(SuborCarts::HasKingwonKeyboard(mapper->GetRomInfo().Hash.PrgCrc32)) {
+			//Mapper241 runs this keyboard's scan; the device only says which keys are down
+			log("[Input] Kingwon keyboard connected");
+			port1 = ControllerType::NesController;
+			port2 = ControllerType::NesController;
 			expDevice = ControllerType::Sb2kKeyboard;
 		} else if(SuborCarts::IsSuborCart(mapper->GetRomInfo().Hash.PrgCrc32)) {
 			//The mouse takes the first port so it answers $4016 and leaves $4017 to the keyboard,

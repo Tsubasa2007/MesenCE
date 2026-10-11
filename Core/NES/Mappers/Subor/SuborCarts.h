@@ -45,6 +45,7 @@ public:
 			case 0x85FD927E: //(mapper 178)
 			case 0x0BEB8BCD: //the previous one as a mapper 241 image
 			case 0xBACB4CDE: //(mapper 241)
+			case 0x6922D4CE: //(mapper 133, with the bank register at $6001)
 				return true;
 
 			default:
@@ -87,6 +88,7 @@ public:
 	{
 		switch(prgCrc) {
 			case 0x2B74253D: //another maker's learning cartridge (mapper 241)
+			case 0x33A93F6E: //another maker's, with the Kingwon-type keyboard (mapper 241)
 			case 0x8FA597F8: //typing and dictionary cartridge (mapper 241)
 			case 0x957ABE27: //Wubi typing and English cartridge (mapper 241)
 				return true;
@@ -183,6 +185,12 @@ public:
 			default:
 				return false;
 		}
+	}
+
+	//A cartridge from another maker that scans the Kingwon-type keyboard instead (see Mapper241)
+	static bool HasKingwonKeyboard(uint32_t prgCrc)
+	{
+		return prgCrc == 0x33A93F6E; //(mapper 241)
 	}
 
 	//The cartridges that read $4016 bit 0 only to wait for the printer: nothing in their menus,
@@ -282,6 +290,7 @@ public:
 			case 0x34D9C9F2:
 			case 0x328A2876: //24-bit mouse in the second port
 			case 0x935CE367: //24-bit mouse
+			case 0x6922D4CE: //PS/2 mouse (mapper 133)
 				return true;
 
 			default:
