@@ -199,6 +199,7 @@
     <ClInclude Include="NES\Mappers\Subor\SuborCarts.h" />
     <ClInclude Include="NES\Mappers\Subor\SuborWindows2002.h" />
     <ClInclude Include="NES\Mappers\LingTong\LingTongDiskDrive.h" />
+    <ClInclude Include="NES\Mappers\LingTong\ZosonCdDrive.h" />
     <ClInclude Include="NES\Mappers\LingTong\LingTongMapper.h" />
     <ClInclude Include="NES\Mappers\Bung\DrPcJrGameChips.h" />
     <ClInclude Include="NES\Mappers\Bung\DrPcJrMapper.h" />
@@ -538,6 +539,7 @@
     <ClInclude Include="NES\Input\Sb2kMouse.h" />
     <ClInclude Include="NES\Input\Sb2kKeyboard.h" />
     <ClInclude Include="NES\Input\PecKeyMatrix.h" />
+    <ClInclude Include="NES\Input\SuborKeyMatrix.h" />
     <ClInclude Include="NES\Input\ZechengKeyMatrix.h" />
     <ClInclude Include="NES\Input\SuborMouse.h" />
     <ClInclude Include="NES\Input\TwoPlayerAdapter.h" />

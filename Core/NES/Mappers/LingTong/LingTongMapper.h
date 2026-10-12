@@ -7,10 +7,12 @@
 #include "NES/NesMemoryManager.h"
 #include "NES/Input/Sb2kKeyboard.h"
 #include "NES/Input/PecKeyMatrix.h"
+#include "NES/Input/SuborKeyMatrix.h"
 #include "NES/Input/Sb2kMouse.h"
 #include "NES/Mappers/Bung/DrPcJrGameChips.h"
 #include "NES/Mappers/Bbk/BbkLpcAudio.h"
 #include "NES/Mappers/LingTong/LingTongDiskDrive.h"
+#include "NES/Mappers/LingTong/ZosonCdDrive.h"
 #include "Utilities/Serializer.h"
 #include "Utilities/FolderUtilities.h"
 #include "Utilities/VirtualFile.h"
@@ -68,7 +70,8 @@
 //Keyboard: the PEC-586 13x8 matrix (PecKeyMatrix) on $4016/$4017 - $4016 = 5 resets the row counter,
 //2 rewinds the column, 7 steps to the next row, and each $4017 read returns the next key in
 //bit 1 (and 4). The BIOS can also take an IRQ-driven serial keyboard at $50C0, but falls back
-//to scanning the matrix whenever that one has sent nothing.
+//to scanning the matrix whenever that one has sent nothing. The 中索 discs' programs scan the
+//Subor way instead (SuborKeyMatrix, Subor layout) - see SuborScan.
 //
 //MMC3 games (the 128C's game menu): the four 8KB banks at $50 are ($55C0-$55C3 & $5580) |
 //(($5400 x 4 + bank position) & ~$5580) - so with $5580 = 0, as the BIOS leaves it, the page
@@ -80,9 +83,8 @@
 //build (WPS /S) writes the stream to $5700 a whole byte at a time, waiting for bit 7 of a read
 //to say the chip can take more. The stream frames itself - each record is a header ended by $FC
 //and frames up to a stop code - and the 24 bytes of $FF after a phrase are stop codes too, so
-//nothing here has to find phrase boundaries; a lone $FF inside a record is just data. (The
-//reference emulator instead feeds this port four bits per $5x write, which suits its 中索
-//disc games but turns WPS's bytes into resets.)
+//nothing here has to find phrase boundaries; a lone $FF inside a record is just data. The 中索
+//G2002's port takes the same stream four bits per $5x write instead - see WriteSpeech.
 //
 //Mouse: a serial device on $4017 bit 2, beside the key matrix's bit 1, clocked by the same
 //strobes - each fall of $4016 bit 0 loads its next byte and the following reads shift it out
@@ -94,13 +96,21 @@
 //  01   first of three: bit 3 down, bit 2 vertical bit 4, bit 1 right, bit 0 horizontal bit 4
 //  10   vertical distance, bits 3-0
 //  11   horizontal distance, bits 3-0 - the packet is complete
-//The 128C's own software never reads it.
+//The 128C's own software never reads it. The discs' other programs take the same bytes on bit 0,
+//after a Subor-style strobe ($01, then $06).
 //
 //Floppy: an Apple II style Disk II controller - $5600-$560F are its sixteen soft switches, and
 //the software decodes the GCR itself (see LingTongDiskDrive). $5300 bit 3 reads high when no
 //disk is in the drive, which the BIOS checks before every boot attempt. The disks are WOZ 2
 //bit-stream images: "<rom name>.woz" beside the BIOS is put in the drive at power-on, and the
 //disk menu swaps between the .woz files of the disk folder, as on the other floppy machines.
+//
+//中索 (Zoson) G2002: the VCD player these discs came with, a 灵童 computer inside. Its 128KB
+//BIOS is the 128C's laid out smaller - the boot program, the player program, the resident disc
+//loader it copies to $4800 and a ROM disk with SY-DOS - and it adds a CD drive at $5680/$5681
+//(see ZosonCdDrive). The disc goes in from the disk menu, beside the floppies; "<rom name>.cue"
+//(or .bin/.iso) beside the BIOS is put in at power-on. With no disc the BIOS shows 没有盘片 and
+//waits for one.
 //
 //中索 (Zoson) disc games: the VCD machine these discs came with is this hardware, and each game
 //.CDV is 2KB of code followed by the game (see ZosonCdvLoader). Opened on its own, there is no
@@ -109,7 +119,8 @@
 //before jumping there. The code sets everything else up from the real registers.
 //
 //STAND-IN, not the machine's code: the disc menu starts a program by putting its number in
-//$5FFF and jumping to $4800, into the machine's resident loader, which no dump has. In its
+//$5FFF and jumping to $4800, into the machine's resident loader. Under the G2002 BIOS the real
+//one does that; a game opened on its own has no BIOS, so in its
 //place the mapper leaves a few bytes at $4800 that hand $5FFF to it (a write to $57FF), and
 //then loads that program the way it loaded the first one and jumps to $6200. The number is
 //the program's place in the disc's sorted file list - the menu itself is 0 - which is how
@@ -124,12 +135,15 @@ class LingTongMapper : public BaseMapper
 private:
 	static constexpr uint32_t Crc128B = 0x1054DF22;
 	static constexpr uint32_t Crc128C = 0xC95226A1;
+	static constexpr uint32_t CrcZoson = 0xBCE1B56C;
+	bool _isZoson = false;
 
 	//The BIOS measures the DRAM rather than assuming it: it counts pages until one already
 	//holds the pattern it wrote into an earlier one, which is where the address wrapped, shows
 	//the total and picks the layout for it (256KB/512KB/1MB/2MB+ = $53/$54/$56/$51). Both the
-	//SMART-128B and the SMART-128C carry 2MB. A 中索 disc game started on its own keeps the 1MB
-	//the reference emulator gives it; those games fit in either.
+	//SMART-128B and the SMART-128C carry 2MB. The 中索 G2002 has 1MB, and its discs' programs need
+	//the wrap: one picks its code with a 32KB bank number of $2E, meaning $0E. A disc game started
+	//on its own gets the same.
 	static constexpr uint32_t MaxDramSize = 0x200000;
 	static constexpr uint32_t DramOffset = 0x2000;
 	uint32_t _dramSize = 0x100000;
@@ -149,9 +163,37 @@ private:
 	DrPcJrMmc3 _mmc3;
 
 	unique_ptr<BbkLpcAudio> _speech;
+
+	//The G2002 takes the stream a nibble at a time, low half first: $50 | nibble, with bit 7 set
+	//on the closing pair ($DF $DF, a stop code), then 0 once the phrase is done; bit 6 of a read
+	//says it can take the next one. Its programs skip each record's header themselves and send
+	//only what follows the $FC, so the decoder is handed that $FC as a phrase starts.
+	uint8_t _speechNibble = 0;
+	bool _speechHalf = false;
+	bool _speechIdle = true;
+
 	void WriteSpeech(uint8_t value)
 	{
-		_speech->WriteData(value);
+		if(!_isZoson) {
+			_speech->WriteData(value);
+			return;
+		}
+
+		if((value & 0x70) == 0x50) {
+			if(_speechIdle) {
+				_speech->WriteData(0xFC);
+				_speechIdle = false;
+			}
+			if(!_speechHalf) {
+				_speechNibble = value & 0x0F;
+			} else {
+				_speech->WriteData((uint8_t)(_speechNibble | (value << 4)));
+			}
+			_speechHalf = !_speechHalf;
+		} else {
+			_speechHalf = false;
+			_speechIdle = true;
+		}
 	}
 
 	//A game's own bank register, written through its ROM window
@@ -169,6 +211,12 @@ private:
 
 	LingTongDiskDrive _disk;
 	bool _diskChecked = false;
+
+	//The G2002's CD drive, and the disc chosen for it - kept across a power cycle like the floppy
+	ZosonCdDrive _cd;
+	bool _discChecked = false;
+	inline static string _persistedDiscRom;
+	inline static string _persistedDiscPath;
 
 	//A power cycle recreates the mapper, so the disk in the drive is remembered here and put
 	//back rather than the paired one - scoped to the BIOS it was put in under
@@ -241,6 +289,45 @@ private:
 		}
 	}
 
+	//Puts the disc in at the first look at the drive: the one left in by the last session of this
+	//BIOS (or none, if it was taken out), else "<rom name>.cue", .bin or .iso beside it or in the
+	//disk folder
+	void CheckForDisc()
+	{
+		if(_discChecked) {
+			return;
+		}
+		_discChecked = true;
+
+		string romPath = _emu->GetRomInfo().RomFile.GetFilePath();
+		if(_persistedDiscRom == romPath) {
+			if(!_persistedDiscPath.empty()) {
+				_cd.LoadDisc(_persistedDiscPath);
+			}
+			return;
+		}
+
+		string baseName = FolderUtilities::GetFilename(romPath, false);
+		vector<string> folders = { FolderUtilities::GetFolderName(romPath) };
+		string configured = GetConfiguredDiskFolder();
+		if(!configured.empty() && configured != folders[0]) {
+			folders.push_back(configured);
+		}
+		for(string& folder : folders) {
+			for(string ext : { ".cue", ".CUE", ".bin", ".BIN", ".iso", ".ISO" }) {
+				if(_cd.LoadDisc(FolderUtilities::CombinePath(folder, baseName + ext))) {
+					return;
+				}
+			}
+		}
+	}
+
+	static bool IsDiscImage(const string& path)
+	{
+		string ext = FolderUtilities::GetExtension(path);
+		return ext == ".cue" || ext == ".bin" || ext == ".iso";
+	}
+
 	//The mouse, and the bytes it has queued: a single step, or a three-byte packet
 	shared_ptr<Sb2kMouse> _mouse;
 	uint8_t _mousePacket[3] = {};
@@ -290,9 +377,9 @@ private:
 		return _mousePacket[_mousePacketPos++];
 	}
 
-	uint8_t ReadMouseBit()
+	uint8_t ReadMouseBit(uint8_t line)
 	{
-		uint8_t bit = (_mouseShift & 0x80) ? 0x04 : 0;
+		uint8_t bit = (_mouseShift & 0x80) ? line : 0;
 		_mouseShift <<= 1;
 		return bit;
 	}
@@ -447,7 +534,18 @@ private:
 	void WriteKeyMatrix(uint8_t value)
 	{
 		PecKeyMatrix::Write(value, _kbdRow, _kbdColumn);
+		_suborKeys.Write(value);
+		_last4016 = value;
 	}
+
+	//The 中索 discs' programs (all but the menus) scan the keyboard the Subor way instead, four
+	//keys a read in the Subor layout, and take the mouse on bit 0 - their key tables are the
+	//Subor keyboard's. Their reads follow a $4016 write with bit 2 set, which the BIOS and the
+	//menus never leave behind (their scans read after $02), so that is what picks the answer.
+	SuborKeyMatrix _suborKeys;
+	uint8_t _last4016 = 0;
+
+	bool SuborScan() { return (_isZoson || IsCdv()) && (_last4016 & 0x04); }
 
 protected:
 	uint16_t GetPrgPageSize() override { return 0x4000; }
@@ -499,6 +597,7 @@ protected:
 	{
 		romData.Info.System = GameSystem::Dendy;
 		_dramSize = (romData.Info.Hash.PrgCrc32 == Crc128B || romData.Info.Hash.PrgCrc32 == Crc128C) ? 0x200000 : 0x100000;
+		_isZoson = romData.Info.Hash.PrgCrc32 == CrcZoson;
 		UpdatePrgMapping();
 		if(!romData.CdvHeader.empty()) {
 			_cdvStub = romData.CdvHeader;
@@ -576,6 +675,7 @@ protected:
 			_emu->GetNotificationManager()->RegisterNotificationListener(_swapListener);
 		}
 		_diskChecked = false;
+		_discChecked = false;
 
 		AddRegisterRange(0x4016, 0x4016, MemoryOperation::Write);
 		AddRegisterRange(0x4017, 0x4017, MemoryOperation::Read);
@@ -612,10 +712,15 @@ protected:
 		memset(_chrBank, 0, sizeof(_chrBank));
 		_mmc3.Reset();
 		_speech->Reset();
+		_speechHalf = false;
+		_speechIdle = true;
 		_ntQuarter = 0;
 		_kbdRow = 0;
 		_kbdColumn = 0;
+		_suborKeys.Reset();
+		_last4016 = 0;
 		_status5300 = 0;
+		_cd.Reset();
 		UpdatePrgMapping();
 	}
 
@@ -647,7 +752,10 @@ protected:
 	uint8_t ReadRegister(uint16_t addr) override
 	{
 		if(addr == 0x4017) {
-			return (NesControls()->ReadRam(addr) & ~0x16) | ReadKeyMatrix() | ReadMouseBit();
+			if(SuborScan()) {
+				return (NesControls()->ReadRam(addr) & ~0x1F) | _suborKeys.Read(NesControls()->GetControlDevice<Sb2kKeyboard>().get()) | ReadMouseBit(0x01);
+			}
+			return (NesControls()->ReadRam(addr) & ~0x16) | ReadKeyMatrix() | ReadMouseBit(0x04);
 		}
 
 		switch(addr) {
@@ -664,7 +772,12 @@ protected:
 				return 0;
 
 			case 0x5700:
-				return _speech->IsReady() ? 0x80 : 0x00;
+				return _speech->IsReady() ? (_isZoson ? 0xC0 : 0x80) : 0x00;
+		}
+
+		if(_isZoson && (addr == 0x5680 || addr == 0x5681)) {
+			CheckForDisc();
+			return addr == 0x5680 ? _cd.ReadData() : _cd.ReadStatus();
 		}
 
 		if(addr >= 0x5600 && addr <= 0x56FF) {
@@ -691,6 +804,16 @@ protected:
 		}
 
 		_mapperRam[addr - 0x4000] = value;
+
+		if(_isZoson && (addr == 0x5680 || addr == 0x5681)) {
+			CheckForDisc();
+			if(addr == 0x5680) {
+				_cd.WriteCommand(value);
+			} else {
+				_cd.WriteControl(value);
+			}
+			return;
+		}
 
 		if(addr >= 0x5600 && addr <= 0x56FF) {
 			CheckForDiskImage();
@@ -770,11 +893,15 @@ protected:
 		SVArray(_chrBank, 8);
 		SV(_mmc3);
 		SV(_speech);
+		SV(_speechNibble);
+		SV(_speechHalf);
+		SV(_speechIdle);
 		SV(_ntQuarter);
 		SV(_kbdRow);
 		SV(_kbdColumn);
 		SV(_status5300);
 		SV(_disk);
+		SV(_cd);
 		SVArray(_mousePacket, 3);
 		SV(_mousePacketSize);
 		SV(_mousePacketPos);
@@ -782,6 +909,8 @@ protected:
 		SV(_mouseStrobe);
 		SV(_mouseX);
 		SV(_mouseY);
+		SV(_suborKeys);
+		SV(_last4016);
 
 		if(!s.IsSaving()) {
 			_cartRegs = false;
@@ -791,7 +920,7 @@ protected:
 	}
 
 public:
-	static bool IsLingTong(uint32_t prgCrc) { return prgCrc == Crc128B || prgCrc == Crc128C; }
+	static bool IsLingTong(uint32_t prgCrc) { return prgCrc == Crc128B || prgCrc == Crc128C || prgCrc == CrcZoson; }
 
 	//Disk swapping - the disk menu and the FDS disk shortcut keys, as on the other floppy machines
 	vector<string> GetDiskFileList()
@@ -800,16 +929,54 @@ public:
 		if(folder.empty()) {
 			folder = FolderUtilities::GetFolderName(_emu->GetRomInfo().RomFile.GetFilePath());
 		}
-		vector<string> files = FolderUtilities::GetFilesInFolder(folder, { ".woz" }, false);
+		//The G2002 takes a disc too, so its list offers them beside the floppies - one entry per
+		//disc, the .cue standing for the image it names
+		std::unordered_set<string> extensions = { ".woz" };
+		if(_isZoson) {
+			extensions.insert(".cue");
+			extensions.insert(".bin");
+			extensions.insert(".iso");
+		}
+		vector<string> files = FolderUtilities::GetFilesInFolder(folder, extensions, false);
 		std::sort(files.begin(), files.end());
+
+		auto leaf = [](const string& path) {
+			size_t sep = path.find_last_of("/\\");
+			string name = sep == string::npos ? path : path.substr(sep + 1);
+			std::transform(name.begin(), name.end(), name.begin(), [](char c) { return (char)::tolower((uint8_t)c); });
+			return name;
+		};
+		vector<string> named;
+		for(string& file : files) {
+			if(FolderUtilities::GetExtension(file) == ".cue") {
+				named.push_back(leaf(DrPcJrCdDrive::ResolveCueSheet(file)));
+			}
+		}
+		files.erase(std::remove_if(files.begin(), files.end(), [&named, &leaf](const string& file) {
+			return std::find(named.begin(), named.end(), leaf(file)) != named.end();
+		}), files.end());
 		return files;
 	}
 
-	string GetCurrentDiskFilename() { return _disk.IsDiskInserted() ? _disk.GetFilename() : ""; }
+	string GetCurrentDiskFilename()
+	{
+		if(_disk.IsDiskInserted()) {
+			return _disk.GetFilename();
+		}
+		return _cd.IsMounted() ? _cd.GetDiscPath() : "";
+	}
 
 	void EjectDisk()
 	{
 		auto lock = _emu->AcquireLock();
+		if(_cd.IsMounted() && !_disk.IsDiskInserted()) {
+			MessageManager::DisplayMessage("LingTong", "Disc ejected: " + FolderUtilities::GetFilename(_cd.GetDiscPath(), true));
+			_cd.EjectDisc();
+			_discChecked = true;
+			_persistedDiscRom = _emu->GetRomInfo().RomFile.GetFilePath();
+			_persistedDiscPath.clear();
+			return;
+		}
 		if(_disk.IsDiskInserted()) {
 			MessageManager::DisplayMessage("LingTong", "Disk ejected: " + FolderUtilities::GetFilename(_disk.GetFilename(), true));
 			_disk.Eject();
@@ -823,6 +990,16 @@ public:
 	{
 		auto lock = _emu->AcquireLock();
 		vector<string> disks = GetDiskFileList();
+		if(index < disks.size() && IsDiscImage(disks[index])) {
+			//A disc: the BIOS asks the drive for its status and finds it there
+			if(_cd.LoadDisc(disks[index])) {
+				_discChecked = true;
+				_persistedDiscRom = _emu->GetRomInfo().RomFile.GetFilePath();
+				_persistedDiscPath = disks[index];
+				MessageManager::DisplayMessage("LingTong", "Disc inserted: " + FolderUtilities::GetFilename(disks[index], true));
+			}
+			return;
+		}
 		if(index < disks.size()) {
 			_disk.Eject();
 			_disk.SetClockRate(_console->GetMasterClockRate());
@@ -842,8 +1019,9 @@ public:
 			return;
 		}
 		int current = -1;
+		string inserted = GetCurrentDiskFilename();
 		for(size_t i = 0; i < disks.size(); i++) {
-			if(disks[i] == _disk.GetFilename()) {
+			if(disks[i] == inserted) {
 				current = (int)i;
 				break;
 			}
