@@ -17,9 +17,114 @@ BIOS、软盘和光盘镜像都**不**随本程序提供，请使用自己的备
 | 步步高软驱一号（1.0）、步步高 98 型（电子盘） | BIOS（.nes）＋ 软盘镜像（.img） | 软驱、键盘、鼠标、真人语音、打印机 |
 | 步步高语音二号 | BIOS（.nes） | 键盘、语音，可接打印机 |
 | 小霸王 SB-2000 | BIOS（.nes）＋ 软盘镜像（.img / .ima） | UM6576 显示芯片、软驱、键盘、鼠标、语音 |
-| 裕兴电脑学习机（软驱型、VCD 型） | BIOS（.nes）＋ 软盘镜像（.img），VCD 型还可以用光盘镜像（.cue / .bin / .iso） | 软驱、VCD 光驱与光盘菜单、VCD 画面与声音、键盘（含 V5.0 的 XT 键盘）、内置鼠标或 D 型串口鼠标、打印机 |
+| 裕兴电脑学习机（软驱型、VCD 型） | BIOS（.nes）＋ 软盘镜像（.img），VCD 型还可以用光盘镜像（.cue / .bin / .iso） | 软驱、VCD 光驱与光盘菜单、VCD 画面与声音、键盘、内置鼠标或 D 型串口鼠标、打印机 |
 | 科王 KW2000 / KW3000、邦谷小博士（Bung Doctor PC Jr.） | BIOS（.nes）＋ 光盘镜像（.cue / .bin），也可以用软盘镜像（.img） | 光驱、软驱、VCD 画面、键盘、鼠标、打印机 |
+| 小霸王中英文电脑学习卡（V1.0–V15.0） | 卡带（.nes） | 小霸王键盘、鼠标，部分卡带的真人语音 |
+| 裕兴电脑学习机（V4.0、V5.0、V10、V11、超级学习机 1 号） | 卡带（.nes） | 键盘（V4.0 接 Family BASIC 键盘，V5.0 接 XT 键盘，V10、V11 接小霸王键盘）、鼠标，V4.0 的字库与断电保持 |
 | Super A'Can | 卡带（.bin，或两片芯片合在一起的 .zip） | 整机，另有 68000 与声音处理器的调试器 |
+
+## 运行截图
+
+每种机器先显示前几张，点「更多」展开其余的。
+
+### 步步高：语音二号、软驱一号（1.0）、98 型
+
+<table>
+<tr><td align="center"><img src="docs/screenshots/bbk/01-voice2-boot.png" width="192" alt="语音二号：开机画面"><br><sub>语音二号：开机画面</sub></td><td align="center"><img src="docs/screenshots/bbk/02-voice2-menu.png" width="192" alt="语音二号：学习卡菜单"><br><sub>语音二号：学习卡菜单</sub></td><td align="center"><img src="docs/screenshots/bbk/03-v1-self-test.png" width="192" alt="软驱一号：开机自检"><br><sub>软驱一号：开机自检</sub></td><td align="center"><img src="docs/screenshots/bbk/04-v1-002-wps.png" width="192" alt="002 步步高 WPS 文字处理系统 2.1"><br><sub>002 步步高 WPS 文字处理系统 2.1</sub></td></tr>
+</table>
+
+<details><summary>更多（26 张）</summary>
+
+<table>
+<tr><td align="center"><img src="docs/screenshots/bbk/05-v1-003-typing-game.png" width="192" alt="003 打字游戏"><br><sub>003 打字游戏</sub></td><td align="center"><img src="docs/screenshots/bbk/06-v1-004-learn-dos.png" width="192" alt="004 轻轻松松学 DOS"><br><sub>004 轻轻松松学 DOS</sub></td><td align="center"><img src="docs/screenshots/bbk/07-v1-005-english.png" width="192" alt="005 步步高英语（入门篇）"><br><sub>005 步步高英语（入门篇）</sub></td><td align="center"><img src="docs/screenshots/bbk/08-v1-006-english-words.png" width="192" alt="006 英语单词步步高（初中版）"><br><sub>006 英语单词步步高（初中版）</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/bbk/09-v1-007-spreadsheet.png" width="192" alt="007 步步高电子表格"><br><sub>007 步步高电子表格</sub></td><td align="center"><img src="docs/screenshots/bbk/10-v1-009-household.png" width="192" alt="009 步步高家政管理"><br><sub>009 步步高家政管理</sub></td><td align="center"><img src="docs/screenshots/bbk/11-v1-010-word-problems.png" width="192" alt="010 应用题大全"><br><sub>010 应用题大全</sub></td><td align="center"><img src="docs/screenshots/bbk/12-v1-011-geometry.png" width="192" alt="011 几何大师"><br><sub>011 几何大师</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/bbk/13-v1-015-demo.png" width="192" alt="015 步步高 DEMO 演示系统"><br><sub>015 步步高 DEMO 演示系统</sub></td><td align="center"><img src="docs/screenshots/bbk/14-v1-016-chinese.png" width="192" alt="016 初中语文辅导与训练"><br><sub>016 初中语文辅导与训练</sub></td><td align="center"><img src="docs/screenshots/bbk/15-v1-119-brain-training.png" width="192" alt="119 智力训练 365"><br><sub>119 智力训练 365</sub></td><td align="center"><img src="docs/screenshots/bbk/16-v1-122-paint.png" width="192" alt="122 神奇画笔"><br><sub>122 神奇画笔</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/bbk/17-v1-126-china-records.png" width="192" alt="126 中国之最（一）"><br><sub>126 中国之最（一）</sub></td><td align="center"><img src="docs/screenshots/bbk/18-v1-128-world-records.png" width="192" alt="128 世界之最"><br><sub>128 世界之最</sub></td><td align="center"><img src="docs/screenshots/bbk/19-v1-129-history.png" width="192" alt="129 博古通今（一）"><br><sub>129 博古通今（一）</sub></td><td align="center"><img src="docs/screenshots/bbk/20-v1-132-historical-figures.png" width="192" alt="132 数风流人物"><br><sub>132 数风流人物</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/bbk/21-v1-190-database.png" width="192" alt="190 跟我学数据库"><br><sub>190 跟我学数据库</sub></td><td align="center"><img src="docs/screenshots/bbk/22-v1-193-windows95.png" width="192" alt="193 跟我学 Windows 95"><br><sub>193 跟我学 Windows 95</sub></td><td align="center"><img src="docs/screenshots/bbk/23-v1-196-cognition.png" width="192" alt="196 认知能力训练"><br><sub>196 认知能力训练</sub></td><td align="center"><img src="docs/screenshots/bbk/24-v1-277-school-english.png" width="192" alt="277 走进生活英语系列·学校英语"><br><sub>277 走进生活英语系列·学校英语</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/bbk/25-v1-gt001-games.png" width="192" alt="GT001 游戏合集"><br><sub>GT001 游戏合集</sub></td><td align="center"><img src="docs/screenshots/bbk/26-98-boot.png" width="192" alt="98 型：开机画面"><br><sub>98 型：开机画面</sub></td><td align="center"><img src="docs/screenshots/bbk/27-98-self-test.png" width="192" alt="98 型：开机自检"><br><sub>98 型：开机自检</sub></td><td align="center"><img src="docs/screenshots/bbk/28-98-desktop.png" width="192" alt="98 型：桌面"><br><sub>98 型：桌面</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/bbk/29-98-t002-learn-dos.png" width="192" alt="98 型专用软件 T002 轻轻松松学 DOS 2.0"><br><sub>98 型专用软件 T002 轻轻松松学 DOS 2.0</sub></td><td align="center"><img src="docs/screenshots/bbk/30-98-gt301-games.png" width="192" alt="GT301 壮志凌云 II / 追击十三 II"><br><sub>GT301 壮志凌云 II / 追击十三 II</sub></td></tr>
+</table>
+</details>
+
+### 小霸王 SB-2000
+
+<table>
+<tr><td align="center"><img src="docs/screenshots/sb2000/01-boot.png" width="192" alt="开机画面"><br><sub>开机画面</sub></td><td align="center"><img src="docs/screenshots/sb2000/02-self-test.png" width="192" alt="硬件检测"><br><sub>硬件检测</sub></td><td align="center"><img src="docs/screenshots/sb2000/03-001-demo.png" width="192" alt="001 系统演示 DEMO"><br><sub>001 系统演示 DEMO</sub></td><td align="center"><img src="docs/screenshots/sb2000/04-002-wps.png" width="192" alt="002 WPS 文字处理"><br><sub>002 WPS 文字处理</sub></td></tr>
+</table>
+
+<details><summary>更多（9 张）</summary>
+
+<table>
+<tr><td align="center"><img src="docs/screenshots/sb2000/05-003-paint.png" width="192" alt="003 神奇画笔"><br><sub>003 神奇画笔</sub></td><td align="center"><img src="docs/screenshots/sb2000/06-004-f-basic.png" width="192" alt="004 F-BASIC 程序设计"><br><sub>004 F-BASIC 程序设计</sub></td><td align="center"><img src="docs/screenshots/sb2000/07-005-english-dictionary.png" width="192" alt="005 少儿英语图解字典"><br><sub>005 少儿英语图解字典</sub></td><td align="center"><img src="docs/screenshots/sb2000/08-006-poetry.png" width="192" alt="006 诗词鉴赏"><br><sub>006 诗词鉴赏</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/sb2000/09-007-household.png" width="192" alt="007 家政管理"><br><sub>007 家政管理</sub></td><td align="center"><img src="docs/screenshots/sb2000/10-008-idioms.png" width="192" alt="008 成语故事"><br><sub>008 成语故事</sub></td><td align="center"><img src="docs/screenshots/sb2000/11-009-pinyin.png" width="192" alt="009 少儿拼音乐园"><br><sub>009 少儿拼音乐园</sub></td><td align="center"><img src="docs/screenshots/sb2000/12-010-number-square.png" width="192" alt="010 数字方阵"><br><sub>010 数字方阵</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/sb2000/13-019-games.png" width="192" alt="019 热血格斗 + 热血排球"><br><sub>019 热血格斗 + 热血排球</sub></td></tr>
+</table>
+</details>
+
+### 裕兴 VCD 型
+
+<table>
+<tr><td align="center"><img src="docs/screenshots/yuxing-vcd/01-boot.png" width="192" alt="开机画面"><br><sub>开机画面</sub></td><td align="center"><img src="docs/screenshots/yuxing-vcd/02-main-menu.png" width="192" alt="主菜单"><br><sub>主菜单</sub></td><td align="center"><img src="docs/screenshots/yuxing-vcd/03-2b02-software.png" width="192" alt="2B02 WPS 五笔打字集锦"><br><sub>2B02 WPS 五笔打字集锦</sub></td><td align="center"><img src="docs/screenshots/yuxing-vcd/04-gam01-games.png" width="192" alt="GAM01 游戏系列①"><br><sub>GAM01 游戏系列①</sub></td></tr>
+</table>
+
+<details><summary>更多（12 张）</summary>
+
+<table>
+<tr><td align="center"><img src="docs/screenshots/yuxing-vcd/05-gam02-games.png" width="192" alt="GAM02 游戏系列②"><br><sub>GAM02 游戏系列②</sub></td><td align="center"><img src="docs/screenshots/yuxing-vcd/06-gam03-games.png" width="192" alt="GAM03 游戏系列③"><br><sub>GAM03 游戏系列③</sub></td><td align="center"><img src="docs/screenshots/yuxing-vcd/07-jsj01-pc-assembly.png" width="192" alt="JSJ-01 电脑大师① PC 机组装与使用"><br><sub>JSJ-01 电脑大师① PC 机组装与使用</sub></td><td align="center"><img src="docs/screenshots/yuxing-vcd/08-jsj02-typing.png" width="192" alt="JSJ-02 电脑大师② 打字、五笔字型"><br><sub>JSJ-02 电脑大师② 打字、五笔字型</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/yuxing-vcd/09-jsj03a-windows98.png" width="192" alt="JSJ-03 电脑大师③ Windows 98（A）"><br><sub>JSJ-03 电脑大师③ Windows 98（A）</sub></td><td align="center"><img src="docs/screenshots/yuxing-vcd/10-jsj03b-windows98.png" width="192" alt="JSJ-03 电脑大师③ Windows 98（B）"><br><sub>JSJ-03 电脑大师③ Windows 98（B）</sub></td><td align="center"><img src="docs/screenshots/yuxing-vcd/11-jsj04-wps2000.png" width="192" alt="JSJ-04 电脑大师④ WPS2000"><br><sub>JSJ-04 电脑大师④ WPS2000</sub></td><td align="center"><img src="docs/screenshots/yuxing-vcd/12-t03-315l-driver.png" width="192" alt="T03 315L 驱动光盘"><br><sub>T03 315L 驱动光盘</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/yuxing-vcd/13-ypd01-primary.png" width="192" alt="YPD-01 小学系列"><br><sub>YPD-01 小学系列</sub></td><td align="center"><img src="docs/screenshots/yuxing-vcd/14-ypd02-secondary.png" width="192" alt="YPD-02 中学系列"><br><sub>YPD-02 中学系列</sub></td><td align="center"><img src="docs/screenshots/yuxing-vcd/15-yxf02-english-title.png" width="192" alt="YXF-02 英语启明星"><br><sub>YXF-02 英语启明星</sub></td><td align="center"><img src="docs/screenshots/yuxing-vcd/16-yxf02-english-lesson.png" width="192" alt="YXF-02 英语启明星：课程"><br><sub>YXF-02 英语启明星：课程</sub></td></tr>
+</table>
+</details>
+
+### 科王 KW3000（VCD）
+
+<table>
+<tr><td align="center"><img src="docs/screenshots/kingwon/01-boot.png" width="192" alt="开机画面"><br><sub>开机画面</sub></td><td align="center"><img src="docs/screenshots/kingwon/02-vcd-player.png" width="192" alt="VCD 播放器"><br><sub>VCD 播放器</sub></td><td align="center"><img src="docs/screenshots/kingwon/03-bungcvcd1-games.png" width="192" alt="游戏大全（一）"><br><sub>游戏大全（一）</sub></td><td align="center"><img src="docs/screenshots/kingwon/04-bungcvcd2-games.png" width="192" alt="游戏大全（二）"><br><sub>游戏大全（二）</sub></td></tr>
+</table>
+
+<details><summary>更多（9 张）</summary>
+
+<table>
+<tr><td align="center"><img src="docs/screenshots/kingwon/05-bungcvcd3-games.png" width="192" alt="游戏大全（三）"><br><sub>游戏大全（三）</sub></td><td align="center"><img src="docs/screenshots/kingwon/06-bungcvcd4-games.png" width="192" alt="游戏大全（四）"><br><sub>游戏大全（四）</sub></td><td align="center"><img src="docs/screenshots/kingwon/07-bungcvcd5-games.png" width="192" alt="游戏大全（五）"><br><sub>游戏大全（五）</sub></td><td align="center"><img src="docs/screenshots/kingwon/08-wins98-desktop.png" width="192" alt="Wins98 视窗教学专辑：桌面"><br><sub>Wins98 视窗教学专辑：桌面</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/kingwon/09-wins98-encyclopedia.png" width="192" alt="Wins98 视窗教学专辑：少儿百科"><br><sub>Wins98 视窗教学专辑：少儿百科</sub></td><td align="center"><img src="docs/screenshots/kingwon/10-why-questions.png" width="192" alt="科王十万个为什么"><br><sub>科王十万个为什么</sub></td><td align="center"><img src="docs/screenshots/kingwon/11-speaking-english.png" width="192" alt="开口就说英语入门"><br><sub>开口就说英语入门</sub></td><td align="center"><img src="docs/screenshots/kingwon/12-electricity.png" width="192" alt="神奇的电和时间"><br><sub>神奇的电和时间</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/kingwon/13-test-papers.png" width="192" alt="科王电脑 VCD 标准化试题集"><br><sub>科王电脑 VCD 标准化试题集</sub></td></tr>
+</table>
+</details>
+
+### 小霸王中英文电脑学习卡（V1.0–V15.0）
+
+<table>
+<tr><td align="center"><img src="docs/screenshots/subor/01-v1.0-title.png" width="192" alt="V1.0 标题"><br><sub>V1.0 标题</sub></td><td align="center"><img src="docs/screenshots/subor/02-v1.0-menu.png" width="192" alt="V1.0 菜单"><br><sub>V1.0 菜单</sub></td><td align="center"><img src="docs/screenshots/subor/03-v1.1-menu.png" width="192" alt="V1.1 菜单"><br><sub>V1.1 菜单</sub></td><td align="center"><img src="docs/screenshots/subor/04-v3.0-title.png" width="192" alt="V3.0 标题"><br><sub>V3.0 标题</sub></td></tr>
+</table>
+
+<details><summary>更多（26 张）</summary>
+
+<table>
+<tr><td align="center"><img src="docs/screenshots/subor/05-v3.0-menu.png" width="192" alt="V3.0 菜单"><br><sub>V3.0 菜单</sub></td><td align="center"><img src="docs/screenshots/subor/06-v4.0-title.png" width="192" alt="V4.0 标题"><br><sub>V4.0 标题</sub></td><td align="center"><img src="docs/screenshots/subor/07-v4.0-menu.png" width="192" alt="V4.0 菜单"><br><sub>V4.0 菜单</sub></td><td align="center"><img src="docs/screenshots/subor/08-v5.0-title.png" width="192" alt="V5.0 标题"><br><sub>V5.0 标题</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/subor/09-v5.0-menu.png" width="192" alt="V5.0 菜单"><br><sub>V5.0 菜单</sub></td><td align="center"><img src="docs/screenshots/subor/10-v6.0-title.png" width="192" alt="V6.0 标题"><br><sub>V6.0 标题</sub></td><td align="center"><img src="docs/screenshots/subor/11-v6.0-menu.png" width="192" alt="V6.0 菜单"><br><sub>V6.0 菜单</sub></td><td align="center"><img src="docs/screenshots/subor/12-v6.0plus-title.png" width="192" alt="V6.0+ 标题"><br><sub>V6.0+ 标题</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/subor/13-v6.0plus-menu.png" width="192" alt="V6.0+ 菜单"><br><sub>V6.0+ 菜单</sub></td><td align="center"><img src="docs/screenshots/subor/14-v7.0-title.png" width="192" alt="V7.0 标题"><br><sub>V7.0 标题</sub></td><td align="center"><img src="docs/screenshots/subor/15-v7.0-menu.png" width="192" alt="V7.0 菜单"><br><sub>V7.0 菜单</sub></td><td align="center"><img src="docs/screenshots/subor/16-v8.0-title.png" width="192" alt="V8.0 标题"><br><sub>V8.0 标题</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/subor/17-v8.0-menu.png" width="192" alt="V8.0 菜单"><br><sub>V8.0 菜单</sub></td><td align="center"><img src="docs/screenshots/subor/18-v9.0-title.png" width="192" alt="V9.0 标题"><br><sub>V9.0 标题</sub></td><td align="center"><img src="docs/screenshots/subor/19-v9.0-menu.png" width="192" alt="V9.0 菜单"><br><sub>V9.0 菜单</sub></td><td align="center"><img src="docs/screenshots/subor/20-v9.1-menu.png" width="192" alt="V9.1 菜单"><br><sub>V9.1 菜单</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/subor/21-v11.0-title.png" width="192" alt="V11.0 标题"><br><sub>V11.0 标题</sub></td><td align="center"><img src="docs/screenshots/subor/22-v11.0-menu.png" width="192" alt="V11.0 菜单"><br><sub>V11.0 菜单</sub></td><td align="center"><img src="docs/screenshots/subor/23-v12.0-boot.png" width="192" alt="V12.0 开机画面"><br><sub>V12.0 开机画面</sub></td><td align="center"><img src="docs/screenshots/subor/24-v12.0-desktop.png" width="192" alt="V12.0 桌面"><br><sub>V12.0 桌面</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/subor/25-v13.0-desktop.png" width="192" alt="V13.0 桌面"><br><sub>V13.0 桌面</sub></td><td align="center"><img src="docs/screenshots/subor/26-v14.0-boot.png" width="192" alt="V14.0 开机画面"><br><sub>V14.0 开机画面</sub></td><td align="center"><img src="docs/screenshots/subor/27-v14.0-desktop.png" width="192" alt="V14.0 桌面"><br><sub>V14.0 桌面</sub></td><td align="center"><img src="docs/screenshots/subor/28-v15.0-boot.png" width="192" alt="V15.0 开机画面（Windows 2002）"><br><sub>V15.0 开机画面（Windows 2002）</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/subor/29-v15.0-desktop.png" width="192" alt="V15.0 桌面"><br><sub>V15.0 桌面</sub></td><td align="center"><img src="docs/screenshots/subor/30-v15.0-v2-boot.png" width="192" alt="V15.0 另一版本开机画面（Windows 2005）"><br><sub>V15.0 另一版本开机画面（Windows 2005）</sub></td></tr>
+</table>
+</details>
+
+### 裕兴电脑学习机（V4.0–V11、超级学习机 1 号）
+
+<table>
+<tr><td align="center"><img src="docs/screenshots/yuxing/01-v4.0-basic.png" width="192" alt="V4.0 BASIC"><br><sub>V4.0 BASIC</sub></td><td align="center"><img src="docs/screenshots/yuxing/02-v5.0-title.png" width="192" alt="V5.0 标题"><br><sub>V5.0 标题</sub></td><td align="center"><img src="docs/screenshots/yuxing/03-v7.0-title.png" width="192" alt="V7.0 标题"><br><sub>V7.0 标题</sub></td><td align="center"><img src="docs/screenshots/yuxing/04-v7.0-menu.png" width="192" alt="V7.0 菜单"><br><sub>V7.0 菜单</sub></td></tr>
+</table>
+
+<details><summary>更多（14 张）</summary>
+
+<table>
+<tr><td align="center"><img src="docs/screenshots/yuxing/05-v8.0c-title.png" width="192" alt="V8.0-C 标题"><br><sub>V8.0-C 标题</sub></td><td align="center"><img src="docs/screenshots/yuxing/06-v8.0c-menu.png" width="192" alt="V8.0-C 菜单"><br><sub>V8.0-C 菜单</sub></td><td align="center"><img src="docs/screenshots/yuxing/07-v8.2d-title.png" width="192" alt="V8.2-D 标题"><br><sub>V8.2-D 标题</sub></td><td align="center"><img src="docs/screenshots/yuxing/08-v8.2d-menu.png" width="192" alt="V8.2-D 菜单"><br><sub>V8.2-D 菜单</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/yuxing/09-v8.3d-title.png" width="192" alt="V8.3-D 标题"><br><sub>V8.3-D 标题</sub></td><td align="center"><img src="docs/screenshots/yuxing/10-v8.3d-menu.png" width="192" alt="V8.3-D 菜单"><br><sub>V8.3-D 菜单</sub></td><td align="center"><img src="docs/screenshots/yuxing/11-v9.0-98-title.png" width="192" alt="V9.0-98 标题"><br><sub>V9.0-98 标题</sub></td><td align="center"><img src="docs/screenshots/yuxing/12-v9.2f-title.png" width="192" alt="V9.2-F 标题"><br><sub>V9.2-F 标题</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/yuxing/13-v9.2f-menu.png" width="192" alt="V9.2-F 菜单"><br><sub>V9.2-F 菜单</sub></td><td align="center"><img src="docs/screenshots/yuxing/14-v10-title.png" width="192" alt="V10 标题"><br><sub>V10 标题</sub></td><td align="center"><img src="docs/screenshots/yuxing/15-v10-desktop.png" width="192" alt="V10 桌面"><br><sub>V10 桌面</sub></td><td align="center"><img src="docs/screenshots/yuxing/16-v11-desktop.png" width="192" alt="V11 桌面"><br><sub>V11 桌面</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/yuxing/17-new1-title.png" width="192" alt="超级学习机 1 号 标题"><br><sub>超级学习机 1 号 标题</sub></td><td align="center"><img src="docs/screenshots/yuxing/18-new1-desktop.png" width="192" alt="超级学习机 1 号 桌面"><br><sub>超级学习机 1 号 桌面</sub></td></tr>
+</table>
+</details>
 
 ## 快速上手
 
