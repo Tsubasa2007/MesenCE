@@ -19,8 +19,8 @@ BIOS、软盘和光盘镜像都**不**随本程序提供，请使用自己的备
 | 小霸王 SB-2000 | BIOS（.nes）＋ 软盘镜像（.img / .ima） | UM6576 显示芯片、软驱、键盘、鼠标、语音 |
 | 裕兴电脑学习机（软驱型、VCD 型） | BIOS（.nes）＋ 软盘镜像（.img），VCD 型还可以用光盘镜像（.cue / .bin / .iso） | 软驱、VCD 光驱与光盘菜单、VCD 画面与声音、键盘、内置鼠标或 D 型串口鼠标、打印机 |
 | 科王 KW2000 / KW3000、邦谷小博士（Bung Doctor PC Jr.） | BIOS（.nes）＋ 光盘镜像（.cue / .bin），也可以用软盘镜像（.img） | 光驱、软驱、VCD 画面、键盘、鼠标、打印机 |
-| 小霸王中英文电脑学习卡（V1.0–V15.0） | 卡带（.nes） | 小霸王键盘、鼠标，部分卡带的真人语音 |
-| 裕兴电脑学习机（V4.0、V5.0、V10、V11、超级学习机 1 号） | 卡带（.nes） | 键盘（V4.0 接 Family BASIC 键盘，V5.0 接 XT 键盘，V10、V11 接小霸王键盘）、鼠标，V4.0 的字库与断电保持 |
+| 小霸王中英文电脑学习卡 | 卡带（.nes） | 键盘、鼠标、语音 |
+| 裕兴电脑学习卡 | 卡带（.nes） | 键盘、鼠标 |
 | Super A'Can | 卡带（.bin，或两片芯片合在一起的 .zip） | 整机，另有 68000 与声音处理器的调试器 |
 
 ## 运行截图
@@ -91,7 +91,7 @@ BIOS、软盘和光盘镜像都**不**随本程序提供，请使用自己的备
 </table>
 </details>
 
-### 小霸王中英文电脑学习卡（V1.0–V15.0）
+### 小霸王中英文电脑学习卡
 
 <table>
 <tr><td align="center"><img src="docs/screenshots/subor/01-v1.0-title.png" width="192" alt="V1.0 标题"><br><sub>V1.0 标题</sub></td><td align="center"><img src="docs/screenshots/subor/02-v1.0-menu.png" width="192" alt="V1.0 菜单"><br><sub>V1.0 菜单</sub></td><td align="center"><img src="docs/screenshots/subor/03-v1.1-menu.png" width="192" alt="V1.1 菜单"><br><sub>V1.1 菜单</sub></td><td align="center"><img src="docs/screenshots/subor/04-v3.0-title.png" width="192" alt="V3.0 标题"><br><sub>V3.0 标题</sub></td></tr>
@@ -110,7 +110,7 @@ BIOS、软盘和光盘镜像都**不**随本程序提供，请使用自己的备
 </table>
 </details>
 
-### 裕兴电脑学习机（V4.0–V11、超级学习机 1 号）
+### 裕兴电脑学习机（软驱型）、裕兴电脑学习卡
 
 <table>
 <tr><td align="center"><img src="docs/screenshots/yuxing/01-v4.0-basic.png" width="192" alt="V4.0 BASIC"><br><sub>V4.0 BASIC</sub></td><td align="center"><img src="docs/screenshots/yuxing/02-v5.0-title.png" width="192" alt="V5.0 标题"><br><sub>V5.0 标题</sub></td><td align="center"><img src="docs/screenshots/yuxing/03-v7.0-title.png" width="192" alt="V7.0 标题"><br><sub>V7.0 标题</sub></td><td align="center"><img src="docs/screenshots/yuxing/04-v7.0-menu.png" width="192" alt="V7.0 菜单"><br><sub>V7.0 菜单</sub></td></tr>
