@@ -59,6 +59,9 @@ private:
 	uint8_t _cnromChrReg = 0;
 	uint8_t _mmc3Registers[12] = {};
 
+	//The last value written to $8000-$FFFF, which picks the switchable bank in UNROM mode
+	uint8_t _latch = 0;
+
 	uint8_t _irqDelay = 0;
 	A12Watcher _a12Watcher;
 
@@ -107,6 +110,7 @@ protected:
 		_currentRegister = 0;
 
 		_cnromChrReg = 0;
+		_latch = 0;
 
 		constexpr uint8_t initValues[12] = { 0, 2, 4, 5, 6, 7, 0, 1, 0xFE, 0xFF, 0xFF, 0xFF };
 		for(int i = 0; i < 12; i++) {
@@ -175,6 +179,7 @@ protected:
 		SV(_invertPrgA14);
 		SV(_invertChrA12);
 		SV(_currentRegister);
+		SV(_latch);
 		SV(_irqReloadValue);
 		SV(_irqCounter);
 		SV(_irqReload);
@@ -232,7 +237,18 @@ protected:
 				SelectPrgPage4x(0, (_prgBaseBits & 0xFFE) << 1);
 				break;
 
+			case 5: {
+				//UNROM within a 128 KiB window of the outer bank: the latch picks the 16 KiB at
+				//$8000, and $C000 holds the window's last 16 KiB
+				uint16_t window = (_prgBaseBits << 1) & ~0x0F;
+				SelectPrgPage2x(0, window | ((_latch & 0x07) << 1));
+				SelectPrgPage2x(1, window | 0x0E);
+				break;
+			}
+
 			default:
+				//Modes 6 and 7 are not valid; the hardware maps bank 0 throughout
+				SelectPrgPage4x(0, 0);
 				break;
 		}
 	}
@@ -366,6 +382,13 @@ protected:
 			if(_cnromChrMode && (addr <= 0x9FFF || addr >= 0xC000)) {
 				_cnromChrReg = value & 0x03;
 				UpdateState();
+			}
+
+			_latch = value;
+			if(_prgBankingMode >= 5) {
+				//The MMC3 registers, mirroring, WRAM control and IRQ take no writes in these modes
+				UpdateState();
+				return;
 			}
 
 			switch(addr & 0xE001) {
