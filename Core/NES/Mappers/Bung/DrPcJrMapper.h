@@ -460,19 +460,38 @@ private:
 	//
 	//Read back as the last value written, the clock never moved: a clip started playing and
 	//the recorder sat on its "playing" box for good, with the machine spinning on that one
-	//read. Only the clock is modelled. Which codec it is has not been identified, so nothing
-	//is decoded, and with no microphone behind it there is nothing to record either -
-	//recording reads the pattern such a codec gives for silence, alternating bits. The rate is
-	//the recorder's own: it shows a clip of 384 pages (98,304 bytes) as 32 seconds long, which
-	//is 3,072 bytes - 24,576 bits - a second.
+	//read. The rate is the recorder's own: it shows a clip of 384 pages (98,304 bytes) as 32
+	//seconds long, which is 3,072 bytes - 24,576 bits - a second.
+	//
+	//The codec is plain delta modulation: every bit moves the output one fixed step, up for a
+	//1 and down for a 0, and the bytes go out least significant bit first. The recorder writes
+	//each bit just after it sees the clock fall and then waits a whole period, so the bit is
+	//taken on the rising edge, half a period after it was written. Decoded that way, the clip
+	//the recorder floppies carry in their free space is a voice. With no microphone behind it
+	//there is nothing to record - recording reads alternating bits, which is what the codec
+	//gives for silence.
 	static constexpr uint32_t VoiceBitRate = 24576;
 	uint8_t _voiceMode = 0; //0 idle, 1 playback, 2 recording
 	uint32_t _voiceClockAcc = 0;
 	bool _voiceClock = false;
 	uint8_t _voiceInBit = 0;
+	uint8_t _voiceOutBit = 0;
+
+	//The decoder: a leaky integrator for the steps, two one-pole low-passes at about 3.8KHz
+	//standing in for the codec's output filter, and a high-pass at about 60Hz taking out the
+	//integrator's drift. A step of 80 puts the clip's peaks near +/-3400, the speech chip's
+	//level on the same channel.
+	static constexpr int32_t VoiceStep = 80;
+	static constexpr int32_t VoiceLimit = 4000;
+	int32_t _voiceLevel = 0;
+	int32_t _voiceLowPass1 = 0;
+	int32_t _voiceLowPass2 = 0;
+	int32_t _voiceDcLevel = 0;
+	int16_t _voiceLastOutput = 0;
 
 	void VoiceWrite(uint8_t value)
 	{
+		_voiceOutBit = value & 0x01;
 		_voiceMode = (value & 0x04) ? 2 : ((value & 0x02) ? 1 : 0);
 		if(_voiceMode == 0) {
 			_voiceClock = false;
@@ -480,18 +499,52 @@ private:
 		}
 	}
 
+	//One codec bit: a step up or down, or none (0) while the codec is not playing, which lets
+	//the output settle back to silence instead of stopping wherever the clip left it.
+	void VoiceOutputStep(int32_t direction)
+	{
+		_voiceLevel += direction * VoiceStep - (_voiceLevel >> 9);
+		_voiceLowPass1 += ((_voiceLevel - _voiceLowPass1) * 159) >> 8;
+		_voiceLowPass2 += ((_voiceLowPass1 - _voiceLowPass2) * 159) >> 8;
+		_voiceDcLevel += (_voiceLowPass2 - _voiceDcLevel) >> 6;
+
+		int16_t out = (int16_t)std::clamp(_voiceLowPass2 - _voiceDcLevel, -VoiceLimit, VoiceLimit);
+		if(direction == 0 && out == 0 && std::abs(_voiceLevel) < 512) {
+			//Settled: the shifts above never quite reach zero on their own
+			_voiceLevel = _voiceLowPass1 = _voiceLowPass2 = _voiceDcLevel = 0;
+		}
+		if(out != _voiceLastOutput) {
+			_console->GetApu()->AddExpansionAudioDelta(AudioChannel::VRC7, out - _voiceLastOutput);
+			_voiceLastOutput = out;
+		}
+	}
+
 	void VoiceClock()
 	{
+		if(_voiceMode == 0 && _voiceLevel == 0 && _voiceLastOutput == 0) {
+			return;
+		}
+		uint32_t clockRate = NesConstants::GetClockRate(_console->GetRegion());
 		if(_voiceMode == 0) {
+			//Let the output die away at the bit rate once playback stops
+			_voiceClockAcc += VoiceBitRate;
+			if(_voiceClockAcc >= clockRate) {
+				_voiceClockAcc -= clockRate;
+				VoiceOutputStep(0);
+				if(_voiceLevel == 0 && _voiceLastOutput == 0) {
+					_voiceClockAcc = 0;
+				}
+			}
 			return;
 		}
 		_voiceClockAcc += VoiceBitRate * 2;
-		uint32_t clockRate = NesConstants::GetClockRate(_console->GetRegion());
 		if(_voiceClockAcc >= clockRate) {
 			_voiceClockAcc -= clockRate;
 			_voiceClock = !_voiceClock;
 			if(!_voiceClock) {
 				_voiceInBit ^= 1;
+			} else {
+				VoiceOutputStep(_voiceMode == 1 ? (_voiceOutBit ? 1 : -1) : 0);
 			}
 		}
 	}
@@ -2999,7 +3052,8 @@ protected:
 		SV(_gameChip); SVArray(_gameChrPages, 8); SV(_mmc1); SV(_mmc3); SV(_mmc2);
 		SV(_lptData); SV(_lptCtrl); SV(_printer);
 		SV(_speechByte); SV(_speechNibbleCount); SV(_speech);
-		SV(_voiceMode); SV(_voiceClockAcc); SV(_voiceClock); SV(_voiceInBit);
+		SV(_voiceMode); SV(_voiceClockAcc); SV(_voiceClock); SV(_voiceInBit); SV(_voiceOutBit);
+		SV(_voiceLevel); SV(_voiceLowPass1); SV(_voiceLowPass2); SV(_voiceDcLevel); SV(_voiceLastOutput);
 		SV(_mouseEnabled); SV(_mouseFrame); SV(_cdvApuReady);
 		SVArray(_mouseReport, 3); SV(_lastMouseButtons);
 
