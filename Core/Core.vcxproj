@@ -248,6 +248,7 @@
     <ClInclude Include="NES\Mappers\Unlicensed\Gs2004.h" />
     <ClInclude Include="NES\Mappers\Unlicensed\Gs2013.h" />
     <ClInclude Include="NES\Mappers\Unlicensed\Henggedianzi177.h" />
+    <ClInclude Include="NES\Mappers\Unlicensed\ChengXinDa.h" />
     <ClInclude Include="NES\Mappers\Unlicensed\Henggedianzi179.h" />
     <ClInclude Include="NES\Mappers\Unlicensed\DongdaPec586.h" />
     <ClInclude Include="NES\Mappers\Unlicensed\Hp898f.h" />

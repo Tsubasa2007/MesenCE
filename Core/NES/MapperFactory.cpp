@@ -216,6 +216,7 @@
 #include "NES/Mappers/Unlicensed/Gs2004.h"
 #include "NES/Mappers/Unlicensed/Gs2013.h"
 #include "NES/Mappers/Unlicensed/Henggedianzi177.h"
+#include "NES/Mappers/Unlicensed/ChengXinDa.h"
 #include "NES/Mappers/Unlicensed/Henggedianzi179.h"
 #include "NES/Mappers/Unlicensed/Hp898f.h"
 #include "NES/Mappers/Unlicensed/MagicKidGooGoo.h"
@@ -292,6 +293,12 @@
 
 BaseMapper* MapperFactory::GetMapperFromID(RomData& romData)
 {
+	//The ChengXinDa cartridges' dumps carry mapper 179, which is not their board - see ChengXinDa
+	if(ChengXinDa::IsChengXinDa(romData.Info.Hash.PrgCrc32)) {
+		romData.ChrRamSize = 0x2000;
+		return new ChengXinDa();
+	}
+
 	// clang-format off
 	switch(romData.Info.MapperID) {
 		case 0:
