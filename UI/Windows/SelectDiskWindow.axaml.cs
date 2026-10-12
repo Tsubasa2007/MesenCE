@@ -92,7 +92,7 @@ namespace Mesen.Windows
 
 		private async void OnChangeFolderClick(object sender, RoutedEventArgs e)
 		{
-			string? folder = await FileDialogHelper.OpenFolder(this);
+			string? folder = await FileDialogHelper.OpenFolder(this, ConfigManager.Config.Nes.GetBbkDiskFolder());
 			if(folder != null && DataContext is SelectDiskViewModel model) {
 				//Update the default BBK disk folder and push it to the core, then reload the list.
 				//The core scans the folder lazily, so the new images show up on the next query.

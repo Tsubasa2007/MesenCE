@@ -142,7 +142,7 @@ namespace Mesen.Utilities
 			return null;
 		}
 
-		public static async Task<string?> OpenFolder(Window? parent)
+		public static async Task<string?> OpenFolder(Window? parent, string? initialFolder = null)
 		{
 			if(!((parent ?? ApplicationHelper.GetMainWindow()) is Window wnd)) {
 				throw new Exception("Invalid parent window");
@@ -150,6 +150,7 @@ namespace Mesen.Utilities
 
 			try {
 				IReadOnlyList<IStorageFolder> folders = await wnd.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions() {
+					SuggestedStartLocation = initialFolder != null ? await wnd.StorageProvider.TryGetFolderFromPathAsync(initialFolder) : null,
 					AllowMultiple = false
 				});
 
