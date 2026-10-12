@@ -227,7 +227,9 @@ public:
 				uint8_t value = ((~GetActiveKeys(_row, _column)) << 1) & 0x1E;
 				return value;
 			} else {
-				return 0x1E;
+				//Switched off by a pad strobe, as the reduced one above: 0, or the second pad's
+				//bit 1 would read as every button held
+				return 0;
 			}
 		}
 		return 0;
