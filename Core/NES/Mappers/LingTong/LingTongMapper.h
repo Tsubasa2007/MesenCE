@@ -11,6 +11,7 @@
 #include "NES/Input/Sb2kMouse.h"
 #include "NES/Mappers/Bung/DrPcJrGameChips.h"
 #include "NES/Mappers/Bbk/BbkLpcAudio.h"
+#include "NES/Mappers/Bbk/BbkPrinter.h"
 #include "NES/Mappers/LingTong/LingTongDiskDrive.h"
 #include "NES/Mappers/LingTong/ZosonCdDrive.h"
 #include "Utilities/Serializer.h"
@@ -57,7 +58,8 @@
 //   ((page + $40) >> 3) | $0B and $5000 as ((page & $1F) + $10) & $AF.
 // - $5080 bits 0-1: the game card slot, mapped over $8000-$FFFF. Empty, it reads as open
 //   bus, which is how the BIOS decides there is no card.
-// - $5100 bit 0 is the printer strobe (pulsed after a byte goes to $5200).
+// - $5100 bit 0 is the printer strobe: a byte goes to $5200, then bit 0 is pulsed low. WPS prints
+//   Epson ESC/P bit images (it rasterises its own glyphs), which BbkPrinter turns into PNG pages.
 //
 //CHR is 32KB of RAM in two 16KB halves, one per pattern table (PPU A12 picks the half).
 //With $5180 bit 0 set, each half is four 4KB units and which one is seen depends on who is
@@ -163,6 +165,18 @@ private:
 	DrPcJrMmc3 _mmc3;
 
 	unique_ptr<BbkLpcAudio> _speech;
+
+	//The page is named after the ROM, and that name only exists once the ROM is loaded
+	BbkPrinter _printer;
+	bool _printerNamed = false;
+	BbkPrinter& Printer()
+	{
+		if(!_printerNamed) {
+			_printerNamed = true;
+			_printer.SetRomName(FolderUtilities::GetFilename(_emu->GetRomInfo().RomFile.GetFilePath(), false));
+		}
+		return _printer;
+	}
 
 	//The G2002 takes the stream a nibble at a time, low half first: $50 | nibble, with bit 7 set
 	//on the closing pair ($DF $DF, a stop code), then 0 once the phrase is done; bit 6 of a read
@@ -577,6 +591,7 @@ protected:
 	{
 		BaseProcessCpuClock();
 		_speech->Clock();
+		_printer.Clock();
 	}
 
 	void NotifyVramAddressChange(uint16_t addr) override
@@ -824,7 +839,13 @@ protected:
 		switch(addr) {
 			case 0x5000: _reg5000 = value; UpdatePrgMapping(); break;
 			case 0x5080: _reg5080 = value; UpdatePrgMapping(); break;
-			case 0x5100: _reg5100 = value; UpdatePrgMapping(); break;
+			case 0x5100:
+				if((_reg5100 & 0x01) && !(value & 0x01)) {
+					Printer().WriteData(_mapperRam[0x5200 - 0x4000]);
+				}
+				_reg5100 = value;
+				UpdatePrgMapping();
+				break;
 			case 0x5180: _reg5180 = value; break;
 			case 0x5400: _reg5400 = value; UpdatePrgMapping(); break;
 
@@ -893,6 +914,7 @@ protected:
 		SVArray(_chrBank, 8);
 		SV(_mmc3);
 		SV(_speech);
+		SV(_printer);
 		SV(_speechNibble);
 		SV(_speechHalf);
 		SV(_speechIdle);
