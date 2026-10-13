@@ -321,6 +321,53 @@ private:
 	//What the buttons were in the last report, so an unchanged one is not sent again
 	uint8_t _lastMouseButtons = 0;
 
+	//The mouse's own interrupt, latched: $418F bit 3, answered by a write to $41B6.
+	//
+	//$41B6 is a mask of the mouse port's lines that may interrupt - no BIOS code touches it.
+	//The Kingwon floppies' shared library arms the mouse with $41B6 = $08 and $4016 = $04 and
+	//disarms it with zeros. The recorder on 声像复读机 copies the BIOS's own line mask ($FFDA,
+	//$02 - the $4017 bit the BIOS tests for the mouse's start bit) into it, takes the IRQ
+	//vector, turns the NMI off and plays a clip in a tight loop; its handler stops the clip
+	//when $418F says bit 4 (the keyboard) or bit 3, and answers bit 3 by rewriting $41B6. That
+	//is how 现在正在放音，移动鼠标停止 ("move the mouse to stop") works: without this
+	//interrupt nothing ever reached the loop and the clip played to its end.
+	//
+	//Raised only while a program owns the IRQ entry. The BIOS's own handler takes any non-zero
+	//$418F for the keyboard or the floppy and never answers bit 3, so a held bit 3 behind it
+	//would re-enter for ever - and the recorder leaves $41B6 = $02 behind when it hands the
+	//vector back.
+	bool _mouseLineIrq = false;
+
+	bool MouseLineArmed()
+	{
+		if(_romType == 0 || (_regs[0x36] & 0x0A) == 0) {
+			return false;
+		}
+
+		//$FF83 is JMP to the handler; the BIOS's own lives in its $E000-$FFFF pages
+		uint32_t offset = SystemBankOffset(0xFF84);
+		if(offset + 1 >= _workRamSize) {
+			return false;
+		}
+
+		uint16_t target = (uint16_t)(_workRam[offset] | (_workRam[offset + 1] << 8));
+		return target < 0xE000;
+	}
+
+	//Once a frame, before MousePoll can drain the movement
+	void MouseLineClock()
+	{
+		if(!MouseLineArmed()) {
+			_mouseLineIrq = false;
+			return;
+		}
+
+		if(!_mouseLineIrq) {
+			shared_ptr<Sb2kMouse> mouse = _console->GetControlManager()->GetControlDevice<Sb2kMouse>();
+			_mouseLineIrq = mouse && mouse->HasActivity(_lastMouseButtons);
+		}
+	}
+
 	uint8_t _ntData = 0;
 
 	//With this set the per-tile bank comes from a table the machine keeps in the top pages
@@ -2259,6 +2306,7 @@ protected:
 			KbdPollKeys();
 			KbdRepeatKeys();
 			_cd.ClockFrame();
+			MouseLineClock();
 		}
 
 		KbdClock();
@@ -2270,7 +2318,8 @@ protected:
 
 		//The controller's own counter joins the two the machine has. It has to be held
 		//and answered rather than pulsed: this line is rewritten every CPU clock.
-		if((_kbdRaiseIrq && KbdIrqAllowed()) || _lineIrqPending || _counterIrqPending || (_gameChip == MachineMmc3 && _mmc3.IrqPending())) {
+		if((_kbdRaiseIrq && KbdIrqAllowed()) || _lineIrqPending || _counterIrqPending || (_gameChip == MachineMmc3 && _mmc3.IrqPending()) ||
+			(_mouseLineIrq && MouseLineArmed())) {
 			_console->GetCpu()->SetIrqSource(IRQSource::External);
 		} else {
 			_console->GetCpu()->ClearIrqSource(IRQSource::External);
@@ -2503,6 +2552,7 @@ protected:
 		memset(_kbdHold, 0, sizeof(_kbdHold));
 
 		_mouseEnabled = false;
+		_mouseLineIrq = false;
 		_mouseFrame = 0;
 		_ntData = 0;
 		_mirroring = 0;
@@ -2697,8 +2747,10 @@ protected:
 				//Reading here answers it, the way it answers the keyboard just below. The
 				//other machine's software re-arms through $41A3 and so cleared it either way,
 				//which is why only this one stopped.
+				//Bit 3 is the mouse, held until $41B6 is written: the recorder reads this
+				//register twice, once for the keyboard and once for the mouse.
 				uint8_t status = (uint8_t)(_irqStatus | (_kbdRaiseIrq ? 0x10 : 0) |
-					((_lineIrqPending || _counterIrqPending) ? 0x20 : 0));
+					((_lineIrqPending || _counterIrqPending) ? 0x20 : 0) | (_mouseLineIrq ? 0x08 : 0));
 				_irqStatus &= (uint8_t)~0x10;
 				_kbdRaiseIrq = false;
 				_counterIrqPending = false;
@@ -2936,6 +2988,11 @@ protected:
 				}
 				break;
 
+			case 0x41B6:
+				//The mouse line mask; writing it answers the mouse's interrupt (MouseLineArmed)
+				_mouseLineIrq = false;
+				break;
+
 			case 0x41B5:
 				//The KW3000 hands over here instead, and unlike the KW2000 it can go back:
 				//bit 5 is load mode itself rather than a one-way trigger.
@@ -3054,7 +3111,7 @@ protected:
 		SV(_speechByte); SV(_speechNibbleCount); SV(_speech);
 		SV(_voiceMode); SV(_voiceClockAcc); SV(_voiceClock); SV(_voiceInBit); SV(_voiceOutBit);
 		SV(_voiceLevel); SV(_voiceLowPass1); SV(_voiceLowPass2); SV(_voiceDcLevel); SV(_voiceLastOutput);
-		SV(_mouseEnabled); SV(_mouseFrame); SV(_cdvApuReady);
+		SV(_mouseEnabled); SV(_mouseFrame); SV(_cdvApuReady); SV(_mouseLineIrq);
 		SVArray(_mouseReport, 3); SV(_lastMouseButtons);
 
 		if(!s.IsSaving()) {

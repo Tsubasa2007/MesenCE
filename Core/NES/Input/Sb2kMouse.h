@@ -139,6 +139,19 @@ public:
 		dy = (int8_t)my;
 	}
 
+	//Whether the mouse has something to send - movement nobody has taken yet, or buttons that
+	//differ from the ones last reported - without taking it. The Dr. PC Jr. machines raise an
+	//interrupt on this for a program that asked for one (DrPcJrMapper::MouseLineClock).
+	bool HasActivity(uint8_t reportedButtons)
+	{
+		Fold();
+		uint8_t buttons =
+			(IsPressed(Buttons::Left) ? 0x01 : 0) |
+			(IsPressed(Buttons::Right) ? 0x02 : 0) |
+			(IsPressed(Buttons::Middle) ? 0x04 : 0);
+		return _accumX != 0 || _accumY != 0 || buttons != reportedButtons;
+	}
+
 	vector<DeviceButtonName> GetKeyNameAssociations() override
 	{
 		return {
