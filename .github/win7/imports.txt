@@ -442,6 +442,7 @@ MesenCore.dll: kernel32.dll!GetModuleFileNameW
 MesenCore.dll: kernel32.dll!GetModuleHandleA
 MesenCore.dll: kernel32.dll!GetModuleHandleExW
 MesenCore.dll: kernel32.dll!GetModuleHandleW
+MesenCore.dll: kernel32.dll!GetNativeSystemInfo
 MesenCore.dll: kernel32.dll!GetOEMCP
 MesenCore.dll: kernel32.dll!GetProcAddress
 MesenCore.dll: kernel32.dll!GetProcessHeap
@@ -450,6 +451,7 @@ MesenCore.dll: kernel32.dll!GetStdHandle
 MesenCore.dll: kernel32.dll!GetStringTypeW
 MesenCore.dll: kernel32.dll!GetSystemTimeAsFileTime
 MesenCore.dll: kernel32.dll!GetTempPathW
+MesenCore.dll: kernel32.dll!GetTickCount64
 MesenCore.dll: kernel32.dll!GetTimeFormatW
 MesenCore.dll: kernel32.dll!GetTimeZoneInformation
 MesenCore.dll: kernel32.dll!GetUserDefaultLCID
@@ -457,6 +459,7 @@ MesenCore.dll: kernel32.dll!HeapAlloc
 MesenCore.dll: kernel32.dll!HeapFree
 MesenCore.dll: kernel32.dll!HeapReAlloc
 MesenCore.dll: kernel32.dll!HeapSize
+MesenCore.dll: kernel32.dll!InitializeCriticalSectionAndSpinCount
 MesenCore.dll: kernel32.dll!InitializeCriticalSectionEx
 MesenCore.dll: kernel32.dll!InitializeSListHead
 MesenCore.dll: kernel32.dll!InterlockedFlushSList
@@ -500,6 +503,11 @@ MesenCore.dll: kernel32.dll!Sleep
 MesenCore.dll: kernel32.dll!SleepConditionVariableSRW
 MesenCore.dll: kernel32.dll!SystemTimeToTzSpecificLocalTime
 MesenCore.dll: kernel32.dll!TerminateProcess
+MesenCore.dll: kernel32.dll!TlsAlloc
+MesenCore.dll: kernel32.dll!TlsFree
+MesenCore.dll: kernel32.dll!TlsGetValue
+MesenCore.dll: kernel32.dll!TlsSetValue
+MesenCore.dll: kernel32.dll!TryAcquireSRWLockExclusive
 MesenCore.dll: kernel32.dll!UnhandledExceptionFilter
 MesenCore.dll: kernel32.dll!VerSetConditionMask
 MesenCore.dll: kernel32.dll!VerifyVersionInfoW
