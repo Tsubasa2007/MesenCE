@@ -1318,9 +1318,15 @@ void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem syst
 			//which is the split the Subor cartridges' BIOS scans - one 24-bit packet per latch on $4016,
 			//and the $05/$04/$06 key counter read back on $4017.
 			if(SuborCarts::HasPs2Mouse(mapper->GetRomInfo().Hash.PrgCrc32)) {
-				//The card's own mouse answers on $4017 bit 0, beside the keyboard's bits 1-4
+				//The card's own mouse answers on $4017 bit 0, beside the keyboard's bits 1-4. A card in
+				//its host also has the host's serial mouse in the first port (see IsCardInHost).
 				log("[Input] PS/2 mouse connected");
-				port1 = ControllerType::NesController;
+				if(SuborCarts::IsCardInHost(mapper->GetRomInfo().Hash.PrgCrc32)) {
+					log("[Input] Subor mouse (24-bit) connected");
+					port1 = ControllerType::SuborMouse24;
+				} else {
+					port1 = ControllerType::NesController;
+				}
 				port2 = ControllerType::Ps2Mouse;
 			} else if(SuborCarts::HasSerialMouseOnPort2(mapper->GetRomInfo().Hash.PrgCrc32)) {
 				//The 24-bit mouse read on $4017 bit 0, beside the keyboard's bits 1-4

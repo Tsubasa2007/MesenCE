@@ -16,7 +16,7 @@
 class SuborCarts
 {
 public:
-	static constexpr uint32_t Ps2MouseCard = 0x90257DA1;
+	static constexpr uint32_t Ps2MouseCard = 0x7AD19105;
 
 	//The expansion cards, whose mouse is the PS/2 one instead of the 24-bit serial mouse - and other
 	//makers' learning cartridges with the same 10-row keyboard scan and PS/2 driver ($EB, then a
@@ -25,13 +25,13 @@ public:
 	{
 		switch(prgCrc) {
 			case 0x5DD45CFA: //Kingwon learning cartridge (mapper 241)
-			case 0x5E660855: //multimedia card 1 in a V15.0 V2 host
-			case 0xFDA673F6: //multimedia card 2 in a V15.0 V2 host
+			case 0x006834C8: //multimedia card 1 in a V15.0 V2 host
+			case 0xA05827EB: //multimedia card 2 in a V15.0 V2 host
 			case 0xBD8ACE09: //multimedia card 4 in a V15.0 V2 host
 			case 0x0D4F90B2: //Windows 98 practice card in a V15.0 V2 host
 			case Ps2MouseCard: //voice-mouse card in a V15.0 V2 host
-			case 0x7E432D70: //multimedia card 1
-			case 0x14774592: //multimedia card 2
+			case 0x204D11ED: //multimedia card 1
+			case 0x4989118F: //multimedia card 2
 			case 0x4DC15B83: //multimedia card 4
 			case 0xE520960E: //Windows 98 practice card
 			case 0x8B23F1AA: //other makers' learning cartridges (mapper 241)
@@ -46,6 +46,25 @@ public:
 			case 0x0BEB8BCD: //the previous one as a mapper 241 image
 			case 0xBACB4CDE: //(mapper 241)
 			case 0x6922D4CE: //(mapper 133, with the bank register at $6001)
+				return true;
+
+			default:
+				return false;
+		}
+	}
+
+	//The cards built into a host image (see the class comment). Some of a card's lessons run the
+	//host's own programs - one of the voice-mouse card's lessons starts a host program with JSR $8000
+	//in host bank 18 - and those read the machine's 24-bit serial mouse on $4016, so these images have
+	//both mice plugged in: the serial one for the host's programs, the PS/2 one for the card.
+	static bool IsCardInHost(uint32_t prgCrc)
+	{
+		switch(prgCrc) {
+			case 0x006834C8: //multimedia card 1
+			case 0xA05827EB: //multimedia card 2
+			case 0xBD8ACE09: //multimedia card 4
+			case 0x0D4F90B2: //Windows 98 practice card
+			case Ps2MouseCard: //voice-mouse card
 				return true;
 
 			default:
@@ -83,7 +102,8 @@ public:
 	}
 
 	//The cartridges with the LPC speech chip at $5000-$5FFF (see Mapper241): their speech routine
-	//waits for bit 6 of $5FF0 and sends each byte as two $5x nibbles, low first
+	//waits for bit 6 of $5FF0 and sends each byte as two $5x nibbles, low first. The multimedia
+	//cards carry the same chip on mapper 178 at $5800-$5FFF (see Waixing178).
 	static bool HasLpcSpeech(uint32_t prgCrc)
 	{
 		switch(prgCrc) {
@@ -91,6 +111,12 @@ public:
 			case 0x33A93F6E: //another maker's, with the Kingwon-type keyboard (mapper 241)
 			case 0x8FA597F8: //typing and dictionary cartridge (mapper 241)
 			case 0x957ABE27: //Wubi typing and English cartridge (mapper 241)
+			case 0x006834C8: //multimedia card 1 in a V15.0 V2 host (mapper 178)
+			case 0xA05827EB: //multimedia card 2 in a V15.0 V2 host (mapper 178)
+			case 0xBD8ACE09: //multimedia card 4 in a V15.0 V2 host (mapper 178)
+			case 0x204D11ED: //multimedia card 1 (mapper 178)
+			case 0x4989118F: //multimedia card 2 (mapper 178)
+			case 0x4DC15B83: //multimedia card 4 (mapper 178)
 				return true;
 
 			default:
@@ -118,16 +144,18 @@ public:
 		return prgCrc == 0x9D91BF0F; //mapper 241
 	}
 
-	//Three cartridges wait for vblank in a loop the Dendy frame divides exactly - the karaoke one's song
-	//start polls $2002 with its NMI off in an 8-cycle loop, the Wubi one's text editor and the study
-	//card's menu (after leaving its editor) with their NMI on -
+	//Some cartridges wait for vblank in a loop the Dendy frame divides exactly - the karaoke one's song
+	//start and multimedia card 4's Windows 98 start-up lesson poll $2002 with their NMI off in an
+	//8-cycle loop, the Wubi one's text editor and the study card's menu (after leaving its editor) with
+	//their NMI on -
 	//so the read lands on the dot that suppresses the flag in every frame and they wait for ever. One
 	//more line before the NMI (313 lines, as the YuXing machines have) breaks the lock. Not measured
 	//on the hardware; PAL timing frees them too but lowers the music by about 6%.
 	static bool HasLongDendyFrame(uint32_t prgCrc)
 	{
 		return prgCrc == 0x0A9808AE || prgCrc == 0x957ABE27 || //karaoke, Wubi typing
-			prgCrc == 0x9D91BF0F; //study card with the Family BASIC keyboard
+			prgCrc == 0x9D91BF0F || //study card with the Family BASIC keyboard
+			prgCrc == 0x4DC15B83 || prgCrc == 0xBD8ACE09; //multimedia card 4, alone and in its host
 	}
 
 	//The cartridges with the cut-down keyboard whose text editor reads its Alt modifier from row 1
@@ -242,13 +270,13 @@ public:
 			case 0xF18BC238: //V14.0, 视窗系统2000 (mapper 178)
 			case 0x6058DB1C: //V15.0, Windows 2002 (mapper 177)
 			case 0x9B004BF8: //V15.0 V2, Windows 2005 (mapper 178)
-			case 0x5E660855: //multimedia card 1 in a V15.0 V2 host
-			case 0xFDA673F6: //multimedia card 2 in a V15.0 V2 host
+			case 0x006834C8: //multimedia card 1 in a V15.0 V2 host
+			case 0xA05827EB: //multimedia card 2 in a V15.0 V2 host
 			case 0xBD8ACE09: //multimedia card 4 in a V15.0 V2 host
 			case 0x0D4F90B2: //Windows 98 practice card in a V15.0 V2 host
 			case Ps2MouseCard: //expansion card in a V15.0 V2 host (mapper 178)
-			case 0x7E432D70: //expansion cards on their own (mapper 178)
-			case 0x14774592:
+			case 0x204D11ED: //expansion cards on their own (mapper 178)
+			case 0x4989118F:
 			case 0x4DC15B83:
 			case 0xE520960E:
 			//Single-subject learning cartridges: the same keyboard scan, and no other way in

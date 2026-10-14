@@ -310,6 +310,8 @@ private:
 	uint32_t _phraseEnd = 0;
 	bool _phraseEndValid = false;
 	bool _blockUnderrun = false;
+	//Whether a reset waits for the queued bytes to be spoken (see WriteControl)
+	bool _deferReset = false;
 
 	uint8_t _fifo[FifoSize] = {};
 	uint32_t _fifoReadPos = 0;
@@ -942,7 +944,12 @@ public:
 		_console = console;
 		_variant = variant;
 		_codec = IsPlainStream() ? &_codecPe : &_codecD6;
+		_deferReset = variant == LpcVariant::DrPcJr;
 	}
+
+	//For another machine whose software resets the chip the moment the last byte is queued, like
+	//the Dr. PC Jr. (see WriteControl)
+	void DeferResetUntilSpoken() { _deferReset = true; }
 
 	void Reset()
 	{
@@ -982,7 +989,7 @@ public:
 			//ends instead: the tail is still decoded, and the reset happens when the decoder
 			//reaches the boundary. The other machines reset between phrases with a drained
 			//buffer, so nothing changes for them.
-			if(_variant == LpcVariant::DrPcJr && GetFifoCount() > 0) {
+			if(_deferReset && GetFifoCount() > 0) {
 				if(!_phraseEndValid) {
 					_phraseEnd = _fifoWritePos;
 					_phraseEndValid = true;
