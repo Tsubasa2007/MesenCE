@@ -1,0 +1,63 @@
+name: Build PcLinkBridge
+
+# PcLinkServer.exe, with Visual Studio 2022: its runtime still runs on Windows 7 (Visual Studio 2026's
+# needs Windows 8), and a build that imports anything newer fails.
+
+on:
+  push:
+    paths:
+      - 'Tools/PcLinkBridge/**'
+      - 'Core/NES/Mappers/Bbk/BbkPcLink.h'
+      - '.github/workflows/pclinkbridge.yml'
+  pull_request:
+    paths:
+      - 'Tools/PcLinkBridge/**'
+      - 'Core/NES/Mappers/Bbk/BbkPcLink.h'
+      - '.github/workflows/pclinkbridge.yml'
+  workflow_dispatch:
+
+jobs:
+  windows:
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository) }}
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+
+      - name: Build, and run the simulation
+        shell: cmd
+        run: Tools\PcLinkBridge\build.bat test
+
+      - name: Check for functions newer than Windows 7
+        shell: cmd
+        run: |
+          set "PATH=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer;%PATH%"
+          for /f "usebackq delims=" %%i in (`vswhere -latest -products * -property installationPath`) do set "VS=%%i"
+          call "%VS%\VC\Auxiliary\Build\vcvarsall.bat" x64 >nul || exit /b 1
+          set FAIL=
+          for %%f in (Tools\PcLinkBridge\bin\PcLinkServer.exe Tools\PcLinkBridge\bin\x86\PcLinkServer.exe) do (
+            dumpbin /nologo /imports %%f > imports.txt || (echo dumpbin failed on %%f & exit /b 1)
+            findstr /c:"KERNEL32.dll" imports.txt >nul || (echo no imports read from %%f & exit /b 1)
+            for %%a in (GetSystemTimePreciseAsFileTime CreateFile2 CopyFile2 WaitOnAddress WakeByAddressSingle WakeByAddressAll GetCurrentPackageId GetCurrentPackageFullName SetThreadDescription GetThreadDescription SetThreadInformation GetThreadInformation PrefetchVirtualMemory GetOverlappedResultEx GetFirmwareType SetProcessMitigationPolicy GetProcessMitigationPolicy VirtualAlloc2 MapViewOfFile3) do (
+              findstr /r /c:" %%a$" imports.txt >nul && (echo %%f imports %%a, which Windows 7 lacks & set FAIL=1)
+            )
+          )
+          if defined FAIL exit /b 1
+          echo No functions newer than Windows 7.
+
+      - name: Collect files
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/x86 | Out-Null
+          Copy-Item Tools/PcLinkBridge/bin/PcLinkServer.exe dist/
+          Copy-Item Tools/PcLinkBridge/bin/x86/PcLinkServer.exe dist/x86/
+          Copy-Item Tools/PcLinkBridge/*.md dist/
+          Copy-Item -Recurse Tools/PcLinkBridge/firmware dist/
+
+      - name: Upload PcLinkBridge
+        uses: actions/upload-artifact@v7
+        if: github.event_name != 'pull_request'
+        with:
+          name: PcLinkBridge (Windows)
+          path: dist/

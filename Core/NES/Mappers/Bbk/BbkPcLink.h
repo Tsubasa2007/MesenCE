@@ -55,6 +55,9 @@ private:
 	//The drive
 	Path _root;
 	vector<string> _cwd;   //host names of the directories below the root
+	string _name;          //the request's 8.3 name, before the answer overwrites it
+	string _path;          //the path fetched from the BBK for it
+	uint32_t _requests = 0;
 	struct OpenFile { std::fstream Stream; Path HostPath; };
 	std::map<uint16_t, OpenFile> _files;
 	uint16_t _nextHandle = 5;
@@ -488,7 +491,7 @@ private:
 			Bank(0xFF);
 			addr = (uint16_t)(addr - highOffset);
 		}
-		ReadMemory(addr, 80, [then](vector<uint8_t>& d) { then(CString(d)); });
+		ReadMemory(addr, 80, [this, then](vector<uint8_t>& d) { _path = CString(d); then(_path); });
 	}
 
 	void Handle()
@@ -515,7 +518,7 @@ private:
 			case 13: RenameOpen(); Reply(); break;
 			case 16: case 17: case 18:
 				Bank(_req[2]);
-				ReadMemory(Word(3), 80, [this, cmd](vector<uint8_t>& d) { Directories(cmd, CString(d)); Reply(); });
+				ReadMemory(Word(3), 80, [this, cmd](vector<uint8_t>& d) { _path = CString(d); Directories(cmd, _path); Reply(); });
 				break;
 			case 19: SetWord(3, 0x0140); SendCurrentDirectory(); SetStatus(Ok); Reply(); break;
 			case 20:
@@ -773,6 +776,9 @@ private:
 		_req.push_back(b);
 		if(_req.size() == 16) {
 			_inRequest = false;
+			_name = NameFrom83(5);
+			_path.clear();
+			_requests++;
 			Handle();
 		}
 	}
@@ -807,6 +813,55 @@ public:
 		_files.clear();
 		_searches.clear();
 	}
+
+	//The byte level, for a server on a real cable (Tools/PcLinkBridge), whose microcontroller does the
+	//handshakes: the bytes the BBK sent, the bytes to send it, and how many more it is to send before
+	//the server answers (a request is $01 and 16 bytes)
+	void ReceiveByte(uint8_t b) { Receive(b); }
+
+	bool TakeByte(uint8_t& b)
+	{
+		if(_tx.empty()) {
+			return false;
+		}
+		b = _tx.front();
+		_tx.pop_front();
+		return true;
+	}
+
+	size_t Expecting()
+	{
+		if(_rxWanted) {
+			return _rxWanted - _rxData.size();
+		}
+		return _inRequest ? 16 - _req.size() : 17;
+	}
+
+	//Drops a conversation cut short (the cable or the bridge gone), keeping the open files and the
+	//current directory: the BBK still has them
+	void Resync()
+	{
+		_tx.clear();
+		_inRequest = false;
+		_req.clear();
+		_rxWanted = 0;
+		_rxData.clear();
+		_onRx = nullptr;
+	}
+
+	//The requests taken so far; the last one's command, name (8.3, or the path fetched for it) and
+	//status (for a server's log)
+	uint32_t Requests() { return _requests; }
+	uint8_t Command() { return _req.empty() ? 0 : _req[0]; }
+	string Name()
+	{
+		uint8_t cmd = Command();
+		if(cmd == 1 || cmd == 6 || cmd == 8 || cmd == 10 || cmd == 13) {
+			return _name;
+		}
+		return (cmd >= 16 && cmd <= 18) || cmd >= 20 ? _path : string();
+	}
+	uint8_t Result() { return _req.size() >= 12 ? _req[11] : 0; }
 
 	//$FF40: the BBK's nibble in bits 0-3, its handshake in bit 4. The PC acts on each handshake
 	//edge: answering with the nibble it is sending, or taking the one it is being sent.
