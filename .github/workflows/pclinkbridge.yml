@@ -45,6 +45,7 @@ jobs:
           )
           if defined FAIL exit /b 1
           echo No functions newer than Windows 7.
+          exit /b 0
 
       - name: Collect files
         shell: pwsh
