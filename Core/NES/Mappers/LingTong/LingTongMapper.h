@@ -19,14 +19,14 @@
 #include "Utilities/VirtualFile.h"
 #include "Shared/MessageManager.h"
 
-//灵童 (LingTong) SMART-128B / SMART-128C learning machines - Power Software's "POWER-BIOS
-//v3.0". The iNES files in circulation carry mapper 174, which is an unrelated NTDEC
-//multicart, so the two BIOSes are recognised by their PRG CRC32 instead.
+//灵童 (LingTong) SMART-128B learning machines - Power Software's "POWER-BIOS v3.0". The
+//iNES files in circulation carry mapper 174, which is an unrelated NTDEC multicart, so the
+//two BIOSes are recognised by their PRG CRC32 instead.
 //
-// - SMART-128B: a 32KB boot ROM. Its menu boots DOS from a floppy, or hands the machine to
-//   a plugged-in expansion or game card.
-// - SMART-128C: a 2MB flash set. The same BIOS (a later revision) sits in its top 32KB, and
-//   the rest holds a read-only ROM disk with SY-DOS 6.22, WPS, FoxBase, the sound and game
+// - A 32KB boot ROM. Its menu boots DOS from a floppy, or hands the machine to a plugged-in
+//   expansion or game card.
+// - A 2MB flash set, from a SMART-128B with the internal ROM disk (电子盘). The same BIOS (a
+//   later revision) sits in its top 32KB, and the rest holds a read-only ROM disk with SY-DOS 6.22, WPS, FoxBase, the sound and game
 //   programs, the GB2312 font, and a second BIOS bank that DOS calls into. With no card
 //   plugged in it boots that DOS straight from ROM.
 //
@@ -46,7 +46,7 @@
 //       where DOS's upper half and the vectors then live; every loader steps $5400 16KB at
 //       a time. The memory test itself runs at $50 and counts 32KB pages until one already
 //       holds what it wrote into an earlier one, which is where the page number wrapped.
-//   The 128C's game menu loads a game into DRAM from $5400 = 0 and then starts it from a
+//   The ROM disk's game menu loads a game into DRAM from $5400 = 0 and then starts it from a
 //   stub that picks the layout: $50 for NROM and MMC3, $5A for UNROM.
 // - Otherwise ROM, in 16KB pages of the 2MB space. $5100 bit 4 and bit 2 are page bits 6
 //   and 5; $5000 bit 5 and bits 3-0 are page bits 4 and 3-0 for $8000-$BFFF, while
@@ -75,7 +75,7 @@
 //to scanning the matrix whenever that one has sent nothing. The 中索 discs' programs scan the
 //Subor way instead (SuborKeyMatrix, Subor layout) - see SuborScan.
 //
-//MMC3 games (the 128C's game menu): the four 8KB banks at $50 are ($55C0-$55C3 & $5580) |
+//MMC3 games (the ROM disk's game menu): the four 8KB banks at $50 are ($55C0-$55C3 & $5580) |
 //(($5400 x 4 + bank position) & ~$5580) - so with $5580 = 0, as the BIOS leaves it, the page
 //is straight. The games are patched: PRG R6/R7 go to $55C0/$55C1, the counter to
 //$5280-$5283 (an MMC3's $C000/$C001/$E000/$E001), mirroring to $5300, and the CHR registers
@@ -98,7 +98,7 @@
 //  01   first of three: bit 3 down, bit 2 vertical bit 4, bit 1 right, bit 0 horizontal bit 4
 //  10   vertical distance, bits 3-0
 //  11   horizontal distance, bits 3-0 - the packet is complete
-//The 128C's own software never reads it. The discs' other programs take the same bytes on bit 0,
+//The SMART-128B's own software never reads it. The discs' other programs take the same bytes on bit 0,
 //after a Subor-style strobe ($01, then $06).
 //
 //Floppy: an Apple II style Disk II controller - $5600-$560F are its sixteen soft switches, and
@@ -108,7 +108,7 @@
 //disk menu swaps between the .woz files of the disk folder, as on the other floppy machines.
 //
 //中索 (Zoson) G2002: the VCD player these discs came with, a 灵童 computer inside. Its 128KB
-//BIOS is the 128C's laid out smaller - the boot program, the player program, the resident disc
+//BIOS is the 2MB set's laid out smaller - the boot program, the player program, the resident disc
 //loader it copies to $4800 and a ROM disk with SY-DOS - and it adds a CD drive at $5680/$5681
 //(see ZosonCdDrive). The disc goes in from the disk menu, beside the floppies; "<rom name>.cue"
 //(or .bin/.iso) beside the BIOS is put in at power-on. With no disc the BIOS shows 没有盘片 and
@@ -136,14 +136,14 @@ class LingTongMapper : public BaseMapper
 {
 private:
 	static constexpr uint32_t Crc128B = 0x1054DF22;
-	static constexpr uint32_t Crc128C = 0xC95226A1;
+	static constexpr uint32_t Crc128BRomDisk = 0xC95226A1;
 	static constexpr uint32_t CrcZoson = 0xBCE1B56C;
 	bool _isZoson = false;
 
 	//The BIOS measures the DRAM rather than assuming it: it counts pages until one already
 	//holds the pattern it wrote into an earlier one, which is where the address wrapped, shows
-	//the total and picks the layout for it (256KB/512KB/1MB/2MB+ = $53/$54/$56/$51). Both the
-	//SMART-128B and the SMART-128C carry 2MB. The 中索 G2002 has 1MB, and its discs' programs need
+	//the total and picks the layout for it (256KB/512KB/1MB/2MB+ = $53/$54/$56/$51). The
+	//SMART-128B carries 2MB, with or without the ROM disk. The 中索 G2002 has 1MB, and its discs' programs need
 	//the wrap: one picks its code with a 32KB bank number of $2E, meaning $0E. A disc game started
 	//on its own gets the same.
 	static constexpr uint32_t MaxDramSize = 0x200000;
@@ -611,7 +611,7 @@ protected:
 	void InitMapper(RomData& romData) override
 	{
 		romData.Info.System = GameSystem::Dendy;
-		_dramSize = (romData.Info.Hash.PrgCrc32 == Crc128B || romData.Info.Hash.PrgCrc32 == Crc128C) ? 0x200000 : 0x100000;
+		_dramSize = (romData.Info.Hash.PrgCrc32 == Crc128B || romData.Info.Hash.PrgCrc32 == Crc128BRomDisk) ? 0x200000 : 0x100000;
 		_isZoson = romData.Info.Hash.PrgCrc32 == CrcZoson;
 		UpdatePrgMapping();
 		if(!romData.CdvHeader.empty()) {
@@ -863,7 +863,7 @@ protected:
 				if(GameChrMode()) {
 					//A 4KB unit for one pattern table - its four slots at once. The 中索 discs'
 					//MMC1 conversions bank CHR this way ($5388 for $0000, $538C for $1000);
-					//the 128C itself only ever writes $5388 with the slots off.
+					//the SMART-128B itself only ever writes $5388 with the slots off.
 					uint8_t first = (addr & 0x04) ? 4 : 0;
 					for(int i = 0; i < 4; i++) {
 						_chrBank[first + i] = (uint8_t)(value * 4 + i);
@@ -942,7 +942,7 @@ protected:
 	}
 
 public:
-	static bool IsLingTong(uint32_t prgCrc) { return prgCrc == Crc128B || prgCrc == Crc128C || prgCrc == CrcZoson; }
+	static bool IsLingTong(uint32_t prgCrc) { return prgCrc == Crc128B || prgCrc == Crc128BRomDisk || prgCrc == CrcZoson; }
 
 	//Disk swapping - the disk menu and the FDS disk shortcut keys, as on the other floppy machines
 	vector<string> GetDiskFileList()
