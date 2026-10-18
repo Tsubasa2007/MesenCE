@@ -478,7 +478,8 @@ void SacMemoryManager::WriteDma(int ch, uint32_t offset, uint16_t value)
 					" count $" + HexUtilities::ToHex(_dmaCount[ch]) + " control $" + HexUtilities::ToHex(value));
 			}
 
-			//As MAME does it, modes and all, including the ones it only knows one game for
+			//As MAME does it, modes and all, including the ones it only knows one game for - except a control word
+			//with bits 12 and 13 clear ($8800), which MAME copies byte by byte
 			bool destDec = (value & 0x0400) != 0;
 			bool srcDec = (value & 0x0200) != 0;
 			for(int i = 0; i <= _dmaCount[ch]; i++) {
@@ -498,6 +499,13 @@ void SacMemoryManager::WriteDma(int ch, uint32_t offset, uint16_t value)
 					if((value & 0x0100) && (_dmaDest[ch] & 0x0F) == 0) {
 						_dmaDest[ch] -= 0x10;
 					}
+				} else if(!(value & 0x2000)) {
+					//The source stays put: count + 1 words, each a copy of the word at the source. The games that use
+					//this point the source at a zero word to clear work RAM (all of it but the stack), VRAM and their
+					//own tables, or at a word they have just written; copied as bytes, they would fill with program
+					//code instead, clear only half of each region and end on odd addresses
+					Write16(_dmaDest[ch], Read16(_dmaSource[ch]));
+					_dmaDest[ch] += destDec ? -2 : 2;
 				} else {
 					Write8(_dmaDest[ch], Read8(_dmaSource[ch]));
 					_dmaDest[ch] += destDec ? -1 : 1;
