@@ -1,8 +1,8 @@
 # Mesen 学习机版
 
-*A fork of [MesenCE](https://github.com/nesdev-org/MesenCE) that adds the Chinese learning machines of the 1990s (BBK, Subor SB-2000, YuXing, Kingwon / Bung Doctor PC Jr.) and the Super A'Can console.*
+*A fork of [MesenCE](https://github.com/nesdev-org/MesenCE) that adds the Chinese learning machines of the 1990s (BBK, Subor SB-2000 / SB97, YuXing, Kingwon / Bung Doctor PC Jr., LingTong / Zoson VCD) and the Super A'Can console.*
 
-本项目基于 Mesen 社区版（MesenCE），加入了九十年代国产电脑学习机的模拟：步步高、小霸王 SB-2000、裕兴、科王 / 邦谷小博士，以及 Super A'Can 游戏机。Mesen 原有的功能全部保留：调试器、即时存档、倒带、录像、着色器等等。
+本项目基于 Mesen 社区版（MesenCE），加入了九十年代国产电脑学习机的模拟：步步高、小霸王 SB-2000 / SB97、裕兴、科王 / 邦谷小博士、灵童 / 中索 VCD，以及 Super A'Can 游戏机。Mesen 原有的功能全部保留：调试器、即时存档、倒带、录像、着色器等等。
 
 ## 下载
 
@@ -17,8 +17,10 @@ BIOS、软盘和光盘镜像都**不**随本程序提供，请使用自己的备
 | 步步高软驱一号（1.0）、步步高 98 型（电子盘） | BIOS（.nes）＋ 软盘镜像（.img） | 软驱、键盘、鼠标、真人语音、打印机 |
 | 步步高语音二号 | BIOS（.nes） | 键盘、语音，可接打印机 |
 | 小霸王 SB-2000 | BIOS（.nes）＋ 软盘镜像（.img / .ima） | UM6576 显示芯片、软驱、键盘、鼠标、语音 |
+| 小霸王 SB97 | V5.0 卡带的 BIOS（.nes）＋ 软盘镜像（.img / .ima） | 软驱（卡带上的 SB DOS）、键盘、语音、打印机 |
 | 裕兴电脑学习机（软驱型、VCD 型） | BIOS（.nes）＋ 软盘镜像（.img），VCD 型还可以用光盘镜像（.cue / .bin / .iso） | 软驱、VCD 光驱与光盘菜单、VCD 画面与声音、键盘、内置鼠标或 D 型串口鼠标、打印机 |
 | 科王 KW2000 / KW3000、邦谷小博士（Bung Doctor PC Jr.） | BIOS（.nes）＋ 光盘镜像（.cue / .bin），也可以用软盘镜像（.img） | 光驱、软驱、VCD 画面、键盘、鼠标、打印机 |
+| 灵童 SMART-128B（含电子盘版）、中索 VCD（G2002） | BIOS（.nes）＋ 软盘镜像（.woz）；中索 VCD 用光盘镜像（.cue / .bin / .iso），光盘上的游戏（.cdv）也可以直接打开 | 软驱、电子盘、光驱与光盘菜单、键盘、鼠标、语音、打印机 |
 | 小霸王中英文电脑学习卡 | 卡带（.nes） | 键盘、鼠标、语音 |
 | 裕兴电脑学习卡 | 卡带（.nes） | 键盘、鼠标 |
 | Super A'Can | 卡带（.bin，或两片芯片合在一起的 .zip） | 整机，另有 68000 与声音处理器的调试器 |
@@ -30,15 +32,15 @@ BIOS、软盘和光盘镜像都**不**随本程序提供，请使用自己的备
 ### 步步高：语音二号、软驱一号（1.0）、98 型
 
 <table>
-<tr><td align="center"><img src="docs/screenshots/bbk/01-voice2-boot.png" width="192" alt="语音二号：开机画面"><br><sub>语音二号：开机画面</sub></td><td align="center"><img src="docs/screenshots/bbk/02-voice2-menu.png" width="192" alt="语音二号：学习卡菜单"><br><sub>语音二号：学习卡菜单</sub></td><td align="center"><img src="docs/screenshots/bbk/03-v1-self-test.png" width="192" alt="软驱一号：开机自检"><br><sub>软驱一号：开机自检</sub></td><td align="center"><img src="docs/screenshots/bbk/04-v1-002-wps.png" width="192" alt="002 步步高 WPS 文字处理系统 2.1"><br><sub>002 步步高 WPS 文字处理系统 2.1</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/bbk/01-voice2-boot.png" width="192" alt="语音二号：开机画面"><br><sub>语音二号：开机画面</sub></td><td align="center"><img src="docs/screenshots/bbk/02-voice2-menu.png" width="192" alt="语音二号：学习卡菜单"><br><sub>语音二号：学习卡菜单</sub></td><td align="center"><img src="docs/screenshots/bbk/03-v1-self-test.png" width="192" alt="软驱一号：开机自检"><br><sub>软驱一号：开机自检</sub></td><td align="center"><img src="docs/screenshots/bbk/04-v1-demo.png" width="192" alt="步步高 DEMO 演示系统"><br><sub>步步高 DEMO 演示系统</sub></td></tr>
 </table>
 
 <details><summary>更多（26 张）</summary>
 
 <table>
-<tr><td align="center"><img src="docs/screenshots/bbk/05-v1-003-typing-game.png" width="192" alt="003 打字游戏"><br><sub>003 打字游戏</sub></td><td align="center"><img src="docs/screenshots/bbk/06-v1-004-learn-dos.png" width="192" alt="004 轻轻松松学 DOS"><br><sub>004 轻轻松松学 DOS</sub></td><td align="center"><img src="docs/screenshots/bbk/07-v1-005-english.png" width="192" alt="005 步步高英语（入门篇）"><br><sub>005 步步高英语（入门篇）</sub></td><td align="center"><img src="docs/screenshots/bbk/08-v1-006-english-words.png" width="192" alt="006 英语单词步步高（初中版）"><br><sub>006 英语单词步步高（初中版）</sub></td></tr>
-<tr><td align="center"><img src="docs/screenshots/bbk/09-v1-007-spreadsheet.png" width="192" alt="007 步步高电子表格"><br><sub>007 步步高电子表格</sub></td><td align="center"><img src="docs/screenshots/bbk/10-v1-009-household.png" width="192" alt="009 步步高家政管理"><br><sub>009 步步高家政管理</sub></td><td align="center"><img src="docs/screenshots/bbk/11-v1-010-word-problems.png" width="192" alt="010 应用题大全"><br><sub>010 应用题大全</sub></td><td align="center"><img src="docs/screenshots/bbk/12-v1-011-geometry.png" width="192" alt="011 几何大师"><br><sub>011 几何大师</sub></td></tr>
-<tr><td align="center"><img src="docs/screenshots/bbk/13-v1-015-demo.png" width="192" alt="015 步步高 DEMO 演示系统"><br><sub>015 步步高 DEMO 演示系统</sub></td><td align="center"><img src="docs/screenshots/bbk/14-v1-016-chinese.png" width="192" alt="016 初中语文辅导与训练"><br><sub>016 初中语文辅导与训练</sub></td><td align="center"><img src="docs/screenshots/bbk/15-v1-119-brain-training.png" width="192" alt="119 智力训练 365"><br><sub>119 智力训练 365</sub></td><td align="center"><img src="docs/screenshots/bbk/16-v1-122-paint.png" width="192" alt="122 神奇画笔"><br><sub>122 神奇画笔</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/bbk/05-v1-002-wps.png" width="192" alt="002 步步高 WPS 文字处理系统 2.1"><br><sub>002 步步高 WPS 文字处理系统 2.1</sub></td><td align="center"><img src="docs/screenshots/bbk/06-v1-003-typing-game.png" width="192" alt="003 打字游戏"><br><sub>003 打字游戏</sub></td><td align="center"><img src="docs/screenshots/bbk/07-v1-004-learn-dos.png" width="192" alt="004 轻轻松松学 DOS"><br><sub>004 轻轻松松学 DOS</sub></td><td align="center"><img src="docs/screenshots/bbk/08-v1-005-english.png" width="192" alt="005 步步高英语（入门篇）"><br><sub>005 步步高英语（入门篇）</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/bbk/09-v1-006-english-words.png" width="192" alt="006 英语单词步步高（初中版）"><br><sub>006 英语单词步步高（初中版）</sub></td><td align="center"><img src="docs/screenshots/bbk/10-v1-007-spreadsheet.png" width="192" alt="007 步步高电子表格"><br><sub>007 步步高电子表格</sub></td><td align="center"><img src="docs/screenshots/bbk/11-v1-009-household.png" width="192" alt="009 步步高家政管理"><br><sub>009 步步高家政管理</sub></td><td align="center"><img src="docs/screenshots/bbk/12-v1-010-word-problems.png" width="192" alt="010 应用题大全"><br><sub>010 应用题大全</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/bbk/13-v1-011-geometry.png" width="192" alt="011 几何大师"><br><sub>011 几何大师</sub></td><td align="center"><img src="docs/screenshots/bbk/14-v1-016-chinese.png" width="192" alt="016 初中语文辅导与训练"><br><sub>016 初中语文辅导与训练</sub></td><td align="center"><img src="docs/screenshots/bbk/15-v1-119-brain-training.png" width="192" alt="119 智力训练 365"><br><sub>119 智力训练 365</sub></td><td align="center"><img src="docs/screenshots/bbk/16-v1-122-paint.png" width="192" alt="122 神奇画笔"><br><sub>122 神奇画笔</sub></td></tr>
 <tr><td align="center"><img src="docs/screenshots/bbk/17-v1-126-china-records.png" width="192" alt="126 中国之最（一）"><br><sub>126 中国之最（一）</sub></td><td align="center"><img src="docs/screenshots/bbk/18-v1-128-world-records.png" width="192" alt="128 世界之最"><br><sub>128 世界之最</sub></td><td align="center"><img src="docs/screenshots/bbk/19-v1-129-history.png" width="192" alt="129 博古通今（一）"><br><sub>129 博古通今（一）</sub></td><td align="center"><img src="docs/screenshots/bbk/20-v1-132-historical-figures.png" width="192" alt="132 数风流人物"><br><sub>132 数风流人物</sub></td></tr>
 <tr><td align="center"><img src="docs/screenshots/bbk/21-v1-190-database.png" width="192" alt="190 跟我学数据库"><br><sub>190 跟我学数据库</sub></td><td align="center"><img src="docs/screenshots/bbk/22-v1-193-windows95.png" width="192" alt="193 跟我学 Windows 95"><br><sub>193 跟我学 Windows 95</sub></td><td align="center"><img src="docs/screenshots/bbk/23-v1-196-cognition.png" width="192" alt="196 认知能力训练"><br><sub>196 认知能力训练</sub></td><td align="center"><img src="docs/screenshots/bbk/24-v1-277-school-english.png" width="192" alt="277 走进生活英语系列·学校英语"><br><sub>277 走进生活英语系列·学校英语</sub></td></tr>
 <tr><td align="center"><img src="docs/screenshots/bbk/25-v1-gt001-games.png" width="192" alt="GT001 游戏合集"><br><sub>GT001 游戏合集</sub></td><td align="center"><img src="docs/screenshots/bbk/26-98-boot.png" width="192" alt="98 型：开机画面"><br><sub>98 型：开机画面</sub></td><td align="center"><img src="docs/screenshots/bbk/27-98-self-test.png" width="192" alt="98 型：开机自检"><br><sub>98 型：开机自检</sub></td><td align="center"><img src="docs/screenshots/bbk/28-98-desktop.png" width="192" alt="98 型：桌面"><br><sub>98 型：桌面</sub></td></tr>
@@ -55,9 +57,22 @@ BIOS、软盘和光盘镜像都**不**随本程序提供，请使用自己的备
 <details><summary>更多（9 张）</summary>
 
 <table>
-<tr><td align="center"><img src="docs/screenshots/sb2000/05-003-paint.png" width="192" alt="003 神奇画笔"><br><sub>003 神奇画笔</sub></td><td align="center"><img src="docs/screenshots/sb2000/06-004-f-basic.png" width="192" alt="004 F-BASIC 程序设计"><br><sub>004 F-BASIC 程序设计</sub></td><td align="center"><img src="docs/screenshots/sb2000/07-005-english-dictionary.png" width="192" alt="005 少儿英语图解字典"><br><sub>005 少儿英语图解字典</sub></td><td align="center"><img src="docs/screenshots/sb2000/08-006-poetry.png" width="192" alt="006 诗词鉴赏"><br><sub>006 诗词鉴赏</sub></td></tr>
-<tr><td align="center"><img src="docs/screenshots/sb2000/09-007-household.png" width="192" alt="007 家政管理"><br><sub>007 家政管理</sub></td><td align="center"><img src="docs/screenshots/sb2000/10-008-idioms.png" width="192" alt="008 成语故事"><br><sub>008 成语故事</sub></td><td align="center"><img src="docs/screenshots/sb2000/11-009-pinyin.png" width="192" alt="009 少儿拼音乐园"><br><sub>009 少儿拼音乐园</sub></td><td align="center"><img src="docs/screenshots/sb2000/12-010-number-square.png" width="192" alt="010 数字方阵"><br><sub>010 数字方阵</sub></td></tr>
-<tr><td align="center"><img src="docs/screenshots/sb2000/13-019-games.png" width="192" alt="019 热血格斗 + 热血排球"><br><sub>019 热血格斗 + 热血排球</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/sb2000/05-003-paint.png" width="192" alt="003 神奇画笔"><br><sub>003 神奇画笔</sub></td><td align="center"><img src="docs/screenshots/sb2000/06-014-f-basic.png" width="192" alt="014 F-BASIC 程序设计"><br><sub>014 F-BASIC 程序设计</sub></td><td align="center"><img src="docs/screenshots/sb2000/07-253-pinyin.png" width="192" alt="253 少儿拼音乐园"><br><sub>253 少儿拼音乐园</sub></td><td align="center"><img src="docs/screenshots/sb2000/08-262-poetry.png" width="192" alt="262 诗词鉴赏"><br><sub>262 诗词鉴赏</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/sb2000/09-275-idioms.png" width="192" alt="275 成语故事"><br><sub>275 成语故事</sub></td><td align="center"><img src="docs/screenshots/sb2000/10-371-english-dictionary.png" width="192" alt="371 少儿英语图解字典"><br><sub>371 少儿英语图解字典</sub></td><td align="center"><img src="docs/screenshots/sb2000/11-391-household.png" width="192" alt="391 家政管理"><br><sub>391 家政管理</sub></td><td align="center"><img src="docs/screenshots/sb2000/12-401-number-square.png" width="192" alt="401 数字方阵"><br><sub>401 数字方阵</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/sb2000/13-g001-games.png" width="192" alt="G001 热血格斗 + 热血排球"><br><sub>G001 热血格斗 + 热血排球</sub></td></tr>
+</table>
+</details>
+
+### 小霸王 SB97
+
+<table>
+<tr><td align="center"><img src="docs/screenshots/sb97/01-a10-chinese.png" width="192" alt="A10 小学语文基础训练一年级"><br><sub>A10 小学语文基础训练一年级</sub></td><td align="center"><img src="docs/screenshots/sb97/02-b751-algebra.png" width="192" alt="B751 初中代数二年级（上）"><br><sub>B751 初中代数二年级（上）</sub></td><td align="center"><img src="docs/screenshots/sb97/03-g71-geography.png" width="192" alt="G71 中国地理"><br><sub>G71 中国地理</sub></td><td align="center"><img src="docs/screenshots/sb97/04-v01-brain-training.png" width="192" alt="V01 智力训练（一）"><br><sub>V01 智力训练（一）</sub></td></tr>
+</table>
+
+<details><summary>更多（3 张）</summary>
+
+<table>
+<tr><td align="center"><img src="docs/screenshots/sb97/05-x71-computer-exam.png" width="192" alt="X71 计算机等级考试（初级版）基础知识 DOS 教学"><br><sub>X71 计算机等级考试（初级版）基础知识 DOS 教学</sub></td><td align="center"><img src="docs/screenshots/sb97/06-x91-wps.png" width="192" alt="X91 WPS"><br><sub>X91 WPS</sub></td><td align="center"><img src="docs/screenshots/sb97/07-x92-basic.png" width="192" alt="X92 BASIC"><br><sub>X92 BASIC</sub></td></tr>
 </table>
 </details>
 
@@ -90,6 +105,12 @@ BIOS、软盘和光盘镜像都**不**随本程序提供，请使用自己的备
 <tr><td align="center"><img src="docs/screenshots/kingwon/13-test-papers.png" width="192" alt="科王电脑 VCD 标准化试题集"><br><sub>科王电脑 VCD 标准化试题集</sub></td></tr>
 </table>
 </details>
+
+### 中索 VCD
+
+<table>
+<tr><td align="center"><img src="docs/screenshots/zoson/01-stardvcd01-desktop.png" width="192" alt="STARDVCD01：文字处理、数据库"><br><sub>STARDVCD01：文字处理、数据库</sub></td><td align="center"><img src="docs/screenshots/zoson/02-starcvcd02-desktop.png" width="192" alt="STARCVCD02：打字学校、英语词霸"><br><sub>STARCVCD02：打字学校、英语词霸</sub></td><td align="center"><img src="docs/screenshots/zoson/03-starcvcd03-desktop.png" width="192" alt="STARCVCD03：益智游戏、电子琴、音乐欣赏"><br><sub>STARCVCD03：益智游戏、电子琴、音乐欣赏</sub></td><td align="center"><img src="docs/screenshots/zoson/04-starcvcd04-games.png" width="192" alt="STARCVCD04：游戏菜单"><br><sub>STARCVCD04：游戏菜单</sub></td></tr>
+</table>
 
 ### 小霸王中英文电脑学习卡
 
@@ -138,9 +159,9 @@ BIOS、软盘和光盘镜像都**不**随本程序提供，请使用自己的备
 
 另一种方式：把 BIOS 复制一份，改成和镜像相同的文件名放在一起，例如 `游戏.nes` 和 `游戏.img`，然后打开这个 `.nes`，同名的镜像会自动插入。
 
-### 3. 裕兴、科王、邦谷：先开机，再放盘
+### 3. 小霸王 SB97、裕兴、科王、邦谷、灵童、中索：先开机，再放盘
 
-打开 BIOS 的 `.nes` 文件。和 BIOS 同名的软盘镜像（`.img`）或光盘镜像（`.cue`，或 `.bin` / `.iso`）会自动放进驱动器，也可以开机后再选。
+打开 BIOS 的 `.nes` 文件。和 BIOS 同名的软盘镜像（`.img`，灵童是 `.woz`）或光盘镜像（`.cue`，或 `.bin` / `.iso`）会自动放进驱动器，也可以开机后再选。
 
 ### 4. 换盘
 
@@ -179,6 +200,8 @@ BIOS、软盘和光盘镜像都**不**随本程序提供，请使用自己的备
   - 小霸王 SB-2000：UM6576 显示芯片（块传输 DMA、扩展的图块模式）、软驱、语音。
   - 裕兴：软驱、VCD 光驱与光盘菜单（按菜单项所指的程序启动）、MMC3 兼容芯片与转换的卡带游戏、XT 键盘、串口鼠标、313 行的画面时序。
   - 科王 / 邦谷：兼容 PPU、310 行的画面时序、光驱与光盘载入程序、软驱、光盘游戏的 MMC2 等芯片、键盘与鼠标、打印机。
+  - 小霸王 SB97：V5.0 卡带上的 SB DOS、uPD765 软驱控制器、256KB 程序内存、语音、打印机。
+  - 灵童 / 中索：Apple II 式软驱（WOZ 镜像）、电子盘、1MB / 2MB 内存、TMS5220 型语音、中索 VCD 的光驱与光盘载入程序、打印机。
 - **VCD 视频解码**：光盘上的 MPEG-1 画面和 MP2 声音在机器自己的画面上播放，带播放条，与即时存档和倒带同步。
 - **换盘窗口**：可搜索的软盘 / 光盘列表，插入、弹出、更换文件夹。
 - **Super A'Can 游戏机**：整机模拟、手柄设置（**Settings → Other systems → Super A'Can**）、68000 调试器与声音处理器调试器。
