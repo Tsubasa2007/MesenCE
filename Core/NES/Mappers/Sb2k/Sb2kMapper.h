@@ -115,6 +115,16 @@ private:
 	unique_ptr<BbkLpcAudio> _lpcAudio;
 	int16_t _dacLastOutput = 0;
 
+	//The DAC stream, played out at the timer's rate (see WriteDac)
+	static constexpr uint8_t DacFifoSize = 64;
+	static constexpr int32_t DacFifoTarget = 24;
+	uint8_t _dacFifo[DacFifoSize] = {};
+	uint8_t _dacFifoHead = 0;
+	uint8_t _dacFifoCount = 0;
+	bool _dacPlaying = false;
+	int32_t _dacPhase = 0; //CPU cycles x256 since the last sample went out
+	int32_t _dacLevelAvg = DacFifoTarget * 256; //the queue's average length, x256
+
 	//Program banking
 	uint8_t _pbank[8] = {};
 	uint8_t _eBank = 0;
@@ -367,11 +377,9 @@ private:
 		}
 	}
 
-	//8-bit DAC at $4027: unsigned samples centered at $80. The CPU paces its writes off
-	//the programmable timer, so holding the last sample between writes reproduces the
-	//stream at the right rate with no explicit sample clock. Mixed on the VRC7 slot at
-	//x1 like the speech synth (see BbkLpcAudio for the scaling rationale); +/-4096 is
-	//comparable to full APU music volume.
+	//8-bit DAC at $4027: unsigned samples centered at $80. Mixed on the VRC7 slot at x1 like
+	//the speech synth (see BbkLpcAudio for the scaling rationale); +/-4096 is comparable to
+	//full APU music volume.
 	void SetDacLevel(int16_t level)
 	{
 		if(level != _dacLastOutput) {
@@ -380,9 +388,71 @@ private:
 		}
 	}
 
-	void WriteDac(uint8_t value)
+	void OutputDac(uint8_t value)
 	{
 		SetDacLevel((int16_t)((int8_t)(value ^ 0x80)) * 32);
+	}
+
+	//The CPU paces its writes off the programmable timer: it polls the timer's status bit and
+	//writes the next sample when it sets. Played the moment it is written, the stream carried
+	//the write timing with it - the 7-cycle poll loop jitters each sample, and the boot
+	//sound's NMI handler runs ~350 cycles a frame, long enough for 4 of the timer's periods to
+	//pass under it, so every frame the output stalled on one sample for 5 periods: a 50Hz
+	//buzz over the whole sound. Like the reference emulator, which streams the DAC at the
+	//timer's rate, the samples go through a short queue and out one per timer period instead;
+	//the period is trimmed by how far the queue sits from its target, so it follows the rate
+	//the CPU actually delivers (about 1% slow in the boot sound) and the queue never runs dry.
+	//About 1ms of latency. Without the CPU-clocked timer running, the sample goes straight out.
+	void WriteDac(uint8_t value)
+	{
+		if(_cart || (_reg4034 & 0xA0) != 0x80) {
+			ClearDacFifo();
+			OutputDac(value);
+			return;
+		}
+		if(_dacFifoCount == DacFifoSize) {
+			OutputDac(_dacFifo[_dacFifoHead]);
+			_dacFifoHead = (uint8_t)((_dacFifoHead + 1) % DacFifoSize);
+			_dacFifoCount--;
+		}
+		_dacFifo[(_dacFifoHead + _dacFifoCount) % DacFifoSize] = value;
+		_dacFifoCount++;
+	}
+
+	void ClockDac()
+	{
+		if(!_dacPlaying) {
+			if(_dacFifoCount < DacFifoTarget) {
+				return;
+			}
+			_dacPlaying = true;
+			_dacPhase = 0;
+		}
+
+		_dacPhase += 256;
+		int32_t period = ((_reg4034 & 0x0F) + 1) * (_reg4035 + 1) * 256;
+		//About 0.1% longer per sample short of the target
+		period += (int32_t)(((int64_t)period * (DacFifoTarget * 256 - _dacLevelAvg)) >> 18);
+		if(_dacPhase >= period) {
+			_dacPhase -= period;
+			if(_dacFifoCount) {
+				OutputDac(_dacFifo[_dacFifoHead]);
+				_dacFifoHead = (uint8_t)((_dacFifoHead + 1) % DacFifoSize);
+				_dacFifoCount--;
+				_dacLevelAvg += ((int32_t)_dacFifoCount * 256 - _dacLevelAvg) / 64;
+			} else {
+				_dacPlaying = false;
+			}
+		}
+	}
+
+	void ClearDacFifo()
+	{
+		_dacFifoHead = 0;
+		_dacFifoCount = 0;
+		_dacPlaying = false;
+		_dacPhase = 0;
+		_dacLevelAvg = DacFifoTarget * 256;
 	}
 
 	//PS/2 keyboard: queue a single response byte after the standard command-ACK delay
@@ -865,6 +935,7 @@ private:
 				if(!(value & 0x80)) {
 					//Timer stopped: the DAC stream is over, return the output to center
 					//so no DC offset lingers
+					ClearDacFifo();
 					SetDacLevel(0);
 				}
 				_reg4034 = value;
@@ -1037,6 +1108,7 @@ private:
 					_timerPrescaleCnt = 0;
 					_kbdSendIrqDelay = 0;
 
+					ClearDacFifo();
 					SetDacLevel(0);
 					_lpcAudio->Reset();
 
@@ -1560,6 +1632,7 @@ public:
 		if((_reg4034 & 0xA0) == 0x80) {
 			//Timer driven by the CPU clock
 			TimerTick(1);
+			ClockDac();
 		}
 
 		if(_kbdSendIrqDelay) {
@@ -1597,6 +1670,8 @@ public:
 		SV(_fdc);
 		SV(_lpcAudio);
 		SV(_dacLastOutput);
+		SVArray(_dacFifo, DacFifoSize);
+		SV(_dacFifoHead); SV(_dacFifoCount); SV(_dacPlaying); SV(_dacPhase); SV(_dacLevelAvg);
 
 		SVArray(_pbank, 8);
 		SV(_eBank); SV(_ramBoot); SV(_vbank); SV(_mode6576);
