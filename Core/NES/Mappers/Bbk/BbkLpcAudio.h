@@ -539,9 +539,12 @@ private:
 			int16_t* vector2 = (int16_t*)&_frameCurr;
 
 			for(size_t i = 0; i < sizeof(LpcFrame) / sizeof(int16_t); i++) {
-				int16_t v = vector1[i] - vector0[i];
-				v = (int16_t)(((int32_t)v * ratio) >> FracBits);
-				vector2[i] = v + vector0[i];
+				//The step is taken at full width: two reflection coefficients of opposite sign can be
+				//more than 1.0 apart, and a 16-bit difference wraps - the coefficient then swept
+				//the wrong way towards -1 or +1 across the frame and the filter rang: a squeal on
+				//the sound changes where it happens
+				int32_t v = (int32_t)vector1[i] - vector0[i];
+				vector2[i] = (int16_t)(vector0[i] + (int32_t)(((int64_t)v * ratio) >> FracBits));
 			}
 
 			currPitch += _frameCurr.Pitch;
