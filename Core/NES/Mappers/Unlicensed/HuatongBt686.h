@@ -15,14 +15,15 @@
 //八通 BT-686, the 华通 (Huatong) learning machine, with its 系统程序卡 (system program card) in the
 //cartridge slot. Read off the card's code; there is no reference emulator for it.
 //
-//- The image is the system card as PRG (512KB, a 27C040 behind a 74LS273) and the machine's
-//  built-in card (BT686-3: a 512KB mask ROM, 8KB and 32KB of SRAM, a 74LS273) as CHR. The mask
-//  ROM holds the 16x16 font, the floppy boot loader and other data; the PPU itself sees only
-//  CHR RAM, 32KB of it.
+//- The image is all PRG: the machine's built-in card (BT686-3: a 512KB mask ROM, 8KB and 32KB of
+//  SRAM, a 74LS273), then the system card (512KB, a 27C040 behind a 74LS273). Both are the CPU's:
+//  the mask ROM holds the reset code, the 16x16 font, the floppy boot loader and other data, and
+//  the PPU sees only CHR RAM, 32KB of it. An image of the mask ROM alone is the machine with its
+//  cartridge slot empty.
 //- $4100-$410F: eight one-bit latches, set by any access - A1-A3 pick the latch, A0 is the value.
 //  Latches 0 and 1 pick what $8000-$FFFF shows, in the 32KB page $4500 selects:
 //    1 clear, 0 clear - the built-in mask ROM
-//    1 set, 0 clear   - the system card
+//    1 set, 0 clear   - the system card, open bus without one
 //    1 clear, 0 set   - the RAM card, 128KB: HT-DOS's DISKCOPY says "You ram is not 128k"
 //                       when it is missing, the input method programs refuse to run with
 //                       less, and a course disk only runs with exactly that (below)
@@ -91,6 +92,7 @@ private:
 	};
 
 	static constexpr uint32_t RamSize = 0x20000;
+	static constexpr uint32_t MaskRomSize = 0x80000;
 
 	uint8_t _latches = 0;
 	uint8_t _page = 0;
@@ -174,13 +176,13 @@ private:
 		if(Latch(1) && Latch(0)) {
 			RemoveCpuMemoryMapping(0x8000, 0xFFFF);
 		} else if(Latch(1)) {
-			SelectPrgPage2x(0, page << 1);
-		} else if(!Latch(0)) {
-			if(_chrRomSize >= 0x8000) {
-				SetCpuMemoryMapping(0x8000, 0xFFFF, _chrRom, (page * 0x8000) % _chrRomSize, _chrRomSize, MemoryAccessType::Read);
+			if(_prgSize >= MaskRomSize * 2) {
+				SelectPrgPage2x(0, (MaskRomSize >> 14) + (page << 1));
 			} else {
 				RemoveCpuMemoryMapping(0x8000, 0xFFFF);
 			}
+		} else if(!Latch(0)) {
+			SelectPrgPage2x(0, page << 1);
 		} else {
 			SetCpuMemoryMapping(0x8000, 0xBFFF, _ram.data(), (page * 0x8000) % RamSize, RamSize, MemoryAccessType::ReadWrite);
 			uint32_t upper = Latch(5) ? RamSize - 0x4000 : (page * 0x8000 + 0x4000) % RamSize;
@@ -414,10 +416,12 @@ protected:
 	}
 
 public:
-	static constexpr uint32_t V20Crc = 0x0A304C7A;
-	static constexpr uint32_t V30Crc = 0xE7976C10;
+	//PRG CRC32s: the mask ROM followed by each system card, and the mask ROM alone
+	static constexpr uint32_t V20Crc = 0x09F6C5CD;
+	static constexpr uint32_t V30Crc = 0xE451E5A7;
+	static constexpr uint32_t NoCardCrc = 0xB4300B49;
 
-	static bool IsBt686(uint32_t prgCrc) { return prgCrc == V20Crc || prgCrc == V30Crc; }
+	static bool IsBt686(uint32_t prgCrc) { return prgCrc == V20Crc || prgCrc == V30Crc || prgCrc == NoCardCrc; }
 
 	vector<string> GetDiskFileList()
 	{

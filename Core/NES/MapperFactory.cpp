@@ -488,7 +488,7 @@ BaseMapper* MapperFactory::GetMapperFromID(RomData& romData)
 				return new YuxingV40();
 			}
 			if(HuatongBt686::IsBt686(romData.Info.Hash.PrgCrc32)) {
-				//The 八通 BT-686's system card and built-in ROM, dumped with this number - see HuatongBt686.
+				//The 八通 BT-686's built-in ROM, with or without its system card - see HuatongBt686.
 				//Dendy-timed, with the YuXing machines' 313-line frame (see HuatongBt686)
 				romData.Info.System = GameSystem::Dendy;
 				romData.Info.InputType = GameInputType::SuborKeyboard;
