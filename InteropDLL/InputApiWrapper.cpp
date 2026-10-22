@@ -79,6 +79,11 @@ extern "C"
 		return _emu->HasControlDevice(type);
 	}
 
+	DllExport bool __stdcall IsKeyboardConnected()
+	{
+		return _emu->IsKeyboardConnected();
+	}
+
 	DllExport void __stdcall ResetLagCounter()
 	{
 		_emu->ResetLagCounter();

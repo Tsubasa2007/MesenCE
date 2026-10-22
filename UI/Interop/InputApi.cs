@@ -23,6 +23,7 @@ namespace Mesen.Interop
 		[DllImport(DllPath)] public static extern void ResetLagCounter();
 
 		[DllImport(DllPath)][return: MarshalAs(UnmanagedType.I1)] public static extern bool HasControlDevice(ControllerType type);
+		[DllImport(DllPath)][return: MarshalAs(UnmanagedType.I1)] public static extern bool IsKeyboardConnected();
 
 		[DllImport(DllPath)] public static extern SystemMouseState GetSystemMouseState(IntPtr rendererHandle);
 		[DllImport(DllPath)][return: MarshalAs(UnmanagedType.I1)] public static extern bool CaptureMouse(Int32 x, Int32 y, Int32 width, Int32 height, IntPtr rendererHandle);

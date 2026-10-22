@@ -45,6 +45,7 @@ namespace Mesen.Windows
 		private bool _testModeEnabled;
 		private bool _needCloseValidation = true;
 		private bool _isClosing = false;
+		private long _altF4Stamp = -1;
 
 		private bool _preventFullscreenToggle = false;
 
@@ -163,6 +164,13 @@ namespace Mesen.Windows
 
 		protected override void OnClosing(WindowClosingEventArgs e)
 		{
+			if(_altF4Stamp >= 0 && (_stopWatch.ElapsedTicks - _altF4Stamp) * 1000 / Stopwatch.Frequency < 500 && InputApi.IsKeyboardConnected()) {
+				//With an emulated keyboard connected, Alt+F4 is a key for the emulated machine
+				//(e.g. to switch input methods): the key has already gone to it, keep the window open
+				e.Cancel = true;
+				return;
+			}
+
 			base.OnClosing(e);
 			if(_needCloseValidation) {
 				e.Cancel = true;
@@ -835,6 +843,10 @@ namespace Mesen.Windows
 				InputApi.SetKeyState(keyCode, true);
 			}
 
+			if(e.Key == Key.F4) {
+				_altF4Stamp = e.KeyModifiers.HasFlag(KeyModifiers.Alt) ? _stopWatch.ElapsedTicks : -1;
+			}
+
 			if(e.Key == Key.Tab || e.Key == Key.F10) {
 				//Prevent menu/window from handling these keys to avoid issue with custom shortcuts
 				e.Handled = true;
@@ -846,6 +858,10 @@ namespace Mesen.Windows
 			if(OperatingSystem.IsMacOS()) {
 				//Keyhandler handles key internally on macOS
 				return;
+			}
+
+			if(e.Key == Key.F4) {
+				_altF4Stamp = -1;
 			}
 
 			if(e.Key != Key.None) {
