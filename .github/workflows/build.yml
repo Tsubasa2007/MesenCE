@@ -1,6 +1,10 @@
 name: Build Mesen
 
-on: [push, pull_request]
+#win7-compat builds only the Windows 7 exe (win7.yml)
+on:
+  push:
+    branches-ignore: [win7-compat]
+  pull_request:
 
 env:
   DOTNET_CLI_TELEMETRY_OPTOUT: 1

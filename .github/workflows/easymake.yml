@@ -2,6 +2,7 @@ name: Build EasyMake
 
 on:
   push:
+    branches-ignore: [win7-compat]
     paths:
       - 'Tools/EasyMake/**'
       - '.github/workflows/easymake.yml'
