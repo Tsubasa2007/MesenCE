@@ -5,6 +5,7 @@ name: Build PcLinkBridge
 
 on:
   push:
+    branches-ignore: [win7-compat]
     paths:
       - 'Tools/PcLinkBridge/**'
       - 'Core/NES/Mappers/Bbk/BbkPcLink.h'

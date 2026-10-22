@@ -1,0 +1,62 @@
+name: Build Mesen (Windows 7)
+
+#The win7-compat branch: the Windows AoT build only (the other build needs the .NET runtime, which
+#Windows 7 can't install), and it fails if MesenCore.dll or Mesen.exe imports anything that isn't in
+#.github/win7/imports.txt - the imports of a build known to run on Windows 7
+on:
+  push:
+    branches: [win7-compat]
+  workflow_dispatch:
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+
+jobs:
+  windows7:
+    runs-on: windows-2025-vs2026
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install .NET Core
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.x
+
+      - name: Setup MSBuild.exe
+        uses: microsoft/setup-msbuild@v3
+        with:
+          msbuild-architecture: x64
+
+      - name: Restore packages
+        run: dotnet restore -p:TargetFramework="net10.0" -r win-x64 -p:PublishAot="true" -p:BuildWithNetFrameworkHostedCompiler=true
+
+      - name: Write commit SHA1 to file
+        uses: ./.github/actions/build-sha1-action
+
+      - name: Get librashader library
+        uses: ./.github/actions/get-librashader-action
+        with:
+          url: 'librashader-x64-windows.zip'
+          file: 'librashader.dll'
+          dest: './UI/Dependencies/'
+
+      - name: Build Mesen
+        run: msbuild -nologo -v:d -clp:ForceConsoleColor -m -p:Configuration=Release -p:Platform=x64 -t:Clean,UI -p:TargetFramework="net10.0" -p:OptimizeUi="true"
+
+      - name: Publish Mesen
+        run: dotnet publish --no-restore -c Release -p:PublishAot="true" -p:SelfContained="true" -p:PublishSingleFile="false" -p:OptimizeUi="true" -p:Platform="Any CPU" -p:TargetFramework="net10.0" -r win-x64 Mesen.sln /p:PublishProfile=UI\Properties\PublishProfiles\Release.pubxml
+
+      - name: Check imports against Windows 7
+        run: python .github/win7/check-imports.py bin/win-x64/Release/MesenCore.dll build/TmpReleaseBuild/Mesen.exe
+
+      - name: Upload Mesen
+        uses: actions/upload-artifact@v7
+        with:
+          name: Mesen (Windows 7 - net10.0 - AoT)
+          path: |
+            build/TmpReleaseBuild/Mesen.exe
