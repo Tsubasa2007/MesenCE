@@ -1,7 +1,12 @@
 name: Run tests
 
-#workflow_dispatch: a run can also be started by hand (Actions tab), e.g. when a push got none
-on: [push, pull_request, workflow_dispatch]
+#win7-compat builds only the Windows 7 exe (win7.yml); workflow_dispatch: a run can also be started
+#by hand (Actions tab), e.g. when a push got none
+on:
+  push:
+    branches-ignore: [win7-compat]
+  pull_request:
+  workflow_dispatch:
 
 env:
   DOTNET_CLI_TELEMETRY_OPTOUT: 1
