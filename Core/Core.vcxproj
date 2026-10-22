@@ -236,6 +236,7 @@
     <ClInclude Include="NES\Mappers\Unlicensed\ColorDreams.h" />
     <ClInclude Include="NES\Mappers\Unlicensed\ColorDreams46.h" />
     <ClInclude Include="NES\Mappers\Unlicensed\Dance2000.h" />
+    <ClInclude Include="NES\Mappers\Unlicensed\HuatongBt686.h" />
     <ClInclude Include="NES\Mappers\Unlicensed\AudioTape.h" />
     <ClInclude Include="NES\Mappers\Unlicensed\PlqAvCard.h" />
     <ClInclude Include="NES\Mappers\Unlicensed\DaouInfosys.h" />

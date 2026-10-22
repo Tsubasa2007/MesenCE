@@ -33,6 +33,7 @@
 #include "NES/Input/SuborMouse.h"
 #include "NES/Input/SuborMouse24.h"
 #include "NES/Mappers/Subor/SuborCarts.h"
+#include "NES/Mappers/Unlicensed/HuatongBt686.h"
 #include "NES/Input/BbkMouse.h"
 #include "NES/Input/Ps2Mouse.h"
 #include "NES/Input/CityPatrolmanGun.h"
@@ -145,12 +146,13 @@ shared_ptr<BaseControlDevice> NesControlManager::CreateControllerDevice(Controll
 			//are known by their BIOS's PRG CRC32. Some Subor cartridges' scan also probes row 9 for
 			//the extended keyboard and reads rows 10-12 when it is there - Alt among them, which
 			//their software's Alt+Fn shortcuts need - so theirs is the extended one (see
-			//SuborCarts::HasExtendedKeyboard). The YuXing machines stop at row 8.
+			//SuborCarts::HasExtendedKeyboard). The YuXing machines stop at row 8. The BT-686 scans
+			//the full keyboard but has the extended one's Alt.
 			uint32_t prgCrc = _console->GetMapper()->GetRomInfo().Hash.PrgCrc32;
 			bool isSuborCart = SuborCarts::IsSuborCart(prgCrc);
 			bool reduced = YuxingMapper::IsV10OrV11(prgCrc) || isSuborCart;
 			bool mouseOnBit0 = SuborCarts::HasPs2Mouse(prgCrc) || SuborCarts::HasSerialMouseOnPort2(prgCrc);
-			device.reset(new SuborKeyboard(_emu, keys, reduced, SuborCarts::HasExtendedKeyboard(prgCrc), mouseOnBit0, SuborCarts::HasAltAtEnd(prgCrc)));
+			device.reset(new SuborKeyboard(_emu, keys, reduced, SuborCarts::HasExtendedKeyboard(prgCrc), mouseOnBit0, SuborCarts::HasAltAtEnd(prgCrc), HuatongBt686::IsBt686(prgCrc)));
 			break;
 		}
 		case ControllerType::BbkKeyboard: device.reset(new BbkKeyboard(_emu, keys)); break;

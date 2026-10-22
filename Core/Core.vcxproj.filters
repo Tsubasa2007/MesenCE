@@ -2502,6 +2502,9 @@
     <ClInclude Include="NES\Mappers\Unlicensed\Dance2000.h">
       <Filter>NES\Mappers\Unlicensed</Filter>
     </ClInclude>
+    <ClInclude Include="NES\Mappers\Unlicensed\HuatongBt686.h">
+      <Filter>NES\Mappers\Unlicensed</Filter>
+    </ClInclude>
     <ClInclude Include="NES\Mappers\Unlicensed\AudioTape.h">
       <Filter>NES\Mappers\Unlicensed</Filter>
     </ClInclude>

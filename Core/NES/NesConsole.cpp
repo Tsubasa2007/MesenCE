@@ -33,6 +33,7 @@
 #include "NES/Mappers/Subor/Subor560.h"
 #include "NES/Mappers/LingTong/LingTongMapper.h"
 #include "NES/Mappers/Unlicensed/Dance2000.h"
+#include "NES/Mappers/Unlicensed/HuatongBt686.h"
 #include "NES/Mappers/Unlicensed/PlqAvCard.h"
 #include "NES/Mappers/Unlicensed/DongdaPec586.h"
 #include "NES/Mappers/Bung/DrPcJrMapper.h"
@@ -486,6 +487,8 @@ string NesConsole::GetInsertedDiskPath()
 		return lingTong->GetCurrentDiskFilename();
 	} else if(Dance2000* subor = dynamic_cast<Dance2000*>(_mapper.get()); subor && subor->HasFloppyDrive()) {
 		return subor->GetCurrentDiskFilename();
+	} else if(HuatongBt686* bt686 = dynamic_cast<HuatongBt686*>(_mapper.get())) {
+		return bt686->GetCurrentDiskFilename();
 	} else if(PlqAvCard* card = dynamic_cast<PlqAvCard*>(_mapper.get())) {
 		return card->GetCurrentTapeFilename();
 	}
@@ -514,6 +517,8 @@ vector<string> NesConsole::GetBbkDiskList(int32_t& currentIndex)
 		paths = lingTong->GetDiskFileList();
 	} else if(Dance2000* subor = dynamic_cast<Dance2000*>(_mapper.get()); subor && subor->HasFloppyDrive()) {
 		paths = subor->GetDiskFileList();
+	} else if(HuatongBt686* bt686 = dynamic_cast<HuatongBt686*>(_mapper.get())) {
+		paths = bt686->GetDiskFileList();
 	} else if(PlqAvCard* card = dynamic_cast<PlqAvCard*>(_mapper.get())) {
 		//The cassette cards' tapes go in the same list
 		paths = card->GetTapeFileList();
@@ -959,7 +964,8 @@ bool NesConsole::IsBbkGame()
 	Sb2kMapper* sb2k = dynamic_cast<Sb2kMapper*>(_mapper.get());
 	return dynamic_cast<BbkMapper*>(_mapper.get()) != nullptr || (sb2k && !sb2k->IsUm6578Cart()) ||
 		dynamic_cast<YuxingMapper*>(_mapper.get()) != nullptr || dynamic_cast<DrPcJrMapper*>(_mapper.get()) != nullptr ||
-		dynamic_cast<LingTongMapper*>(_mapper.get()) != nullptr || HasSuborFloppy() || IsTapeCard();
+		dynamic_cast<LingTongMapper*>(_mapper.get()) != nullptr || dynamic_cast<HuatongBt686*>(_mapper.get()) != nullptr ||
+		HasSuborFloppy() || IsTapeCard();
 }
 
 bool NesConsole::IsTapeCard()
@@ -1027,6 +1033,9 @@ ShortcutState NesConsole::IsShortcutAllowed(EmulatorShortcut shortcut, uint32_t 
 				}
 				if(Dance2000* subor = dynamic_cast<Dance2000*>(_mapper.get()); subor && subor->HasFloppyDrive()) {
 					return (ShortcutState)(shortcutParam < subor->GetDiskCount());
+				}
+				if(HuatongBt686* bt686 = dynamic_cast<HuatongBt686*>(_mapper.get())) {
+					return (ShortcutState)(shortcutParam < bt686->GetDiskCount());
 				}
 				if(PlqAvCard* card = dynamic_cast<PlqAvCard*>(_mapper.get())) {
 					return (ShortcutState)(shortcutParam < card->GetTapeCount());

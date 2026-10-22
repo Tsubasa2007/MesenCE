@@ -207,6 +207,7 @@
 #include "NES/Mappers/Unlicensed/PlqAvCard.h"
 #include "NES/Mappers/Unlicensed/DaouInfosys.h"
 #include "NES/Mappers/Unlicensed/DongdaPec586.h"
+#include "NES/Mappers/Unlicensed/HuatongBt686.h"
 #include "NES/Mappers/Unlicensed/DreamTech01.h"
 #include "NES/Mappers/Unlicensed/Edu2000.h"
 #include "NES/Mappers/Unlicensed/Eh8813A.h"
@@ -485,6 +486,13 @@ BaseMapper* MapperFactory::GetMapperFromID(RomData& romData)
 				romData.Info.InputType = GameInputType::FamilyBasicKeyboard;
 				romData.Info.HasBattery = true;
 				return new YuxingV40();
+			}
+			if(HuatongBt686::IsBt686(romData.Info.Hash.PrgCrc32)) {
+				//The 八通 BT-686's system card and built-in ROM, dumped with this number - see HuatongBt686.
+				//Dendy-timed, with the YuXing machines' 313-line frame (see HuatongBt686)
+				romData.Info.System = GameSystem::Dendy;
+				romData.Info.InputType = GameInputType::SuborKeyboard;
+				return new HuatongBt686();
 			}
 			//Reuses the standard keyboard+mouse input id; NesConsole picks the YuXing
 			//devices apart from the Subor/BBK ones by the mapper type

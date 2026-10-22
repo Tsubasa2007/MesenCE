@@ -116,6 +116,7 @@ private:
 	uint8_t _latch = 0;
 
 	bool _clearGeometryOnReset = false;
+	bool _silentWithoutDisk = false;
 	uint8_t _cylinder = 0, _head = 0, _sectorNumber = 0;
 	int32_t _sectorSize = 0;
 	int32_t _bytesLeft = 0;
@@ -175,11 +176,15 @@ private:
 
 	//Ends a command whose sector search failed. With a disk turning the result comes after two
 	//revolutions; with no disk or the motor off there are no index pulses to count, and the
-	//result is reported at once as before.
+	//result is reported at once as before - or, for a machine whose software expects the real
+	//controller's silence there, never (see SetSilentWithoutDisk).
 	void EndSearch(Drive& d)
 	{
 		if(d.Inserted && d.Running) {
 			_searchFailDelay = SearchFailCycles;
+			_msr &= ~MsrReady;
+		} else if(!d.Inserted && _silentWithoutDisk) {
+			_searchFailDelay = INT32_MAX;
 			_msr &= ~MsrReady;
 		} else {
 			EndCommandFull(true);
@@ -551,6 +556,12 @@ public:
 	//come back zeroed; the YuXing one does not care either way. Off by default so the
 	//existing caller is untouched.
 	void SetClearGeometryOnReset(bool clear) { _clearGeometryOnReset = clear; }
+
+	//With no disk in the drive a real controller's sector search never ends - there are no
+	//index pulses to give up on - until the software times out and resets it. Software that
+	//reads the data port without checking which phase the controller is in (the BT-686's word
+	//processor does) otherwise takes an instant error result for the sector. Off by default.
+	void SetSilentWithoutDisk(bool silent) { _silentWithoutDisk = silent; }
 
 	void Reset()
 	{

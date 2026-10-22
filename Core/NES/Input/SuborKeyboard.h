@@ -14,6 +14,7 @@ private:
 	bool _extended = false;
 	bool _mouseOnBit0 = false;
 	bool _altAtEnd = false;
+	bool _altAtPause = false;
 	uint8_t _scan = 0;
 	bool _out = false;
 	uint16_t _rightShiftKey = 0;
@@ -120,6 +121,15 @@ protected:
 	//a Space held at both places never reached it.
 	Buttons GetMatrixKey(uint32_t index)
 	{
+		//The 八通 BT-686's keyboard is the full matrix, scanned in full, with the same swap: its
+		//word processor finds Alt at row 12 bit 2 (Alt+F1-F8 pick the input method)
+		if(_altAtPause) {
+			if(index == 98) {
+				return Buttons::Alt;
+			} else if(index == 80) {
+				return Buttons::Pause;
+			}
+		}
 		if(_extended) {
 			if(index == 98) {
 				return Buttons::Alt;
@@ -186,12 +196,13 @@ public:
 
 	//'extended' lets the reduced keyboard's counter run on through rows 9-12, the full keyboard's
 	//numpad/Alt/F11/F12 rows, with row 9 carrying the bit that says they are there
-	SuborKeyboard(Emulator* emu, KeyMappingSet keyMappings, bool reduced = false, bool extended = false, bool mouseOnBit0 = false, bool altAtEnd = false) : BaseControlDevice(emu, ControllerType::SuborKeyboard, BaseControlDevice::ExpDevicePort, keyMappings)
+	SuborKeyboard(Emulator* emu, KeyMappingSet keyMappings, bool reduced = false, bool extended = false, bool mouseOnBit0 = false, bool altAtEnd = false, bool altAtPause = false) : BaseControlDevice(emu, ControllerType::SuborKeyboard, BaseControlDevice::ExpDevicePort, keyMappings)
 	{
 		_reduced = reduced;
 		_extended = reduced && extended;
 		_mouseOnBit0 = reduced && mouseOnBit0;
 		_altAtEnd = reduced && !_extended && altAtEnd;
+		_altAtPause = !reduced && altAtPause;
 		_rightShiftKey = KeyManager::GetKeyCode("Right Shift");
 		_rightCtrlKey = KeyManager::GetKeyCode("Right Ctrl");
 		_rightAltKey = KeyManager::GetKeyCode("Right Alt");
