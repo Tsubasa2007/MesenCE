@@ -3,8 +3,12 @@
 #include "NES/Input/Sb2kKeyboard.h"
 
 //The 13x8 key matrix of the Dongda PEC-586 family's keyboard, which the LingTong machines use
-//too. Scanned over $4016/$4017: $4016 = 0/1/5 resets the row counter, 2/3 rewinds the column,
-//6/7 steps to the next row, and each $4017 read returns the next key of the row in bits 1 and 4.
+//too. Scanned over $4016/$4017: $4016 = 0/1/5 resets the row counter and the column, 2/3 rewinds
+//the column, 6/7 steps to the next row, and each $4017 read returns the next key of the row in
+//bits 1 and 4. The step is bit 2 rising: 6 or 7 right after 5, 6 or 7 does not move. The BIOSes
+//always write 2 before 6 and 3 before reading, so only a PEC-9388 slot card tells: it scans 5,6
+//and 5,7,(3,7)x4,6, and only this reading gives sensible keys (Ctrl+Alt+numpad Del for its exit,
+//numpad 8/2 for its cursor).
 //The machine owns the scan position; Sb2kKeyboard only says which keys are down.
 class PecKeyMatrix
 {
@@ -51,13 +55,14 @@ public:
 		return pressed ? 0x12 : 0;
 	}
 
-	static void Write(uint8_t value, uint8_t& row, uint8_t& column)
+	//previous = the value written to $4016 before this one
+	static void Write(uint8_t value, uint8_t previous, uint8_t& row, uint8_t& column)
 	{
 		switch(value & 0x07) {
-			case 0x00: case 0x01: case 0x05: row = 0; break;
+			case 0x00: case 0x01: case 0x05: row = 0; column = 0; break;
 			case 0x02: case 0x03: column = 0; break;
 			case 0x06: case 0x07:
-				if(++row > 12) {
+				if(!(previous & 0x04) && ++row > 12) {
 					row = 0;
 				}
 				break;

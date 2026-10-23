@@ -547,7 +547,7 @@ private:
 
 	void WriteKeyMatrix(uint8_t value)
 	{
-		PecKeyMatrix::Write(value, _kbdRow, _kbdColumn);
+		PecKeyMatrix::Write(value, _last4016, _kbdRow, _kbdColumn);
 		_suborKeys.Write(value);
 		_last4016 = value;
 	}
