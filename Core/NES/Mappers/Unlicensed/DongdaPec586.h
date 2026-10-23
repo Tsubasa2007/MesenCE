@@ -34,7 +34,7 @@
 // - bit 7: the bitmap mode below.
 //$5300 (PEC-586/686F) and $5500 (PEC-9588) bit 2 is the cassette input, $5100 bit 0 its
 //output and the printer strobe, $5200 the printer data; none of them are connected here.
-//Reads of the block return a few bits picked by the last $54xx write, as FCEUX has them.
+//Reads of the block return the protection chip's bits (see below).
 //The PEC-9588's floppy drive is an Apple II Disk II controller at $5600 + slot*16 (the BIOS uses
 //slot 1, $5610-$561F). No drive is emulated, but the data latch ($56xC) reads like an empty
 //drive's: while the motor runs ($56x9 on, $56x8 off) the read amplifier picks up noise, so bytes
@@ -64,13 +64,29 @@
 //one. The cards are files next to the ROM, <rom>.slot2.bin and <rom>.slot3.bin, or in the ROM's
 //archive, any other file there whose name starts with "slot2" or "slot3" (one archive per set of
 //cards; a card's extension should not be a ROM type, or opening the archive asks which to load).
-//What the boot code does next is to read a 16-byte header through the card's $FFFE vector, copy a
-//page of start-up code into RAM and the title characters into the pattern table, and jump to the
-//code. The only plaintext of it is the PEC-586's cracked copy, whose decoding steps are NOPs: the
-//layout of the header and the copies' XORs are worked out (see BootCard), but not how the vector
-//and the header themselves are decoded. So the menu's switch from the machine's own ROM to a card
-//($30 or $50) does the loader's work for the two known cards, whose headers were found by search,
-//and starts any other card from its reset vector, as long as that points into the card.
+//The rest is the boot code's own: it finds a 16-byte header through the card's vectors, checks the
+//card against a checksum kept in its $FFFE/$FFFF, copies a page of start-up code into RAM and the
+//title characters into the pattern table, and jumps to the code. (The PEC-586's copy of that code
+//has the checks and the decoding NOPed out, so it cannot load these cards.)
+//
+//Protection chip (measured on a PEC-9388 with test code run from RAM): every $54xx write steps a
+//small state machine on bits 7, 6 and 4 of the value, and reads of the block give its answer in
+//bits 2-0 - only when read right after the write, as the boot code does:
+// - from rest: 1x/3x answers 1 and is remembered; anything else answers 0;
+// - after that: 1x/3x again answers 1, Dx/Fx answers 2 and is remembered, anything else 0;
+// - after that: 8x/Ax answers 4, anything else 0 (1x/3x as well); then it starts over.
+//Bit 3 latches whether 1x/3x went to $5400 while $5000 bit 4 was set (1 at power-on). Bit 5 is 1
+//from power-on until a Cx write right after the 4; the boot code's check, which ends that way, wants
+//it set again each time it starts over, and starts with a $5700 write, which is taken here as what
+//sets it (not measured). The PEC-586's table of fixed answers is what this gives in the order the
+//boot code checks it.
+//
+//PEC-9388 boot: its code at $6000-$64FF is the XOR of five 1,280-byte windows of the ROM, with
+//pointers taken from $8001-$8008 XOR an 8-byte key. A ROM with "PYRAMID" at $8009 has the key built
+//by a protected loader at $8010 from checksums, the frame count and the chip's answers to key & $90;
+//one without it uses a key of 0. The loader also runs LXA #$07, whose result depends on a constant
+//that varies between 6502s: the machine's CPU gives 6 there (constant $EE, A = 0), which the key
+//needs; the NES's gives 7.
 //
 //Two 512KB learning cartridges (BIT Corp. 1989 inside) sit on this board too, with circulating
 //dumps that say mapper 170 - the number the reference emulator gave this board, and a different
@@ -98,14 +114,49 @@ public:
 
 private:
 	static constexpr uint32_t Crc9588 = 0xFE31765B;
+
+	//PEC-9388 main ROMs, with and without the protected loader: their CPU's LXA constant (see the header)
+	static bool Is9388(uint32_t prgCrc)
+	{
+		return prgCrc == 0xF1371ED2 || prgCrc == 0xA385B194;
+	}
+
 	static constexpr uint8_t ZechengDip = 0x00;
 
 	bool _zecheng = false;
 	bool _zechengKeyboard = false;
 	bool _kbdArmed = false;
 
-	//What reads of $5000-$5FFF carry, by the last $54xx write's high nibble
-	static constexpr uint8_t ReadBits[16] = { 0x00, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02 };
+	//The protection chip (see the header): its step (0 = at rest, 3 = after the 4), its answer, and
+	//the bit 3 and bit 5 latches
+	uint8_t _chipStep = 0;
+	uint8_t _chipAnswer = 0;
+	bool _chipBit3 = true;
+	bool _chipBit5 = true;
+
+	void ChipWrite(uint8_t value)
+	{
+		uint8_t bits = (value >> 4) & 0x0D;
+		bool first = bits == 0x01;
+		bool second = bits == 0x0D;
+		bool third = bits == 0x08;
+		if(_chipStep == 3 && (value & 0xF0) == 0xC0) {
+			_chipBit5 = false;
+		}
+		if(_regs[0] & 0x10) {
+			_chipBit3 = first;
+		}
+		if(_chipStep == 1 && second) {
+			_chipAnswer = 2;
+			_chipStep = 2;
+		} else if(_chipStep == 2) {
+			_chipAnswer = third ? 4 : 0;
+			_chipStep = third ? 3 : 0;
+		} else {
+			_chipAnswer = first ? 1 : 0;
+			_chipStep = first ? 1 : 0;
+		}
+	}
 
 	bool _is9588 = false;
 	uint8_t _regs[8] = {};
@@ -137,18 +188,8 @@ private:
 	uint32_t _cardCrcs[2] = {};
 	bool _cardsChecked = false;
 
-	//Where each known card keeps its loader header, and the byte it is XORed with (by the CRC32 of
-	//the card's first 32KB): found by searching for the fields both cards were seen to need, since
-	//the code that finds them is still unknown
-	struct CardHeader { uint32_t BankCrc; uint16_t Address; uint8_t Key; };
-	static constexpr CardHeader CardHeaders[] = {
-		{ 0x2247B8FA, 0xFD1E, 0xED }, //64KB card, one 27C512
-		{ 0x165E9303, 0xB200, 0x70 }, //128KB card, 27C010 and decoder
-	};
-
-	//The card in $8000-$FFFF, if any: its slot (2 or 3, 0 = none) and bank offset
+	//The slot of the card in $8000-$FFFF, if any (2 or 3, 0 = none)
 	uint8_t _cardSlot = 0;
-	uint32_t _cardOffset = 0;
 
 	NesControlManager* NesControls() { return (NesControlManager*)_console->GetControlManager(); }
 
@@ -221,62 +262,7 @@ private:
 		bank = (banks & (banks - 1)) == 0 ? (bank & (banks - 1)) : std::min(bank, banks - 1);
 		SetCpuMemoryMapping(0x8000, 0xFFFF, card.data(), bank * 0x8000, (uint32_t)card.size(), MemoryAccessType::Read);
 		_cardSlot = slot + 1;
-		_cardOffset = bank * 0x8000;
 		return true;
-	}
-
-	//The stand-in for the boot code's card loader (see the header), called as the menu switches to
-	//the card: the header's copies, then on to its entry
-	void BootCard()
-	{
-		vector<uint8_t>& card = _cards[_cardSlot - 2];
-		uint8_t* bank = card.data() + _cardOffset;
-		auto read = [bank](uint16_t addr) { return bank[addr & 0x7FFF]; };
-		NesMemoryManager* memory = _console->GetMemoryManager();
-
-		//The card's $5000 value at $04FF, as the loader leaves it: the cards OR it with 1 to reach
-		//their second bank
-		memory->DebugWrite(0x04FF, _regs[0]);
-
-		uint32_t crc = CRC32::GetCRC(bank, 0x8000);
-		for(const CardHeader& known : CardHeaders) {
-			if(known.BankCrc != crc) {
-				continue;
-			}
-
-			//16 bytes: partner block, RAM destination (= entry), source, pages, PPU address
-			//(high byte first), pattern source, pages, and byte 15 = 0. Every copied byte is XORed
-			//with the partner block's byte at the same distance, the pattern bytes with $AF as well
-			//(the PEC-586's cracked loader has NOPs in those places, and INCs the partner pointers)
-			uint8_t h[16];
-			for(int i = 0; i < 16; i++) {
-				h[i] = read(known.Address + i) ^ known.Key;
-			}
-			uint16_t partner = h[0] | (h[1] << 8);
-			uint16_t dest = h[2] | (h[3] << 8);
-			uint16_t src = h[4] | (h[5] << 8);
-			for(uint32_t i = 0; i < h[6] * 0x100u; i++) {
-				memory->DebugWrite((uint16_t)(dest + i), read(src + i) ^ read(partner + i));
-			}
-			uint16_t ppuAddr = (h[7] << 8) | h[8];
-			uint16_t chrSrc = h[9] | (h[10] << 8);
-			for(uint32_t i = 0; i < h[11] * 0x100u; i++) {
-				_chrRam[(ppuAddr + i) & 0x1FFF] = read(chrSrc + i) ^ read(partner + i) ^ 0xAF;
-			}
-
-			NesCpu* cpu = _console->GetCpu();
-			cpu->GetState().PS |= PSFlags::Interrupt;
-			cpu->GetState().PC = dest;
-			MessageManager::Log("[PEC] Slot " + std::to_string(_cardSlot) + " card loaded");
-			return;
-		}
-
-		//An unknown card: straight to its reset vector, if that is in the card
-		uint16_t entry = read(0xFFFC) | (read(0xFFFD) << 8);
-		if(entry >= 0x8000) {
-			_console->GetCpu()->GetState().PC = entry;
-			MessageManager::Log("[PEC] Slot " + std::to_string(_cardSlot) + " card started at its reset vector");
-		}
 	}
 
 	void MapPrg16k(uint16_t start, uint32_t bank)
@@ -349,6 +335,9 @@ protected:
 		_is9588 = _romInfo.Hash.PrgCrc32 == Crc9588;
 		_zecheng = IsZechengCart(_romInfo.Hash.PrgCrc32);
 		_zechengKeyboard = HasZechengKeyboard(_romInfo.Hash.PrgCrc32);
+		if(Is9388(_romInfo.Hash.PrgCrc32)) {
+			_console->GetCpu()->SetLxaMagic(0xEE);
+		}
 
 		AddRegisterRange(0x4016, 0x4016, MemoryOperation::Write);
 		AddRegisterRange(0x4017, 0x4017, MemoryOperation::Read);
@@ -363,7 +352,9 @@ protected:
 		BaseMapper::Reset(softReset);
 		//RESET leaves a slot card in: the cards load, show their title and wait, and the button
 		//then starts them from their own reset vector (the 128KB card's points into the RAM its
-		//loader filled); their way back to the machine is $5000 = 0 and JMP ($FFFC)
+		//loader filled); their way back to the machine is $5000 = 0 and JMP ($FFFC). The PEC-9588
+		//loads nothing: its menu picks slot 2/3 with the same values, checks for $16 at the card's
+		//$FFF9 and jumps through the card's reset vector, or restarts the machine
 		uint8_t keepCard = softReset && _cardSlot != 0 && !_is9588 ? _regs[0] : 0;
 		memset(_regs, 0, sizeof(_regs));
 		_regs[0] = keepCard;
@@ -371,6 +362,12 @@ protected:
 		_kbdColumn = 0;
 		_kbdLast = 0;
 		_kbdArmed = false;
+		if(!softReset) {
+			_chipStep = 0;
+			_chipAnswer = 0;
+			_chipBit3 = true;
+			_chipBit5 = true;
+		}
 		UpdateState();
 	}
 
@@ -415,7 +412,7 @@ protected:
 		if(_zechengKeyboard && addr == 0x5500) {
 			return ZechengDip << 4;
 		}
-		return (_console->GetMemoryManager()->GetOpenBus() & 0xD8) | ReadBits[_regs[4] >> 4];
+		return (_console->GetMemoryManager()->GetOpenBus() & 0xD0) | (_chipBit5 ? 0x20 : 0) | (_chipBit3 ? 0x08 : 0) | _chipAnswer;
 	}
 
 	void WriteRegister(uint16_t addr, uint8_t value) override
@@ -435,17 +432,12 @@ protected:
 			AccessDiskSwitch(addr);
 		}
 
-		bool fromRom = _cardSlot == 0;
+		switch((addr >> 8) & 0x07) {
+			case 4: ChipWrite(value); break;
+			case 7: _chipBit5 = true; break;
+		}
 		_regs[(addr >> 8) & 0x07] = value;
 		UpdateState();
-		if(fromRom && _cardSlot != 0 && (value & 0x8F) == 0 && !_is9588) {
-			//Only the menu's slot entries ($30, $50): its BASIC launchers also switch to slot 3
-			//($56, $58, $D6) and then do their own copying and jumping. The PEC-9588 picks its
-			//expansion slots 2/3 with the same values but needs no loader: its menu itself checks
-			//for $16 at the card's $FFF9 and jumps through the card's reset vector (or restarts the
-			//machine)
-			BootCard();
-		}
 	}
 
 	void Serialize(Serializer& s) override
@@ -459,6 +451,10 @@ protected:
 		SV(_kbdColumn);
 		SV(_kbdLast);
 		SV(_kbdArmed);
+		SV(_chipStep);
+		SV(_chipAnswer);
+		SV(_chipBit3);
+		SV(_chipBit5);
 
 		//Which cards the state was made with (0 = no card, or a state from before this was kept)
 		if(!_cardsChecked) {

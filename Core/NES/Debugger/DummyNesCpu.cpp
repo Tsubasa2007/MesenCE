@@ -23,6 +23,7 @@ void DummyNesCpu::SetDummyState(NesCpu* c)
 	_needHalt = c->_needHalt;
 	_spriteDmaOffset = c->_spriteDmaOffset;
 	_irqMask = c->_irqMask;
+	_lxaMagic = c->_lxaMagic;
 	_prevRunIrq = c->_prevRunIrq;
 	_runIrq = c->_runIrq;
 }

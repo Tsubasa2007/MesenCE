@@ -46,6 +46,7 @@ private:
 	bool _cpuWrite = false;
 
 	uint8_t _irqMask;
+	uint8_t _lxaMagic = 0xFF;
 
 	NesCpuState _state;
 	NesConsole* _console;
@@ -748,8 +749,9 @@ private:
 
 	void ATX()
 	{
-		//LDA & TAX
-		uint8_t value = GetOperandValue();
+		//LDA & TAX, of the operand ANDed with A ORed with a constant that differs between 6502s: $FF
+		//(the default) makes it a plain load
+		uint8_t value = GetOperandValue() & (A() | _lxaMagic);
 		SetA(value); //LDA
 		SetX(A()); //TAX
 		SetA(A()); //Update flags based on A
@@ -868,6 +870,7 @@ public:
 	void SetNmiFlag() { _state.NmiFlag = true; }
 	void ClearNmiFlag() { _state.NmiFlag = false; }
 	void SetIrqMask(uint8_t mask) { _irqMask = mask; }
+	void SetLxaMagic(uint8_t magic) { _lxaMagic = magic; }
 	void SetIrqSource(IRQSource source) { _state.IrqFlag |= (int)source; }
 	bool HasIrqSource(IRQSource source) { return (_state.IrqFlag & (int)source) != 0; }
 	void ClearIrqSource(IRQSource source) { _state.IrqFlag &= ~(int)source; }
