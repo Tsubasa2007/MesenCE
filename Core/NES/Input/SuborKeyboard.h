@@ -159,10 +159,13 @@ protected:
 			result |= 0x08;
 		}
 
-		if(row == 9 && column) {
+		if(row == 9 && column && !_altAtPause) {
 			//This bit is used to indicate that this is an "extended" version of
 			//the keyboard which has four more rows to read from (numpad, etc.)
 			//Corresponds to row 9, bit 4
+			//The BT-686's own keyboard (the one with Alt at Pause) has no such bit: its disk programs
+			//take every set bit of the 13-row scan for a key held down, and wait forever for it to be
+			//released.
 			result |= 0x01;
 		}
 
