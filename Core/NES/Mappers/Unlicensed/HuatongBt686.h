@@ -47,7 +47,16 @@
 //  latch 5 set, RAM's $C000-$FFFF stays on the card's last 16KB whatever $4500 says, and only
 //  $8000-$BFFF follows it: a course disk's program, loaded into the top of RAM, sets latch 5 and
 //  switches $4500 while running from $C000, and keeps calling into the system card with it set
-//  - which still pages 32KB at a time. What latch 4 switches is not known, nor latch 6.
+//  - which still pages 32KB at a time. RAM's $8000-$BFFF is the lower half of the 32KB block
+//  that $4500 bits 0-1 pick, or its upper half with bit 2 set: the game disks' loader puts a
+//  game's 16KB banks at $4500 = 0-6 with latch 5 set, and the last one in the top 16KB, eight
+//  banks that fill the card.
+//  Latch 4 makes a write to $8000-$FFFF load $4500 with the value written, a cartridge's bank
+//  register: the game is started with it set and switches its banks by writing to its own
+//  code, as on a cartridge. The launcher rewrites the game's accesses to the YuXing machines'
+//  registers into calls to routines of its own that drive these latches, and those set latch 4
+//  from bit 5 of a CHR bank write and clear it for a $5500 write with the PRG mode bit clear.
+//  What latch 6 switches is not known.
 //  Latch 7 is the printer's strobe (below); the BASICs also hold it low for a moment before
 //  they first talk to the speech chip.
 //- $4200/$4201/$4205 and $4304/$4305: the floppy controller, at the YuXing machines' addresses.
@@ -184,11 +193,17 @@ private:
 		} else if(!Latch(0)) {
 			SelectPrgPage2x(0, page << 1);
 		} else {
-			SetCpuMemoryMapping(0x8000, 0xBFFF, _ram.data(), (page * 0x8000) % RamSize, RamSize, MemoryAccessType::ReadWrite);
+			uint32_t lower = ((page & 0x03) * 0x8000 + ((page & 0x04) ? 0x4000 : 0)) % RamSize;
+			SetCpuMemoryMapping(0x8000, 0xBFFF, _ram.data(), lower, RamSize, MemoryAccessType::ReadWrite);
 			uint32_t upper = Latch(5) ? RamSize - 0x4000 : (page * 0x8000 + 0x4000) % RamSize;
 			SetCpuMemoryMapping(0xC000, 0xFFFF, _ram.data(), upper, RamSize, MemoryAccessType::ReadWrite);
 		}
 		SetMirroringType(Latch(3) ? MirroringType::Horizontal : MirroringType::Vertical);
+		if(Latch(4)) {
+			AddRegisterRange(0x8000, 0xFFFF, MemoryOperation::Write);
+		} else {
+			RemoveRegisterRange(0x8000, 0xFFFF, MemoryOperation::Write);
+		}
 		UpdateChr();
 	}
 
@@ -309,7 +324,11 @@ protected:
 
 	void WriteRegister(uint16_t addr, uint8_t value) override
 	{
-		if(addr <= 0x410F) {
+		if(addr >= 0x8000) {
+			//Latch 4: the bank register
+			_page = value;
+			UpdateState();
+		} else if(addr <= 0x410F) {
 			SetLatch(addr);
 		} else if((addr & 0xFFF8) == 0x4200) {
 			CheckForDiskImage();
