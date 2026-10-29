@@ -16,7 +16,8 @@
 //cartridge slot. Read off the card's code; there is no reference emulator for it.
 //
 //- The image is all PRG: the machine's built-in card (BT686-3: a 512KB mask ROM, 8KB and 32KB of
-//  SRAM, a 74LS273), then the system card (512KB, a 27C040 behind a 74LS273). Both are the CPU's:
+//  SRAM, a 74LS273), then the card in the slot: a system card (512KB, a 27C040 behind a 74LS273)
+//  or a 1MB English dictionary card with speech on the same board. All of it is the CPU's:
 //  the mask ROM holds the reset code, the 16x16 font, the floppy boot loader and other data, and
 //  the PPU sees only CHR RAM, 32KB of it. An image of the mask ROM alone is the machine with its
 //  cartridge slot empty.
@@ -64,9 +65,10 @@
 //  a 4-bit port. Each byte goes as two writes of $C0 | nibble, the low one first, with the card
 //  waiting for bit 7 (ready) before each; a phrase ends with $DF, $DF and $00. Unlike the
 //  YuXing's, the bytes are not scrambled. The phrases are in the built-in mask ROM. That is the
-//  V3.0 system card; V2.0 writes whole bytes instead, each phrase as it is stored - a header
-//  ended by $FC (which V3.0 skips), the frames, then 24 bytes of $FF - and at power-on writes
-//  $FF three times, waiting for ready after each, to see that the chip is there.
+//  V3.0 system card and the dictionary card; V1.0 and V2.0 write whole bytes instead, each
+//  phrase as it is stored - a header ended by $FC (which V3.0 skips), the frames, then 24 bytes
+//  of $FF - and at power-on write $FF three times, waiting for ready after each, to see that the
+//  chip is there.
 //- $4700 and latch 7: the printer. The byte goes out a bit at a time, eight writes to $4700 of
 //  the byte shifted left after each (bit 7 is the one taken), and latch 7 pulsed low and high
 //  strobes it. Bit 0 of $4017 is the printer's ready line, which the word processor waits for
@@ -111,7 +113,7 @@ private:
 	unique_ptr<BbkLpcAudio> _lpcAudio;
 	uint8_t _speechByte = 0;
 	bool _speechHalf = false;
-	//The V2.0 card's whole-byte stream (see WriteSpeechByte)
+	//The V1.0 and V2.0 cards' whole-byte stream (see WriteSpeechByte)
 	bool _byteSpeech = false;
 	bool _speechInHeader = true;
 	uint8_t _speechStops = 0;
@@ -186,7 +188,9 @@ private:
 			RemoveCpuMemoryMapping(0x8000, 0xFFFF);
 		} else if(Latch(1)) {
 			if(_prgSize >= MaskRomSize * 2) {
-				SelectPrgPage2x(0, (MaskRomSize >> 14) + (page << 1));
+				//16 32KB pages on a system card, 32 on the dictionary card (its speech is in 14-31)
+				uint32_t cardPages = (_prgSize - MaskRomSize) >> 15;
+				SelectPrgPage2x(0, (MaskRomSize >> 14) + ((_page & (cardPages - 1)) << 1));
 			} else {
 				RemoveCpuMemoryMapping(0x8000, 0xFFFF);
 			}
@@ -265,7 +269,8 @@ protected:
 		_lpcAudio.reset(new BbkLpcAudio(_console, BbkLpcAudio::LpcVariant::Yuxing));
 		_lpcAudio->DeferResetUntilSpoken();
 		_lpcAudio->Reset();
-		_byteSpeech = _romInfo.Hash.PrgCrc32 == V20Crc;
+		uint32_t prgCrc = _romInfo.Hash.PrgCrc32;
+		_byteSpeech = prgCrc == V10Crc || prgCrc == V20aCrc || prgCrc == V20Crc;
 		_speechInHeader = true;
 		_speechStops = 0;
 		if(!_swapListener) {
@@ -435,12 +440,21 @@ protected:
 	}
 
 public:
-	//PRG CRC32s: the mask ROM followed by each system card, and the mask ROM alone
+	//PRG CRC32s: the mask ROM followed by each card, and the mask ROM alone. System cards: V1.0
+	//(no version on the label; HT-DOS V1.0), V2.0 in two releases (V20aCrc the earlier, still
+	//HT-DOS V1.0; V20Crc with HT-DOS V2.0) and V3.0; then the dictionary card
+	static constexpr uint32_t V10Crc = 0x0747E153;
+	static constexpr uint32_t V20aCrc = 0xE9A025F6;
 	static constexpr uint32_t V20Crc = 0x09F6C5CD;
 	static constexpr uint32_t V30Crc = 0xE451E5A7;
+	static constexpr uint32_t DictionaryCrc = 0x56243EEC;
 	static constexpr uint32_t NoCardCrc = 0xB4300B49;
 
-	static bool IsBt686(uint32_t prgCrc) { return prgCrc == V20Crc || prgCrc == V30Crc || prgCrc == NoCardCrc; }
+	static bool IsBt686(uint32_t prgCrc)
+	{
+		return prgCrc == V10Crc || prgCrc == V20aCrc || prgCrc == V20Crc || prgCrc == V30Crc ||
+			prgCrc == DictionaryCrc || prgCrc == NoCardCrc;
+	}
 
 	vector<string> GetDiskFileList()
 	{
