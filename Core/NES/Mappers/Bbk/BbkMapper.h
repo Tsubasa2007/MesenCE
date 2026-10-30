@@ -760,6 +760,13 @@ protected:
 		_romInfo.System = GameSystem::Dendy;
 
 		_lpcAudio.reset(new BbkLpcAudio(_console));
+		//The software starts its next block of speech three frames after queueing the last byte of
+		//the previous one, while the chip still holds up to a FIFO's worth: real machines speak that
+		//tail before the next block, so flushing it cut words short and ran the lines up to 0.6s early
+		_lpcAudio->DeferResetUntilSpoken();
+		//Two real machines speak 2.2% and 3.4% lower and slower than at 10KHz, the same amount on
+		//pitch and length, so the chip's clock is that much slower
+		_lpcAudio->SetTiming(9700, 200);
 
 		if(!_swapListener) {
 			_swapListener.reset(new DiskSwapListener(this));
