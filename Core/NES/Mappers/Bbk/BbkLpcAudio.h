@@ -37,7 +37,7 @@ private:
 	NesConsole* _console = nullptr;
 
 	static constexpr int LpcOrder = 10;
-	static constexpr int SamplesPerFrame = 200;
+	static constexpr int SamplesPerFrame = 200; //The longest frame, and the size of the playback buffer
 	static constexpr int FracBits = 15; //Q15
 	static constexpr int ClampP = 27500;
 	static constexpr int ClampN = -(ClampP + 1);
@@ -300,6 +300,10 @@ private:
 	const LpcCodec* _codec = &_codecD6;
 	bool _speechEnd = false;
 
+	//Samples per second and per frame (see SetTiming)
+	uint32_t _sampleRate = SampleRate;
+	int _samplesPerFrame = SamplesPerFrame;
+
 	bool IsSb2k() { return _variant == LpcVariant::Sb2k; }
 
 	//No stream header and the PE coefficient set - see the note on LpcVariant
@@ -532,7 +536,7 @@ private:
 		int16_t currPitch = _currPitch;
 
 		if(_needInterp) {
-			int32_t ratio = ((int32_t)_sampleIndex << FracBits) / SamplesPerFrame;
+			int32_t ratio = ((int32_t)_sampleIndex << FracBits) / _samplesPerFrame;
 
 			int16_t* vector0 = (int16_t*)&_framePrev;
 			int16_t* vector1 = (int16_t*)&_frameNext;
@@ -716,7 +720,7 @@ private:
 	{
 		if(_variant == LpcVariant::LingTong) {
 			SynthesizeFrameTms();
-		} else for(int i = 0; i < SamplesPerFrame; i++) {
+		} else for(int i = 0; i < _samplesPerFrame; i++) {
 			_sampleIndex = (int16_t)i;
 			_currPitch -= 16;
 
@@ -734,7 +738,10 @@ private:
 					//Silent
 					excit = 0;
 				}
-			} else if(_currPitch >= 160) {
+			} else if(_currPitch < 0 || _currPitch >= 160) {
+				//Outside the pulse. Below zero happens at a voiced sound's start after silence: the pitch
+				//interpolated up from 0 is then a few steps, the reload leaves the counter short of
+				//zero, and reading the table there took whatever data the build put before it
 				excit = 0;
 			} else {
 				//Voiced excitation
@@ -786,7 +793,7 @@ private:
 	//the game resets the decoder via $FF10 before the next phrase anyway.)
 	void TryDecodeStep()
 	{
-		if(_pcmPos < SamplesPerFrame) {
+		if(_pcmPos < _samplesPerFrame) {
 			return;
 		}
 
@@ -857,7 +864,7 @@ private:
 					_bitsLeft = 0;
 					_dataCache = 0;
 					ResetSynth();
-					_pcmPos = SamplesPerFrame;
+					_pcmPos = (int16_t)_samplesPerFrame;
 					return;
 				}
 				_pcmPos = 0;
@@ -872,11 +879,10 @@ public:
 			return;
 		}
 
-		//8 interpolation substeps per 10KHz sample (80KHz output steps); the original
+		//8 interpolation substeps per sample (80KHz output steps at 10KHz); the original
 		//player relied on the OS resampler to smooth the 10KHz output, so plain
 		//zero-order hold here sounds noticeably harsher
-		//The reference emulator plays the LingTong chip at 8KHz, the others at 10KHz
-		_cycleAcc += (_variant == LpcVariant::LingTong ? 8000 : SampleRate) * SubSteps;
+		_cycleAcc += _sampleRate * SubSteps;
 		uint32_t clockRate = NesConstants::GetClockRate(_console->GetRegion());
 		if(_cycleAcc >= clockRate) {
 			_cycleAcc -= clockRate;
@@ -888,7 +894,7 @@ public:
 
 				TryDecodeStep();
 
-				if(_pcmPos < SamplesPerFrame) {
+				if(_pcmPos < _samplesPerFrame) {
 					_currSample = _pcmBuffer[_pcmPos++];
 				} else {
 					//Waiting for data: decay towards silence to avoid holding a DC offset
@@ -948,6 +954,19 @@ public:
 		_variant = variant;
 		_codec = IsPlainStream() ? &_codecPe : &_codecD6;
 		_deferReset = variant == LpcVariant::DrPcJr;
+		//The reference emulator plays the LingTong chip at 8KHz, the others at 10KHz
+		if(variant == LpcVariant::LingTong) {
+			_sampleRate = 8000;
+		}
+	}
+
+	//For a machine whose chip runs at another rate or frame length than the 10KHz and 200 samples
+	//(20ms) taken from the reference emulator. The LingTong's own synthesis always makes 200.
+	void SetTiming(uint32_t sampleRate, int samplesPerFrame)
+	{
+		_sampleRate = sampleRate;
+		_samplesPerFrame = std::min(samplesPerFrame, SamplesPerFrame);
+		_pcmPos = (int16_t)_samplesPerFrame;
 	}
 
 	//For another machine whose software resets the chip the moment the last byte is queued, like
@@ -958,7 +977,7 @@ public:
 	{
 		_fifoReadPos = _fifoWritePos = 0;
 		_regFF10 = 0;
-		_pcmPos = SamplesPerFrame;
+		_pcmPos = (int16_t)_samplesPerFrame;
 		_cycleAcc = 0;
 		_subStep = 0;
 		_prevSample = 0;
@@ -990,8 +1009,8 @@ public:
 			//bytes before it has spoken what it holds. Flushing there threw away 16% of one
 			//lesson disc's speech and cut the end off its words. Remember where the block
 			//ends instead: the tail is still decoded, and the reset happens when the decoder
-			//reaches the boundary. The other machines reset between phrases with a drained
-			//buffer, so nothing changes for them.
+			//reaches the boundary. The BBK, the BT-686 and the multimedia cards do the same (see
+			//DeferResetUntilSpoken); the other machines reset with a drained buffer.
 			if(_deferReset && GetFifoCount() > 0) {
 				if(!_phraseEndValid) {
 					_phraseEnd = _fifoWritePos;
@@ -999,7 +1018,7 @@ public:
 				}
 			} else {
 				ResetSynth();
-				_pcmPos = SamplesPerFrame;
+				_pcmPos = (int16_t)_samplesPerFrame;
 				_fifoReadPos = _fifoWritePos = 0;
 			}
 		}
