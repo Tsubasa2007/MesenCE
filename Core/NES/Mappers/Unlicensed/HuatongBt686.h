@@ -233,6 +233,10 @@ protected:
 	bool AllowRegisterRead() override { return true; }
 	bool EnableCpuClockHook() override { return true; }
 	bool EnableVramAddressHook() override { return true; }
+	//Its clone PPU, like the YuXing machines', has no 2C02 race where a $2002 read one dot before
+	//vblank cancels the flag: the menus poll $2002 for vblank after switching the screen on and
+	//clear it there, and losing the race left a frame of the old name table in the new tiles
+	bool EnablePpuNmiSuppressRace() override { return false; }
 
 	//Dendy timing, as the YuXing machines'. The word processor draws its menu bar from the right
 	//name table and switches to the left one a fixed delay after the NMI that follows its
@@ -268,6 +272,9 @@ protected:
 		//it still holds a FIFO's worth to speak - the reset waits for those, as on the Dr. PC Jr.
 		_lpcAudio.reset(new BbkLpcAudio(_console, BbkLpcAudio::LpcVariant::Yuxing));
 		_lpcAudio->DeferResetUntilSpoken();
+		//A real machine's start-up phrase lasts as long as at 10KHz and 200 samples a frame but
+		//its voice is 0.79x as high: 8KHz, with a frame every 20ms
+		_lpcAudio->SetTiming(8000, 160);
 		_lpcAudio->Reset();
 		uint32_t prgCrc = _romInfo.Hash.PrgCrc32;
 		_byteSpeech = prgCrc == V10Crc || prgCrc == V20aCrc || prgCrc == V20Crc;
