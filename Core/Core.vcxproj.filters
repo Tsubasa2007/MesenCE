@@ -2364,6 +2364,9 @@
     <ClInclude Include="NES\Mappers\Unlicensed\Henggedianzi177.h">
       <Filter>NES\Mappers\Unlicensed</Filter>
     </ClInclude>
+    <ClInclude Include="NES\Mappers\Unlicensed\Henggedianzi177Lpc.h">
+      <Filter>NES\Mappers\Unlicensed</Filter>
+    </ClInclude>
     <ClInclude Include="NES\Mappers\Unlicensed\Henggedianzi179.h">
       <Filter>NES\Mappers\Unlicensed</Filter>
     </ClInclude>

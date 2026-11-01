@@ -217,6 +217,7 @@
 #include "NES/Mappers/Unlicensed/Gs2004.h"
 #include "NES/Mappers/Unlicensed/Gs2013.h"
 #include "NES/Mappers/Unlicensed/Henggedianzi177.h"
+#include "NES/Mappers/Unlicensed/Henggedianzi177Lpc.h"
 #include "NES/Mappers/Unlicensed/ChengXinDa.h"
 #include "NES/Mappers/Unlicensed/Henggedianzi179.h"
 #include "NES/Mappers/Unlicensed/Hp898f.h"
@@ -578,6 +579,10 @@ BaseMapper* MapperFactory::GetMapperFromID(RomData& romData)
 				//Asking for the input type here is what gets the auto-configure step to run at all.
 				romData.Info.InputType = GameInputType::SuborKeyboardMouse1;
 				return new SuborWindows2002();
+			}
+			if(Henggedianzi177Lpc::IsHenggedianzi177Lpc(romData.Info.Hash.PrgCrc32)) {
+				//The board with a speech chip on $5000-$5002 - see the class comment
+				return new Henggedianzi177Lpc();
 			}
 			return new Henggedianzi177();
 		case 178: return new Waixing178();
