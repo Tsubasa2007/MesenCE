@@ -289,6 +289,7 @@ namespace Mesen.Windows
 
 				_listener = new NotificationListener();
 				_listener.OnNotification += OnNotification;
+				YuxingWebService.Start();
 
 				_model.Init(this);
 

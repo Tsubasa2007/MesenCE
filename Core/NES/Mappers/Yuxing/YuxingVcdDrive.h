@@ -170,6 +170,9 @@ private:
 	uint8_t _statusByCmd[0x100] = {};
 	uint8_t _cmdSel = 0;
 	uint8_t _keyByteIndex = 0;
+	int32_t _typematicCell = -1;
+	uint64_t _typematicEnd = 0;
+	uint64_t _typematicNext = 0;
 	uint8_t _shiftIn = 0;
 
 	//A second answer, for the one command that is asked a question rather than told to do
@@ -650,6 +653,9 @@ public:
 	//Set by the mapper before every KeyWrite, from the YuxingKeyboard device
 	int32_t PendingKeyCell = -1;
 	uint8_t PendingModifiers = 0;
+	//Whether a held key repeats like a keyboard's (see Typematic), and the CPU cycle count
+	bool KeyTypematic = false;
+	uint64_t KeyClock = 0;
 
 	void Reset()
 	{
@@ -1674,6 +1680,31 @@ public:
 		SelectKeyboard();
 	}
 
+	//A held key as a keyboard sends it: a moment now, and after half a second again and again.
+	//The online program's line editor comes back for a key every five or so frames and takes each
+	//as a new one, so a press of a tenth of a second typed two or three of it. The moment is three
+	//frames and not one word because the mouse's reads select the keyboard too: a single word
+	//can go to them. Programs that read held keys keep the plain report - this is for that
+	//program alone, see KeyTypematic.
+	int32_t Typematic(int32_t cell)
+	{
+		if(cell < 0) {
+			_typematicCell = -1;
+			return -1;
+		}
+		if(cell != _typematicCell) {
+			_typematicCell = cell;
+			_typematicEnd = KeyClock + 88500;
+			_typematicNext = KeyClock + 885000;
+			return cell;
+		}
+		if(KeyClock >= _typematicNext) {
+			_typematicEnd = KeyClock + 88500;
+			_typematicNext = KeyClock + 265500;
+		}
+		return KeyClock < _typematicEnd ? cell : -1;
+	}
+
 	void SelectKeyboard()
 	{
 		_keyboardSelected = true;
@@ -1682,7 +1713,8 @@ public:
 		}
 		_keyByteIndex = 1;
 
-		uint8_t key = PendingKeyCell >= 0 ? (uint8_t)~PendingKeyCell : 0;
+		int32_t cell = KeyTypematic ? Typematic(PendingKeyCell) : PendingKeyCell;
+		uint8_t key = cell >= 0 ? (uint8_t)~cell : 0;
 		uint8_t mod = PendingModifiers;
 
 		uint32_t high = ((((key >> 2) & 0x18) | 3) | (~mod & 0xE0)) & (key ? 0xFF : 0xFC);
@@ -1694,6 +1726,7 @@ public:
 	void Serialize(Serializer& s)
 	{
 		SVArray(_cmd, 20); SVArray(_baseSector, 3); SVArray(_statusByCmd, 0x100);
+		SV(_typematicCell); SV(_typematicEnd); SV(_typematicNext);
 		SV(_cmdSel); SV(_keyByteIndex); SV(_shiftIn); SV(_status); SV(_cmdIndex); SV(_audioChannels); SV(_silentShow); SV(_busySeconds); SV(_busyUntilEnd); SV(_pictureShown); SV(_soundKept);
 		SV(_pos); SV(_basePos); SV(_seekPos);
 		SV(_keySend); SV(_keySendBit); SV(_keySelect);

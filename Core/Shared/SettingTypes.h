@@ -735,6 +735,9 @@ struct NesConfig
 	//is a plain free-running serial mouse, nothing like the later models' built-in one. The
 	//two are wire-level opposites, so which one is plugged in has to be said out loud.
 	bool YuxingDTypeMouse = false;
+	//The floppy model's online program dials 163 through its modem. With this the call gets
+	//through to a stand-in for the dial-up service and YuXing's host - see YuxingHost.
+	bool YuxingOnlineServer = false;
 	VsDualOutputOption VsDualVideoOutput = VsDualOutputOption::Both;
 	VsDualOutputOption VsDualAudioOutput = VsDualOutputOption::Both;
 

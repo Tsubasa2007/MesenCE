@@ -73,6 +73,7 @@ void EmuSettings::Serialize(Serializer& s)
 			SV(_nes.Region);
 			SV(_nes.LightDetectionRadius);
 			SV(_nes.YuxingDTypeMouse);
+			SV(_nes.YuxingOnlineServer);
 			SV(_nes.Yuyin2Printer);
 			SV(_nes.BbkPcLink);
 			SV(_nes.Port1.Type);

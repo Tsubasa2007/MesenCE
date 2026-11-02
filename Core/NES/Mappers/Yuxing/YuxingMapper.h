@@ -814,6 +814,9 @@ protected:
 		_lpcAudio->Clock();
 		_printer.Clock();
 		_modem.Clock();
+		if(_modem.IsPortActive()) {
+			_modem.PortClock(!(_console->GetCpu()->GetState().PS & PSFlags::Interrupt));
+		}
 		//The line is the MMC3 clone's too, but the two never overlap: only the online program
 		//talks to the modem, and it runs on the machine's own banking
 		if(_modem.IsInterruptPending() != _modemIrq) {
@@ -994,6 +997,9 @@ protected:
 				if(UsesXtKeyboard()) {
 					value |= (addr == 0x4016) ? XtRead4016() : XtRead4017();
 				}
+				if(addr == 0x4017 && _modem.IsPortActive()) {
+					value = (uint8_t)((value & ~0x02) | _modem.PortRead());
+				}
 				return value | vcdValue;
 			}
 
@@ -1054,6 +1060,8 @@ protected:
 		}
 
 		if(_type != YuxingType::Huatong && YuxingModem::IsModemAddress(addr)) {
+			_modem.SetServerEnabled(_console->GetNesConfig().YuxingOnlineServer);
+			_modem.SetEmulator(_emu);
 			_modem.Write(addr, value);
 			return;
 		}
@@ -1070,6 +1078,10 @@ protected:
 				//printer anyway.
 				if(!_vcdMode && !_driveLink && !UsesXtKeyboard()) {
 					WriteLpt(value);
+					//The earlier online programs' modem hangs off this port - see YuxingModem
+					_modem.SetServerEnabled(_console->GetNesConfig().YuxingOnlineServer);
+					_modem.SetEmulator(_emu);
+					_modem.PortWrite(value, _console->GetCpu()->GetCycleCount());
 				}
 				if(UsesXtKeyboard()) {
 					XtWrite4016(value);
@@ -1387,6 +1399,8 @@ protected:
 			_vcd.PendingKeyCell = -1;
 			_vcd.PendingModifiers = 0;
 		}
+		_vcd.KeyTypematic = _modem.IsInUse();
+		_vcd.KeyClock = _console->GetCpu()->GetCycleCount();
 	}
 
 	//===== XT keyboard (V5.0) =====

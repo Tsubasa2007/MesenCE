@@ -30,6 +30,7 @@ namespace Mesen.Utilities
 
 			EmuApi.InitializeEmu(ConfigManager.HomeFolder, IntPtr.Zero, IntPtr.Zero, true, true, true, true);
 			EmuApi.Pause();
+			YuxingWebService.Start();
 
 			ConfigApi.SetEmulationFlag(EmulationFlags.ConsoleMode, true);
 

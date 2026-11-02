@@ -18,6 +18,8 @@
 #include "Utilities/StringUtilities.h"
 #include "Core/NES/NesConsole.h"
 #include "Core/NES/Mappers/Bbk/BbkFdc.h"
+#include "Core/NES/Mappers/Yuxing/YuxingWebBridge.h"
+#include "Core/NES/Mappers/Yuxing/YuxingServerData.h"
 #include "Core/NES/Mappers/CdSegmentIndex.h"
 #include "InteropNotificationListeners.h"
 
@@ -407,6 +409,23 @@ extern "C"
 	DllExport void __stdcall SetBbkBootDisk(char* path)
 	{
 		BbkFdc::SetPendingBootDisk(path ? path : "");
+	}
+
+	//A page the YuXing host's browser asked for (YuxingWebRequest), from the UI's own thread
+	DllExport void __stdcall YuxingWebResponse(uint32_t id, uint8_t* data, uint32_t length)
+	{
+		YuxingWebBridge::Respond(id, data, length);
+	}
+
+	//The data file's texts for the YuXing host, and the built-in ones to write it from
+	DllExport void __stdcall YuxingServerSetData(uint8_t* data, uint32_t length)
+	{
+		YuxingServerData::Set(data, length);
+	}
+
+	DllExport uint32_t __stdcall YuxingServerGetDefaults(uint8_t* buffer, uint32_t size)
+	{
+		return YuxingServerData::GetDefaults(buffer, size);
 	}
 
 	DllExport bool __stdcall IsRunning()

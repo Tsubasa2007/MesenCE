@@ -207,6 +207,10 @@
     <ClInclude Include="NES\Mappers\Sb2k\Sb2kMapper.h" />
     <ClInclude Include="NES\Mappers\Sb2k\Sb2kPpu.h" />
     <ClInclude Include="NES\Mappers\Yuxing\YuxingMapper.h" />
+    <ClInclude Include="NES\Mappers\Yuxing\YuxingHost.h" />
+    <ClInclude Include="NES\Mappers\Yuxing\YuxingHostContent.h" />
+    <ClInclude Include="NES\Mappers\Yuxing\YuxingWebBridge.h" />
+    <ClInclude Include="NES\Mappers\Yuxing\YuxingServerData.h" />
     <ClInclude Include="NES\Mappers\Yuxing\YuxingModem.h" />
     <ClInclude Include="NES\Mappers\Yuxing\YuxingV40.h" />
     <ClInclude Include="NES\Mappers\Yuxing\YuxingVcdDrive.h" />

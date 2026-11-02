@@ -30,6 +30,14 @@ enum class ConsoleNotificationType
 	RefreshSoftwareRenderer,
 	AfterInitConsole,
 	NetplayStopped,
+	//The YuXing host's browser wants a page: the parameter is a YuxingWebRequestParams
+	YuxingWebRequest,
+};
+
+struct YuxingWebRequestParams
+{
+	uint32_t Id;
+	const char* Url;
 };
 
 struct GameLoadedEventParams

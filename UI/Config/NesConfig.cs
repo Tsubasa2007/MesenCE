@@ -50,6 +50,7 @@ namespace Mesen.Config
 		[ObservableProperty] public partial bool UseExternalVideoPlayer { get; set; } = false;
 		[ObservableProperty] public partial bool DisableDiscVideoPlayback { get; set; } = false;
 		[ObservableProperty] public partial bool YuxingDTypeMouse { get; set; } = false;
+		[ObservableProperty] public partial bool YuxingOnlineServer { get; set; } = false;
 		[ObservableProperty] public partial string BbkDiskFolder { get; set; } = "";
 		[ObservableProperty] public partial string BbkPcLinkFolder { get; set; } = "";
 		[ObservableProperty] public partial VsDualOutputOption VsDualVideoOutput { get; set; } = VsDualOutputOption.Both;
@@ -194,6 +195,7 @@ namespace Mesen.Config
 				UseExternalVideoPlayer = UseExternalVideoPlayer,
 				DisableDiscVideoPlayback = DisableDiscVideoPlayback,
 				YuxingDTypeMouse = YuxingDTypeMouse,
+				YuxingOnlineServer = YuxingOnlineServer,
 				VsDualVideoOutput = VsDualVideoOutput,
 				VsDualAudioOutput = VsDualAudioOutput,
 
@@ -341,6 +343,7 @@ namespace Mesen.Config
 		[MarshalAs(UnmanagedType.I1)] public bool UseExternalVideoPlayer;
 		[MarshalAs(UnmanagedType.I1)] public bool DisableDiscVideoPlayback;
 		[MarshalAs(UnmanagedType.I1)] public bool YuxingDTypeMouse;
+		[MarshalAs(UnmanagedType.I1)] public bool YuxingOnlineServer;
 		public VsDualOutputOption VsDualVideoOutput;
 		public VsDualOutputOption VsDualAudioOutput;
 

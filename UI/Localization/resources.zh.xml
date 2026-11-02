@@ -274,6 +274,7 @@
 			<Control ID="lblYuxingSettings">裕兴学习机设置</Control>
 			<Control ID="chkYuxingSkipVcdScreen">光驱为空时跳过 VCD 播放器界面</Control>
 			<Control ID="chkYuxingDTypeMouse">使用 D 型外接串口鼠标代替内置鼠标</Control>
+			<Control ID="chkYuxingOnlineServer">上网程序的调制解调器连接内置的裕兴服务器</Control>
 			<Control ID="lblDiscVideoSettings">VCD 设置</Control>
 			<Control ID="chkUseExternalVideoPlayer">在外部播放器中播放光盘视频，而不是在学习机画面上播放</Control>
 			<Control ID="chkDisableDiscVideoPlayback">跳过光盘的视频曲目，不播放</Control>

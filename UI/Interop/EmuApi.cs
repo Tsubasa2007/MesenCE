@@ -110,6 +110,12 @@ namespace Mesen.Interop
 		//Queue a .img/.ima to mount on the next BBK boot (call before loading the BBK BIOS ROM).
 		[DllImport(DllPath)] public static extern void SetBbkBootDisk([MarshalAs(UnmanagedType.LPUTF8Str)] string path);
 
+		//The page a YuxingWebRequest notification asked for (see YuxingWebService)
+		[DllImport(DllPath)] public static extern void YuxingWebResponse(UInt32 id, byte[] data, UInt32 length);
+		//The YuXing host's texts (see YuxingServerFile)
+		[DllImport(DllPath)] public static extern void YuxingServerSetData(byte[]? data, UInt32 length);
+		[DllImport(DllPath)] public static extern UInt32 YuxingServerGetDefaults(byte[]? buffer, UInt32 size);
+
 		//True while one of the audio-visual cassette cards is running
 		[DllImport(DllPath)][return: MarshalAs(UnmanagedType.I1)] public static extern bool IsNesTapeCard();
 		[DllImport(DllPath)] public static extern void InsertNesTape([MarshalAs(UnmanagedType.LPUTF8Str)] string path);

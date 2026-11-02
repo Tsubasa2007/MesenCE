@@ -87,7 +87,14 @@ namespace Mesen.Interop
 		RequestConfigChange,
 		RefreshSoftwareRenderer,
 		AfterInitConsole,
-		NetplayStopped
+		NetplayStopped,
+		YuxingWebRequest
+	}
+
+	public struct YuxingWebRequestParams
+	{
+		public UInt32 Id;
+		public IntPtr Url;
 	}
 
 	public struct GameLoadedEventParams

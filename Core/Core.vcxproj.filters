@@ -2100,6 +2100,18 @@
     <ClInclude Include="NES\Mappers\Yuxing\YuxingMapper.h">
       <Filter>NES\Mappers\Yuxing</Filter>
     </ClInclude>
+    <ClInclude Include="NES\Mappers\Yuxing\YuxingHost.h">
+      <Filter>NES\Mappers\Yuxing</Filter>
+    </ClInclude>
+    <ClInclude Include="NES\Mappers\Yuxing\YuxingHostContent.h">
+      <Filter>NES\Mappers\Yuxing</Filter>
+    </ClInclude>
+    <ClInclude Include="NES\Mappers\Yuxing\YuxingWebBridge.h">
+      <Filter>NES\Mappers\Yuxing</Filter>
+    </ClInclude>
+    <ClInclude Include="NES\Mappers\Yuxing\YuxingServerData.h">
+      <Filter>NES\Mappers\Yuxing</Filter>
+    </ClInclude>
     <ClInclude Include="NES\Mappers\Yuxing\YuxingModem.h">
       <Filter>NES\Mappers\Yuxing</Filter>
     </ClInclude>
