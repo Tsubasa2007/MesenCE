@@ -679,11 +679,22 @@ private:
 				case 'U': _url = value; break;
 				case 'P': _lines.push_back(value); break;
 				case 'K': {
-					uint32_t row = 0, column = 0;
-					int used = 0;
-					if(sscanf_s(value.c_str(), "%u %u %n", &row, &column, &used) >= 2 && row < _lines.size()) {
-						_links.push_back({ row, column, value.substr(used) });
+					//"row column url"
+					const char* field = value.c_str();
+					char* stop = nullptr;
+					uint32_t row = (uint32_t)strtoul(field, &stop, 10);
+					if(stop == field) {
+						break;
 					}
+					const char* next = stop;
+					uint32_t column = (uint32_t)strtoul(next, &stop, 10);
+					if(stop == next || row >= _lines.size()) {
+						break;
+					}
+					while(*stop == ' ') {
+						stop++;
+					}
+					_links.push_back({ row, column, string(stop) });
 					break;
 				}
 			}
