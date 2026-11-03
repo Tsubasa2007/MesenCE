@@ -2,6 +2,7 @@
 #include "pch.h"
 #include "Utilities/ISerializable.h"
 #include "Utilities/Serializer.h"
+#include "Shared/MessageManager.h"
 
 //uPD765-style floppy disk controller used by the BBK/YuXing "软驱一号" drive add-on.
 //Ported from the VirtuaNES-BBK fork (NES/FDC.cpp, author fanoble).
@@ -22,6 +23,10 @@ private:
 
 	//ST1 bits
 	static constexpr uint8_t St1EndOfCylinder = 0x80;
+	static constexpr uint8_t St1NotWriteable = 0x02;
+
+	//ST3 bits
+	static constexpr uint8_t St3WriteProtected = 0x40;
 
 	enum class FdcPhase : uint8_t
 	{
@@ -81,6 +86,10 @@ private:
 	int32_t _cylCount = 80; //Cylinders on the mounted image, for CHS wrap
 
 	bool _dirty = false;
+	//The machine's write-protect setting (NesConfig::FloppyWriteProtected), read when a command
+	//runs, so changing it is moving the tab; and whether the current write was turned down
+	const bool* _writeProtectSource = nullptr;
+	bool _writeRefused = false;
 	bool _abortCommand = false; //Set by a command that gives no response at all (Read ID on an empty drive)
 	bool _diskChanged = false; //DSKCHG line: set when a disk is swapped, cleared by the next head step
 	vector<uint8_t> _diskData;
@@ -189,8 +198,23 @@ private:
 		_results[6] = n;
 	}
 
+	bool IsWriteProtected() const { return _writeProtectSource && *_writeProtectSource && IsDiskInserted(); }
+
+	//A write to a protected disk ends at once, without its data phase: abnormal termination, and
+	//ST1 says the disk is not writeable
+	void RefuseWrite()
+	{
+		_writeRefused = true;
+		_dataBytes = 0;
+		_results[0] = St0Ic0 | (_commands[1] & 0x07);
+		_results[1] = St1NotWriteable;
+		_results[2] = 0;
+		MessageManager::DisplayMessage("Floppy", "FloppyWriteProtected");
+	}
+
 	void ExecCommand()
 	{
+		_writeRefused = false;
 		switch(_commands[0] & 0x1F) {
 			case 0x02: //Read track
 				break;
@@ -207,11 +231,19 @@ private:
 				break;
 
 			case 0x04: //Sense drive status
+				//ST3; only the write-protect bit is reported (the rest was never filled in and the
+				//software works with what it has always read)
+				if(IsWriteProtected()) {
+					_results[0] |= St3WriteProtected;
+				}
 				break;
 
 			case 0x05: //Write data
 			case 0x06: //Read data
 				SetupChsTransfer(_commands[2], _commands[3], _commands[4], _commands[5]);
+				if((_commands[0] & 0x1F) == 0x05 && IsWriteProtected()) {
+					RefuseWrite();
+				}
 				_irq = true;
 				break;
 
@@ -251,6 +283,11 @@ private:
 				break;
 
 			case 0x09: //Write deleted data
+				if(IsWriteProtected()) {
+					RefuseWrite();
+				}
+				break;
+
 			case 0x0C: //Read deleted data
 				break;
 
@@ -273,6 +310,11 @@ private:
 				break;
 
 			case 0x0D: { //Format track
+				if(IsWriteProtected()) {
+					RefuseWrite();
+					_irq = true;
+					break;
+				}
 				//Parameters: HD/US, N (bytes/sector), SC (sectors/track), GPL, D (filler).
 				//Fills the sector set up by the previous read/write with the filler byte.
 				int32_t start = _currentLba * 512;
@@ -368,7 +410,8 @@ public:
 	//IRQ line state (the SB2K routes it into its IRQ status register; the BBK reads it via port 3)
 	bool IsIrqAsserted() { return _irq; }
 
-	bool IsDiskInserted() { return !_diskData.empty(); }
+	bool IsDiskInserted() const { return !_diskData.empty(); }
+	void SetWriteProtectSource(const bool* source) { _writeProtectSource = source; }
 	bool IsDirty() { return _dirty; }
 	string GetDiskFilename() { return _diskFilename; }
 
@@ -606,7 +649,7 @@ public:
 								//Command gave no response at all (no result, no interrupt)
 								_abortCommand = false;
 								_phase = FdcPhase::Idle;
-							} else if((_mainStatus & MsExecution) && (_cmdIndex == 0x05 || _cmdIndex == 0x06)) {
+							} else if((_mainStatus & MsExecution) && (_cmdIndex == 0x05 || _cmdIndex == 0x06) && !_writeRefused) {
 								//Non-DMA read/write data: the 512 sector bytes stream through the
 								//data port before the result phase. DATA_IN points fdc->host for
 								//a read and host->fdc for a write.
@@ -640,7 +683,7 @@ public:
 	void Serialize(Serializer& s) override
 	{
 		SV(_irq); SV(_hwReset); SV(_softReset); SV(_dmaInt); SV(_drvSel); SV(_motor);
-		SV(_mainStatus); SV(_cycle); SV(_cmdIndex); SV(_lastCommand); SV(_phase); SV(_cylinder); SV(_dataPos); SV(_dataBytes); SV(_currentLba); SV(_delayCycles); SV(_cylCount); SV(_activityCycles); SV(_dirty); SV(_diskChanged);
+		SV(_mainStatus); SV(_cycle); SV(_cmdIndex); SV(_lastCommand); SV(_phase); SV(_cylinder); SV(_dataPos); SV(_dataBytes); SV(_currentLba); SV(_delayCycles); SV(_cylCount); SV(_activityCycles); SV(_dirty); SV(_diskChanged); SV(_writeRefused);
 		SVArray(_status, 4);
 		SVArray(_commands, 10);
 		SVArray(_results, 8);

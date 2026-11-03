@@ -42,6 +42,10 @@ private:
 	uint8_t _tmap[TrackSlots] = {};
 	bool _fiveInch = false;
 	bool _writeProtected = false;
+	//The machine's write-protect setting (NesConfig::FloppyWriteProtected), read as the disk turns
+	const bool* _writeProtectSource = nullptr;
+
+	bool IsWriteProtected() const { return _writeProtected || (_writeProtectSource && *_writeProtectSource); }
 	bool _dirty = false;
 	string _filename;
 	double _cyclesPerBit = 3.1;
@@ -102,7 +106,7 @@ private:
 		if(_q7) {
 			//Writing: the register leaves MSB first, a bit a cell, zeros once it runs out -
 			//which is how the 10-cell sync bytes come out of a CPU that waits longer to reload
-			if(t && t->BitCount && !_writeProtected) {
+			if(t && t->BitCount && !IsWriteProtected()) {
 				SetBit(*t, _bitPos, (_writeReg & 0x80) != 0);
 			}
 			_writeReg <<= 1;
@@ -219,6 +223,7 @@ public:
 
 	bool IsDiskInserted() { return !_file.empty(); }
 	bool IsDirty() { return _dirty; }
+	void SetWriteProtectSource(const bool* source) { _writeProtectSource = source; }
 	string GetFilename() { return _filename; }
 
 	void SetClockRate(double rate)
@@ -342,7 +347,7 @@ public:
 
 		if(_q6 && !_q7) {
 			//Sensing the write protect
-			return _writeProtected || _file.empty() ? 0x80 : 0x00;
+			return IsWriteProtected() || _file.empty() ? 0x80 : 0x00;
 		}
 		if(_file.empty() || !_motor) {
 			return _latch & 0x7F;

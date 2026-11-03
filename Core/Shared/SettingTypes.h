@@ -738,6 +738,9 @@ struct NesConfig
 	//The floppy model's online program dials 163 through its modem. With this the call gets
 	//through to a stand-in for the dial-up service and YuXing's host - see YuxingHost.
 	bool YuxingOnlineServer = false;
+	//The learning machines' floppies, as if their write-protect tab were open: the drive says
+	//so to the program and takes nothing written. Changed while running, like moving the tab
+	bool FloppyWriteProtected = true;
 	VsDualOutputOption VsDualVideoOutput = VsDualOutputOption::Both;
 	VsDualOutputOption VsDualAudioOutput = VsDualOutputOption::Both;
 

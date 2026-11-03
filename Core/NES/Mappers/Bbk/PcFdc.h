@@ -2,6 +2,7 @@
 #include "pch.h"
 #include "Utilities/ISerializable.h"
 #include "Utilities/Serializer.h"
+#include "Shared/MessageManager.h"
 
 //PC-compatible uPD765 floppy controller, modelled at the register level: the standard
 //SRA/DOR/MSR/data register file, a one-byte latch handshaked with the CPU through MSR's
@@ -141,6 +142,12 @@ private:
 	int32_t _activityCycles = 0;
 	int32_t _searchFailDelay = 0; //CPU cycles until a failed sector search reports its result
 	bool _dirty = false;
+	const bool* _writeProtectSource = nullptr;
+
+	bool IsWriteProtected(const Drive& d) const
+	{
+		return d.WriteProtected || (_writeProtectSource && *_writeProtectSource);
+	}
 	vector<uint8_t> _diskData;
 	string _diskFilename;
 
@@ -332,7 +339,7 @@ private:
 		Drive& d = CurrentDrive();
 		uint8_t value = (uint8_t)((_dor & DorSelectDrive) | (_head << 2) |
 			(d.Cylinder == 0 ? 0x10 : 0x00) |
-			(d.WriteProtected ? 0x40 : 0x00) |
+			(IsWriteProtected(d) ? 0x40 : 0x00) |
 			(d.Inserted ? 0x20 : 0x00) | 0x28);
 		EndCommand(false, { value });
 	}
@@ -456,9 +463,10 @@ private:
 	void PhaseWriteData()
 	{
 		Drive& d = CurrentDrive();
-		if(d.WriteProtected) {
+		if(IsWriteProtected(d)) {
 			_st0 |= St0AbnormalTermination;
 			_st1 |= St1NotWriteable;
+			MessageManager::DisplayMessage("Floppy", "FloppyWriteProtected");
 			EndCommandFull(true);
 			return;
 		}
@@ -487,9 +495,10 @@ private:
 	void PhaseFormatTrack()
 	{
 		Drive& d = CurrentDrive();
-		if(d.WriteProtected) {
+		if(IsWriteProtected(d)) {
 			_st0 |= St0AbnormalTermination;
 			_st1 |= St1NotWriteable;
+			MessageManager::DisplayMessage("Floppy", "FloppyWriteProtected");
 			EndCommand(true, { _st0, _st1, _st2, _cylinder, _head, _sectorNumber, _command[CmdFormatSectorSize] });
 			return;
 		}
@@ -596,6 +605,10 @@ public:
 		_dataRate = 500;
 		Reset();
 	}
+
+	//The machine's write-protect setting (NesConfig::FloppyWriteProtected), read at each access so
+	//that changing it is moving the tab: the mapper points this at it
+	void SetWriteProtectSource(const bool* source) { _writeProtectSource = source; }
 
 	void MarkActivity() { _activityCycles = 90000; }
 	bool IsActive() { return _activityCycles > 0; }

@@ -256,6 +256,12 @@ bool MesenMovie::ApplySettings(istream& settingsData)
 	//Load settings
 	s.Stream(*settings, "", -1);
 
+	//A recording from before floppies could be write-protected was made with them writable: a
+	//missing setting keeps the current one, which would turn the recording's saves into errors
+	if(consoleType == ConsoleType::Nes && !s.ContainsKey("_nes.FloppyWriteProtected")) {
+		settings->GetNesConfig().FloppyWriteProtected = false;
+	}
+
 	return true;
 }
 

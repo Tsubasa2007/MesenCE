@@ -3886,6 +3886,7 @@ E
 			<Value ID="PlayVideoTrack">Play from the Disc</Value>
 			<Value ID="ShowDiscMenu">Menu Screens</Value>
 			<Value ID="EjectDisk">Eject Disk</Value>
+			<Value ID="FloppyWriteProtect">Floppy Write-Protected</Value>
 			<Value ID="TapePlayPause">Play/Pause Tape</Value>
 			<Value ID="TapeSeekBack">Tape Back 10 Seconds</Value>
 			<Value ID="TapeSeekForward">Tape Forward 10 Seconds</Value>

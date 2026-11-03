@@ -695,6 +695,7 @@ namespace Mesen.Debugger.Utilities
 		ShowDiscMenu,
 		[IconFile("MediaEject")]
 		EjectDisk,
+		FloppyWriteProtect,
 		[IconFile("MediaPlay")]
 		TapePlayPause,
 		TapeSeekBack,

@@ -174,6 +174,9 @@ protected:
 
 	void InitMapper() override
 	{
+		//Floppy writes follow the machine's write-protect setting (NesConfig::FloppyWriteProtected)
+		_fdc.SetWriteProtectSource(&_console->GetNesConfig().FloppyWriteProtected);
+
 		_prgReg = _mode = _lastNt = 0;
 		AddRegisterRange(0x5000, 0x5FFF, MemoryOperation::Write);
 		RemoveRegisterRange(0x8000, 0xFFFF, MemoryOperation::Write);

@@ -37,6 +37,7 @@ std::unordered_map<string, string> MessageManager::_enResources = {
 	{ "EmulationMaximumSpeed", u8"Maximum speed" },
 	{ "EmulationSpeedPercent", u8"%1%" },
 	{ "FdsDiskInserted", u8"Disk %1 Side %2 inserted." },
+	{ "FloppyWriteProtected", u8"The disk is write-protected: nothing was written (Game > Floppy Write-Protected)" },
 	{ "Frame", u8"Frame" },
 	{ "GameCrash", u8"Game has crashed (%1)" },
 	{ "KeyboardModeDisabled", u8"Keyboard mode disabled." },

@@ -51,6 +51,7 @@ namespace Mesen.Config
 		[ObservableProperty] public partial bool DisableDiscVideoPlayback { get; set; } = false;
 		[ObservableProperty] public partial bool YuxingDTypeMouse { get; set; } = false;
 		[ObservableProperty] public partial bool YuxingOnlineServer { get; set; } = false;
+		[ObservableProperty] public partial bool FloppyWriteProtected { get; set; } = true;
 		[ObservableProperty] public partial string BbkDiskFolder { get; set; } = "";
 		[ObservableProperty] public partial string BbkPcLinkFolder { get; set; } = "";
 		[ObservableProperty] public partial VsDualOutputOption VsDualVideoOutput { get; set; } = VsDualOutputOption.Both;
@@ -196,6 +197,7 @@ namespace Mesen.Config
 				DisableDiscVideoPlayback = DisableDiscVideoPlayback,
 				YuxingDTypeMouse = YuxingDTypeMouse,
 				YuxingOnlineServer = YuxingOnlineServer,
+				FloppyWriteProtected = FloppyWriteProtected,
 				VsDualVideoOutput = VsDualVideoOutput,
 				VsDualAudioOutput = VsDualAudioOutput,
 
@@ -344,6 +346,7 @@ namespace Mesen.Config
 		[MarshalAs(UnmanagedType.I1)] public bool DisableDiscVideoPlayback;
 		[MarshalAs(UnmanagedType.I1)] public bool YuxingDTypeMouse;
 		[MarshalAs(UnmanagedType.I1)] public bool YuxingOnlineServer;
+		[MarshalAs(UnmanagedType.I1)] public bool FloppyWriteProtected;
 		public VsDualOutputOption VsDualVideoOutput;
 		public VsDualOutputOption VsDualAudioOutput;
 

@@ -756,6 +756,9 @@ protected:
 
 	void InitMapper() override
 	{
+		//Floppy writes follow the machine's write-protect setting (NesConfig::FloppyWriteProtected)
+		_fdc.SetWriteProtectSource(&_console->GetNesConfig().FloppyWriteProtected);
+
 		//The BBK machines are Dendy-timed famiclones
 		_romInfo.System = GameSystem::Dendy;
 

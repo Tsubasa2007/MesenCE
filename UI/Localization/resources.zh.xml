@@ -1811,6 +1811,7 @@ bank 越小，通常 PNG 文件越少
 			<Value ID="PlayVideoTrack">从光盘播放</Value>
 			<Value ID="ShowDiscMenu">菜单画面</Value>
 			<Value ID="EjectDisk">弹出磁盘</Value>
+			<Value ID="FloppyWriteProtect">软盘写保护</Value>
 			<Value ID="TapePlayPause">播放/暂停磁带</Value>
 			<Value ID="TapeSeekBack">磁带后退 10 秒</Value>
 			<Value ID="TapeSeekForward">磁带前进 10 秒</Value>

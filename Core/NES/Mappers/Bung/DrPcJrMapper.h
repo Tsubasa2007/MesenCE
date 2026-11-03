@@ -2598,6 +2598,9 @@ protected:
 
 	void InitMapper() override
 	{
+		//Floppy writes follow the machine's write-protect setting (NesConfig::FloppyWriteProtected)
+		_fdc.SetWriteProtectSource(&_console->GetNesConfig().FloppyWriteProtected);
+
 		_romInfo.System = GameSystem::Dendy;
 
 		memset(_mapperRam, 0, _mapperRamSize);
@@ -3085,6 +3088,23 @@ protected:
 				UpdatePrgMapping();
 				UpdateChrMapping();
 				break;
+		}
+	}
+
+	//A floppy's changes go back to its image when the machine is switched off or another game is
+	//loaded, as on the BBK, not only when another floppy is put in
+	void SaveBattery() override
+	{
+		BaseMapper::SaveBattery();
+		if(_fdc.IsDirty()) {
+			_fdc.SaveDiskImage();
+		}
+	}
+
+	~DrPcJrMapper() override
+	{
+		if(_fdc.IsDirty()) {
+			_fdc.SaveDiskImage();
 		}
 	}
 

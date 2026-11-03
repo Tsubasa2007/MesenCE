@@ -683,6 +683,9 @@ protected:
 
 	void InitMapper() override
 	{
+		//Floppy writes follow the machine's write-protect setting (NesConfig::FloppyWriteProtected)
+		_disk.SetWriteProtectSource(&_console->GetNesConfig().FloppyWriteProtected);
+
 		_romInfo.System = GameSystem::Dendy;
 
 		if(!_swapListener) {

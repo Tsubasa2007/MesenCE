@@ -288,6 +288,20 @@ namespace Mesen.ViewModels
 					IsVisible = () => IsBbkGame,
 				},
 
+				//The write-protect tab of the learning machines' floppies, on unless the user wants a
+				//disk written: the program is told the disk is protected and nothing reaches the image.
+				//Not while a recording plays or is made - it is one of the recording's settings
+				new MainMenuAction() {
+					ActionType = ActionType.FloppyWriteProtect,
+					IsVisible = () => IsBbkGame && !IsTapeCard,
+					IsEnabled = () => !RecordApi.MoviePlaying() && !RecordApi.MovieRecording(),
+					IsSelected = () => ConfigManager.Config.Nes.FloppyWriteProtected,
+					OnClick = () => {
+						ConfigManager.Config.Nes.FloppyWriteProtected = !ConfigManager.Config.Nes.FloppyWriteProtected;
+						ConfigManager.Config.Nes.ApplyConfig();
+					}
+				},
+
 				new MainMenuAction(EmulatorShortcut.TapePlayPause) {
 					ActionType = ActionType.TapePlayPause,
 					IsVisible = () => IsTapeCard,
