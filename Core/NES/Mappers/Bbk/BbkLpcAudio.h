@@ -11,7 +11,7 @@
 //The original ran the decoder on a worker thread with a blocking byte-feed callback;
 //this port runs it synchronously: the CPU pushes bytes into a FIFO and one 200-sample
 //frame is decoded whenever enough data is buffered, played back at 10KHz.
-//SB-2000 variant differences: streams start with an $0A header (not $D6), the end-of-stream
+//SB-2000 variant differences: streams start with an $0A or $0B header (not $D6), the end-of-stream
 //marker parks the decoder in a Finished state (readable as "end of speech" status), and a
 //$F0 command byte restarts it for the next phrase.
 class BbkLpcAudio final : public ISerializable
@@ -518,13 +518,26 @@ private:
 		_state = LpcState::Startup;
 	}
 
+	//One of the two initial frames. A Subor PE stream that stops before it has said anything
+	//goes on at the next byte: one of a Subor dictionary card's sound units opens with a silent
+	//frame and a stop in its first byte, and its sound follows from the next. Stopping there
+	//left the vowel of a word out (the reference emulator stops there).
+	void PreloadFrame(LpcFrame& dst, LpcFrame& ref)
+	{
+		if(GetFrame(dst, ref) && IsSb2k() && _codec == &_codecPe && _framePrev.Energy == 0) {
+			_bitsLeft = 0;
+			_dataCache = 0;
+			GetFrame(dst, ref);
+		}
+	}
+
 	//Startup part 2: once the magic byte was found, decode the two initial frames
 	void PreloadFrames()
 	{
 		_state = LpcState::Run;
 
-		GetFrame(_framePrev, _framePrev);
-		GetFrame(_frameNext, _framePrev);
+		PreloadFrame(_framePrev, _framePrev);
+		PreloadFrame(_frameNext, _framePrev);
 
 		_frameCurr = _framePrev;
 
@@ -770,8 +783,11 @@ private:
 			//SB-2000: park in the Finished state - the software polls the "end of
 			//speech" status nibble and then restarts the decoder with a $F0 command.
 			if(IsSb2k()) {
+				//What was queued after the stop is the tail the software sent before it saw the
+				//status; the chip throws it away while it waits for the command (see WriteData)
 				_bitsLeft = 0;
 				_dataCache = 0;
+				_fifoReadPos = _fifoWritePos;
 				_state = LpcState::Finished;
 				_speechEnd = true;
 			} else if(_variant == LpcVariant::LingTong) {
@@ -818,9 +834,8 @@ private:
 		}
 
 		if(_state == LpcState::Finished) {
-			//SB-2000: scan for the $F0 restart command, one byte per tick. On restart the
-			//ring buffer is flushed (like the reference emulator) - the software sends the
-			//command, re-checks the status and only then streams the next phrase.
+			//Subor chip: WriteData takes the restart command as it is written, so only bytes
+			//queued in a save state made before that reach this
 			if(count >= 1) {
 				if(GetBits(8) == 0xF0) { //0xF0 == bit-reversed $0F, the byte the CPU writes
 					ResetSynth();
@@ -833,17 +848,25 @@ private:
 
 		if(_state == LpcState::Startup) {
 			if(!_magicFound) {
-				//Byte-aligned scan for the stream header ($D6 on the BBK, $0A on the
-				//SB-2000), one byte per tick. The other two machines have no header - their
+				//Byte-aligned scan for the stream header ($D6 on the BBK, $0A or $0B on the
+				//Subor chip), one byte per tick. The other machines have no header - their
 				//streams open straight into the first frame, so consuming a byte here would
 				//shift the whole bitstream and decode everything after it as noise.
 				if(IsPlainStream()) {
 					_magicFound = true;
 					return;
 				}
-				uint8_t magic = IsSb2k() ? 0x50 : 0x6B; //bit-reversed
 				if(count >= 1) {
-					if(GetBits(8) == magic) {
+					int16_t value = GetBits(8); //bit-reversed
+					if(IsSb2k()) {
+						//The Subor chip's header also picks the coefficient set: $0A is D6, $0B is PE.
+						//A Subor dictionary card speaks its words in PE; taking only $0A skipped
+						//those streams up to a stray $0A in their data and decoded the rest as noise.
+						if(value == 0x50 || value == 0xD0) {
+							_codec = value == 0xD0 ? &_codecPe : &_codecD6;
+							_magicFound = true;
+						}
+					} else if(value == 0x6B) {
 						_magicFound = true;
 					}
 				}
@@ -940,6 +963,11 @@ protected:
 		SV(_cycleAcc); SV(_regFF10); SV(_lastOutput);
 		SV(_subStep); SV(_prevSample); SV(_currSample);
 		SV(_speechEnd);
+		bool peCodec = _codec == &_codecPe;
+		SV(peCodec);
+		if(!s.IsSaving()) {
+			_codec = peCodec ? &_codecPe : &_codecD6;
+		}
 		SV(_seekSync);
 		SV(_tmsRng);
 		SV(_tmsEnergy); SV(_tmsPitch); SV(_tmsPrevEnergy); SV(_tmsPitchCount);
@@ -1028,6 +1056,20 @@ public:
 	//$FF18 write (SpeakDataPort)
 	void WriteData(uint8_t value)
 	{
+		if(_state == LpcState::Finished) {
+			//Subor chip, stopped: it acts on the $0F restart command at once and drops anything
+			//else. A Subor dictionary card writes the command the moment the status says the
+			//speech ended and starts its next sound right behind it; with the command queued,
+			//the status still said "ended" after that sound's header, so the card ended it
+			//unplayed, and the restart then flushed what the card had sent of it.
+			if(value == 0x0F) {
+				ResetSynth();
+				_fifoReadPos = _fifoWritePos;
+				_speechEnd = false;
+			}
+			return;
+		}
+
 		if(!IsFifoFull()) {
 			_fifo[_fifoWritePos] = value;
 			_fifoWritePos = (_fifoWritePos + 1) & (FifoSize - 1);
