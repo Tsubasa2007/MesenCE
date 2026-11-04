@@ -104,7 +104,8 @@ private:
 	//The 软驱一号 floppy add-on. This machine drives the PC-style controller model rather
 	//than the simplified one the BBK uses - see PcFdc - so the register file is exposed
 	//directly: $4200 = data rate, $4201 = digital output, $4205 = data, $4304 = main
-	//status, $4305 = data.
+	//status, $4305 = data. The floppy model's programs reach the same controller with the
+	//serial port's address lines - see IsFloppyAddress.
 	PcFdc _fdc;
 
 	//Speech synthesizer command state ($4700). The chip is fed the LPC-10 bitstream one
@@ -503,10 +504,19 @@ private:
 		//every sprite it drew came out empty. Such a program sees its pattern tables read-only.
 		//One that brought none builds its tiles in them and keeps them writable - the same
 		//"how much did the loader page in" that CramFoldMask goes by.
+		//
+		//Except for CHR banks 8 and 9: the boards with 2KB of CHR RAM beside their ROM put it
+		//there, and a game from one writes its text into them. Read-only, it lost every glyph
+		//and its screens came out as garbage tiles. Writes to the other banks stay dropped, as
+		//they were on those boards too.
 		bool chrIsRom = _cramLoaded >= 2;
+		uint8_t chosen[8] = {
+			(uint8_t)(_mmc3Chr01 + 0), (uint8_t)(_mmc3Chr01 + 1), (uint8_t)(_mmc3Chr23 + 0), (uint8_t)(_mmc3Chr23 + 1),
+			_mmc3Chr4, _mmc3Chr5, _mmc3Chr6, _mmc3Chr7
+		};
 		for(uint16_t i = 0; i < 8; i++) {
 			uint16_t slot = cwrap ? (uint16_t)((i + 4) & 7) : i;
-			if(chrIsRom) {
+			if(chrIsRom && chosen[i] != 8 && chosen[i] != 9) {
 				SetPpuMemoryMapping((uint16_t)(slot * 0x400), (uint16_t)(slot * 0x400 + 0x3FF), ChrMemoryType::ChrRam,
 					(uint32_t)(c[i] & 0x1FF) * 0x400, MemoryAccessType::Read);
 			} else {
@@ -973,6 +983,11 @@ protected:
 			return _modem.Read(addr);
 		}
 
+		if(_type != YuxingType::Huatong && IsFloppyAddress(addr)) {
+			_fdc.MarkActivity();
+			return _fdc.Read(YuxingModem::RegisterOf(addr));
+		}
+
 		switch(addr) {
 			case 0x4016:
 			case 0x4017: {
@@ -1066,6 +1081,12 @@ protected:
 			_modem.SetServerEnabled(_console->GetNesConfig().YuxingOnlineServer);
 			_modem.SetEmulator(_emu);
 			_modem.Write(addr, value);
+			return;
+		}
+
+		if(_type != YuxingType::Huatong && IsFloppyAddress(addr)) {
+			_fdc.MarkActivity();
+			_fdc.Write(YuxingModem::RegisterOf(addr), value);
 			return;
 		}
 
@@ -1386,6 +1407,12 @@ protected:
 
 	bool IsVcdActive() { return (_vcdMode || _driveLink) && _vcd.IsDiscInserted(); }
 
+	//The floppy model's programs address the floppy controller the way they address the
+	//serial port, with A3 clear where the port has it set: $4254 = digital output,
+	//$4364 = main status, $42E4/$43E4 = data, $42F4 = data rate. Without them the
+	//controller never answered, and reading a floppy timed out with "读磁盘错误!".
+	static bool IsFloppyAddress(uint16_t addr) { return (addr & 0xFE4F) == 0x4244; }
+
 	//$4016/$4017 are handled by the mapper here, so the controller port's own value has to
 	//be fetched from the control manager and merged in by hand
 	NesControlManager* NesControls() { return (NesControlManager*)_console->GetControlManager(); }
@@ -1569,9 +1596,8 @@ protected:
 		//
 		//An empty drive and nothing else. Whatever is in the drive belongs on the player's
 		//side, in every state it can be in: a disc carrying one program shows its title screen
-		//or has had it picked already, a disc carrying a library draws its own menu, and one whose program has not
-		//been chosen yet is chosen from the disk list, which starts the machine again on it.
-		//Skipping for any of those is what made a disc reachable only through that list.
+		//or has had it picked already, and a disc carrying a library draws its own menu.
+		//Skipping for either of those left the disc out of reach.
 		if(_vcdMode && !_vcd.HasDisc() && _console->GetNesConfig().YuxingSkipVcdScreen) {
 			_vcdMode = false;
 			_reg5002 = 2;
@@ -1587,8 +1613,8 @@ protected:
 	//cycles the machine, and the pick is carried across it; after that it is spent. Any later
 	//power cycle is the machine losing the program it loaded - its RAM is cleared - and the
 	//BIOS finds the disc again and shows the disc's menu, as the reference emulator does too.
-	//Keeping the pick sent every power cycle straight back into the game. A disc with no menu
-	//has no other way to reach its programs than the disk list, so there the pick stays.
+	//Keeping the pick sent every power cycle straight back into the game. On a disc with no
+	//menu the pick stays: nothing on the disc could make it again.
 	void RestoreSelectedProgram()
 	{
 		if(_persistedProgramIndex >= 0 && _vcd.GetProgramCount() > 0) {
@@ -1604,8 +1630,7 @@ protected:
 		//A disc carrying a single program has already made the choice, and that program is
 		//what the machine would find and start by itself. Leaving it unpicked is what sent
 		//these discs to the computer side at power-on: an unpicked disc answers exactly like
-		//an empty drive, so the player's own screen had nothing on it and was skipped, and
-		//the only way back was to pick the program out of the disk list by hand.
+		//an empty drive, so the player's own screen had nothing on it and was skipped.
 		//
 		//A disc that carries a library of them is a different thing - there is no one program
 		//to start, the machine's way of choosing is a menu it reads off the disc itself, and
@@ -1623,21 +1648,6 @@ protected:
 	bool MountPairedMedia()
 	{
 		string romPath = _emu->GetRomInfo().RomFile.GetFilePath();
-
-		if(_persistedDiscRom == romPath && !_persistedDiscPath.empty()) {
-			if(_vcd.LoadDisc(_persistedDiscPath)) {
-				RestoreSelectedProgram();
-				MessageManager::Log("[YuXing] Re-inserted disc: " + _persistedDiscPath);
-				return _vcd.IsDiscInserted();
-			}
-		}
-
-		if(_persistedFloppyRom == romPath && !_persistedFloppyPath.empty()) {
-			if(_fdc.LoadDiskImage(_persistedFloppyPath)) {
-				MessageManager::Log("[YuXing] Re-inserted disk: " + _persistedFloppyPath);
-			}
-		}
-
 		string baseName = FolderUtilities::GetFilename(romPath, false);
 		vector<string> folders = { FolderUtilities::GetFolderName(romPath) };
 		string configured = GetConfiguredDiscFolder();
@@ -1645,6 +1655,15 @@ protected:
 			folders.push_back(configured);
 		}
 
+		//The floppy first, whatever the disc drive holds. The disc chosen before a power cycle
+		//is put back without a search, and that used to return before the floppy was looked
+		//for: a disc whose title screen starts its program power cycles the machine, so the
+		//program found the floppy drive empty.
+		if(_persistedFloppyRom == romPath && !_persistedFloppyPath.empty()) {
+			if(_fdc.LoadDiskImage(_persistedFloppyPath)) {
+				MessageManager::Log("[YuXing] Re-inserted disk: " + _persistedFloppyPath);
+			}
+		}
 		for(string& folder : folders) {
 			//A floppy for the 软驱一号 drive, paired with the ROM by name
 			for(string ext : { ".img", ".IMG", ".ima", ".IMA" }) {
@@ -1657,7 +1676,17 @@ protected:
 					break;
 				}
 			}
+		}
 
+		if(_persistedDiscRom == romPath && !_persistedDiscPath.empty()) {
+			if(_vcd.LoadDisc(_persistedDiscPath)) {
+				RestoreSelectedProgram();
+				MessageManager::Log("[YuXing] Re-inserted disc: " + _persistedDiscPath);
+				return _vcd.IsDiscInserted();
+			}
+		}
+
+		for(string& folder : folders) {
 			//A .cue is preferred over the .bin it names, so a whole-disc image wins over a
 			//single extracted program of the same name
 			for(string ext : { ".cue", ".CUE", ".bin", ".BIN", ".iso", ".ISO" }) {
@@ -1665,9 +1694,6 @@ protected:
 				if(_vcd.LoadDisc(discPath)) {
 					RestoreSelectedProgram();
 					MessageManager::Log("[YuXing] Inserted disc: " + discPath);
-					if(_vcd.GetProgramCount() > 0 && !_vcd.IsDiscInserted() && !_vcd.OpensOnTitle()) {
-						MessageManager::DisplayMessage("YuXing", std::to_string(_vcd.GetProgramCount()) + " programs on disc - pick one from the disk list");
-					}
 					return _vcd.IsDiscInserted();
 				}
 			}
@@ -1677,9 +1703,14 @@ protected:
 
 public:
 	//Media swapping - driven by the FDS disk shortcut keys via DiscSwapListener.
-	//The machine takes two kinds of media and the list holds both: a .bin is a VCD disc for
-	//the player side, a .img/.ima is a floppy for the 软驱一号 drive. Which device an entry
-	//goes into is decided by its extension.
+	//The machine takes two kinds of media and the list holds both: a .cue/.bin/.iso is a VCD
+	//disc for the player side, a .img/.ima is a floppy for the 软驱一号 drive. Which device an
+	//entry goes into is decided by its extension.
+	//
+	//Files only, never the programs on a disc. The machine reaches those through the disc
+	//itself - its menu, or the title screen in front of its one program - and every disc
+	//seen has one or the other. Listing the programs instead of the files also left no way
+	//to put a floppy in while a disc was in the drive.
 	static bool IsFloppyImage(const string& path)
 	{
 		string ext = path.size() >= 4 ? path.substr(path.size() - 4) : string();
@@ -1689,17 +1720,6 @@ public:
 
 	vector<string> GetDiskFileList()
 	{
-		//A whole-disc image carries its own list: the programs on the disc are what the swap
-		//shortcuts step through, since swapping the image itself is not what a user wants
-		//while one of its programs is running.
-		if(_vcd.GetProgramCount() > 0) {
-			vector<string> programs;
-			for(uint32_t i = 0; i < _vcd.GetProgramCount(); i++) {
-				programs.push_back(_vcd.GetProgramName(i));
-			}
-			return programs;
-		}
-
 		string folder = GetConfiguredDiscFolder();
 		if(folder.empty()) {
 			folder = FolderUtilities::GetFolderName(_emu->GetRomInfo().RomFile.GetFilePath());
@@ -1881,8 +1901,7 @@ public:
 	}
 
 	//What the menu was for: the program behind the entry that was chosen. The machine is
-	//started again on it, which is what picking one out of the disk list does - so the two
-	//ways in end up in the same place.
+	//started again on it.
 	void StartMenuProgram(uint32_t index)
 	{
 		if(!_vcd.SelectProgram(index)) {
@@ -1927,9 +1946,6 @@ public:
 
 	string GetCurrentDiskFilename()
 	{
-		if(!_fdc.IsDiskInserted() && _vcd.GetProgramIndex() >= 0) {
-			return _vcd.GetProgramName((uint32_t)_vcd.GetProgramIndex());
-		}
 		return _fdc.IsDiskInserted() ? _fdc.GetDiskFilename() : _vcd.GetDiscFilename();
 	}
 
@@ -1977,19 +1993,6 @@ public:
 	void InsertDisc(uint32_t index)
 	{
 		auto lock = _emu->AcquireLock();
-		//Picking one of the programs on the mounted disc, rather than a different medium
-		if(_vcd.GetProgramCount() > 0) {
-			if(_vcd.SelectProgram(index)) {
-				_discChecked = true;
-				_persistedProgramIndex = (int32_t)index;
-				_persistedDiscRom = _emu->GetRomInfo().RomFile.GetFilePath();
-				_persistedDiscPath = _vcd.GetDiscFilename();
-				MessageManager::DisplayMessage("YuXing", "Program: " + _vcd.GetProgramName(index));
-				_emu->GetSystemActionManager()->PowerCycle();
-			}
-			return;
-		}
-
 		vector<string> media = GetDiskFileList();
 		if(index >= media.size()) {
 			return;

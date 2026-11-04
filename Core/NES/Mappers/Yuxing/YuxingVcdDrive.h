@@ -799,11 +799,10 @@ public:
 	//True while any disc is mounted, chosen program or not
 	bool HasDisc() { return !_disc.empty() || !_programs.empty(); }
 
-	//A whole-disc image offers its programs to the media-swap UI; a single extracted
-	//program has none to offer, and the folder's files are listed instead.
+	//The programs on a whole-disc image; a single extracted program has none
 	uint32_t GetProgramCount() { return (uint32_t)_programs.size(); }
-	//What the media list shows: the disc's own filename, the title if a sidecar gave one, and
-	//the size, which is the one thing that says whether a program will run at all here
+	//A program's name for the log: the disc's own filename, the title if a sidecar gave one,
+	//and the size
 	string GetProgramName(uint32_t index)
 	{
 		if(index >= _programs.size()) {
@@ -1377,9 +1376,8 @@ public:
 
 		MessageManager::Log("[YuXing] Disc image: " + std::to_string(_image.SectorCount()) + " sectors");
 
-		//A disc holds programs. None is started here - the machine comes up on its own side
-		//and the disc's programs are offered through the media list, which is as close to the
-		//player's own menu as this can get without decoding the MPEG stills it was drawn from.
+		//A disc holds programs. None is started here: the machine reaches them through the
+		//disc's own menu, or the title screen in front of its one program.
 		if(ScanIsoPrograms()) {
 			ScanSegmentOrigin();
 			LoadProgramNames(imagePath);

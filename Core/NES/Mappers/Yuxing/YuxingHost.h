@@ -151,6 +151,11 @@ private:
 	bool _afterDownload = false;
 	bool _pageNext = false;
 	bool _pageMore = false;
+	//The file 股市传真 is reading a page at a time - see SendPage
+	bool _paging = false;
+	uint8_t _pageSection = 0;
+	uint8_t _pageFile = 0;
+	uint32_t _pagePos = 0;
 	bool _earliest = false;
 	shared_ptr<const YuxingContent> _content;
 	bool _overPort = false;
@@ -446,18 +451,41 @@ private:
 	//ending in the --More-- prompt's ESC [ m. The file's last ESC [ J it takes for an end with nothing
 	//left to draw, so that comes after the Space that asks for more. There are no quotes here. It
 	//leaves as it does after a download
+	//
+	//A screen at a time, as more sends it: a whole day's quotes are some 80KB, and sent in one go
+	//they overflowed what the line holds, lost their end and left the program waiting for it.
 	void SendPage(const string& line)
 	{
 		int section;
 		int file;
-		if(FindPath(line, section, file)) {
-			//All of it but the ^Z that ends a file
-			const vector<uint8_t>& data = Content().Sections[section].Files[file].Data;
-			SendBytes(data.data(), (uint32_t)data.size() - (!data.empty() && data.back() == 0x1A ? 1 : 0));
-		}
-		Send("\r\n\x1B[7m--More--\x1B[m");
-		_pageMore = true;
+		_paging = FindPath(line, section, file);
+		_pageSection = (uint8_t)section;
+		_pageFile = (uint8_t)file;
+		_pagePos = 0;
+		SendNextPage();
 		_afterDownload = true;
+	}
+
+	static constexpr int PageLines = 23;
+
+	void SendNextPage()
+	{
+		if(_paging) {
+			//All of it but the ^Z that ends a file
+			const vector<uint8_t>& data = Content().Sections[_pageSection].Files[_pageFile].Data;
+			uint32_t size = (uint32_t)data.size() - (!data.empty() && data.back() == 0x1A ? 1 : 0);
+			uint32_t end = _pagePos;
+			for(int lines = 0; end < size && lines < PageLines; end++) {
+				if(data[end] == '\n') {
+					lines++;
+				}
+			}
+			SendBytes(data.data() + _pagePos, end - _pagePos);
+			_pagePos = end;
+			_paging = end < size;
+		}
+		Send(_paging ? "\x1B[7m--More--\x1B[m" : "\r\n\x1B[7m--More--\x1B[m");
+		_pageMore = true;
 	}
 
 	static bool SameName(const string& a, const string& b)
@@ -1526,9 +1554,14 @@ public:
 			_pageMore = false;
 			if(value == ' ') {
 				_wait = AnswerCycles;
-				Send("\x1B[J");
+				if(_paging) {
+					SendNextPage();
+				} else {
+					Send("\x1B[J");
+				}
 				return;
 			}
+			_paging = false;
 		}
 		if(IsZmodem()) {
 			ReceiveZmodem(value);
@@ -1572,7 +1605,7 @@ public:
 		SVArray(_out, OutSize); SV(_outHead); SV(_outCount);
 		SVArray(_line, MaxLine + 1); SV(_lineLength);
 		SV(_wait);
-		SV(_dir); SV(_pickingDir); SV(_confirmations); SV(_afterDownload); SV(_pageNext); SV(_pageMore); SV(_earliest); SV(_overPort); SV(_homeDelay); SV(_library);
+		SV(_dir); SV(_pickingDir); SV(_confirmations); SV(_afterDownload); SV(_pageNext); SV(_pageMore); SV(_paging); SV(_pageSection); SV(_pageFile); SV(_pagePos); SV(_earliest); SV(_overPort); SV(_homeDelay); SV(_library);
 		SV(_sendSection); SV(_sendFile); SV(_sendPos); SV(_sendingData);
 		SV(_internetStep); SV(_tinScreen); SVVector(_tinNumber); SV(_tinForum);
 		SV(_mailNext); SV(_mailCurrent);
