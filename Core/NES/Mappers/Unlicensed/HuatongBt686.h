@@ -263,10 +263,20 @@ protected:
 		AddRegisterRange(0x4600, 0x4600, MemoryOperation::Any);
 		AddRegisterRange(0x4700, 0x4700, MemoryOperation::Write);
 
-		//Blank, not zero: the word processor counts a RAM page as a saved file when the page's
-		//checksum bytes match the sum and XOR of its contents, which an all-zero page does - every
-		//page then listed as a file with an empty name
-		_ram.assign(RamSize, 0xFF);
+		//What static RAM holds at power-on, the same every time here. Not zero: the word processor
+		//counts a RAM page as a saved file when the page's checksum bytes match the sum and XOR of
+		//its contents, which an all-zero page does - every page then listed as a file with an empty
+		//name. Nor one value throughout: the built-in TV program takes the slot for its card when
+		//the slot reads at $FFFE-$FFFF what it does at $90B5-$90B6, and then starts the RAM
+		//through its reset vector - $FFFF, for RAM all of one value.
+		_ram.resize(RamSize);
+		uint32_t noise = 0x2545F491;
+		for(uint8_t& value : _ram) {
+			noise ^= noise << 13;
+			noise ^= noise >> 17;
+			noise ^= noise << 5;
+			value = (uint8_t)(noise >> 24);
+		}
 		SetCpuMemoryMapping(0x6000, 0x7FFF, 0, PrgMemoryType::WorkRam);
 		_fdc.Reset();
 		_fdc.SetSilentWithoutDisk(true);
@@ -275,11 +285,13 @@ protected:
 		//it still holds a FIFO's worth to speak - the reset waits for those, as on the Dr. PC Jr.
 		_lpcAudio.reset(new BbkLpcAudio(_console, BbkLpcAudio::LpcVariant::Yuxing));
 		_lpcAudio->DeferResetUntilSpoken();
-		//A real machine's start-up phrase lasts as long as at 10KHz and 200 samples a frame but
-		//its voice is 0.79x as high: 8KHz, with a frame every 20ms
-		_lpcAudio->SetTiming(8000, 160);
-		_lpcAudio->Reset();
+		//8KHz, from the pitch of two real machines' start-up phrase, which they speak at different
+		//speeds: one with an HT-DOS 2.0 card takes a frame every 20ms, the other, taken to have an
+		//HT-DOS V1.0 card, every 25ms
 		uint32_t prgCrc = _romInfo.Hash.PrgCrc32;
+		bool htDos1Card = prgCrc == V10Crc || prgCrc == V20aCrc;
+		_lpcAudio->SetTiming(8000, htDos1Card ? 200 : 160);
+		_lpcAudio->Reset();
 		_byteSpeech = prgCrc == V10Crc || prgCrc == V20aCrc || prgCrc == V20Crc;
 		_speechInHeader = true;
 		_speechStops = 0;
