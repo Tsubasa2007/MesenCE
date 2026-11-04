@@ -138,6 +138,10 @@ private:
 	int32_t _pollTimer = 0;
 	uint8_t _pollDrive = 0;
 	bool _previouslyReady[4] = {};
+	//What Sense Interrupt Status has still to report, one drive at a time: a ready change
+	//per drive (bit = drive), and the end of a seek or recalibrate
+	uint8_t _pollPending = 0;
+	bool _seekPending = false;
 
 	int32_t _activityCycles = 0;
 	int32_t _searchFailDelay = 0; //CPU cycles until a failed sector search reports its result
@@ -303,6 +307,7 @@ private:
 		if(!d.Exists) {
 			_st0 |= St0AbnormalTermination;
 		}
+		_seekPending = true;
 		EndCommand(true, {});
 	}
 
@@ -318,12 +323,35 @@ private:
 		if(!d.Exists) {
 			_st0 |= St0AbnormalTermination;
 		}
+		_seekPending = true;
 		EndCommand(true, {});
 	}
 
+	//The end of a seek comes first, and stands for its drive's ready change too; then the
+	//drives whose ready line changed, lowest first. With nothing waiting the last status is
+	//given again.
+	//
+	//One status for everything was not enough: the polling that follows a reset overwrote
+	//the end of a recalibrate sent straight after it, and Sense Interrupt Status went on
+	//reporting the last drive's ready change for good. A YuXing floppy-model program waits
+	//for the recalibrate's own status that way, and gave up on the disk.
 	void CmdSenseInterruptStatus()
 	{
 		_sra &= ~SraIrq;
+		if(_seekPending) {
+			_seekPending = false;
+			_pollPending &= (uint8_t)~(1 << (_st0 & 3));
+			EndCommand(false, { _st0, (uint8_t)_drives[_st0 & 3].Cylinder });
+			return;
+		}
+		for(uint8_t i = 0; i < 4; i++) {
+			if(_pollPending & (1 << i)) {
+				_pollPending &= (uint8_t)~(1 << i);
+				_st0 = (uint8_t)(St0Polling | i);
+				EndCommand(false, { _st0, (uint8_t)_drives[i].Cylinder });
+				return;
+			}
+		}
 		EndCommand(false, { _st0, (uint8_t)CurrentDrive().Cylinder });
 	}
 
@@ -367,7 +395,7 @@ private:
 			_pollTimer = 394; //~220us polling interval
 			if(_previouslyReady[_pollDrive] != _drives[_pollDrive].Ready) {
 				_previouslyReady[_pollDrive] = _drives[_pollDrive].Ready;
-				_st0 = (uint8_t)((_st0 & ~St0SeekComplete) | St0Polling | _pollDrive);
+				_pollPending |= (uint8_t)(1 << _pollDrive);
 				_sra |= SraIrq;
 			}
 			_pollDrive = (_pollDrive + 1) & 3;
@@ -589,6 +617,8 @@ public:
 		_searchFailDelay = 0;
 		_pollTimer = 0;
 		_pollDrive = 0;
+		_pollPending = 0;
+		_seekPending = false;
 		for(int i = 0; i < 4; i++) {
 			_previouslyReady[i] = false;
 
@@ -766,7 +796,7 @@ public:
 		SV(_sectorSize); SV(_bytesLeft); SV(_dataPos); SV(_dataRate);
 		SV(_resetPin); SV(_useDma); SV(_phase); SV(_commandLen); SV(_resultCount);
 		SV(_resultPos); SV(_pollTimer); SV(_pollDrive); SV(_activityCycles); SV(_dirty);
-		SV(_searchFailDelay);
+		SV(_searchFailDelay); SV(_pollPending); SV(_seekPending);
 		SVArray(_command, 10);
 		SVArray(_results, 8);
 		for(int i = 0; i < 4; i++) {
