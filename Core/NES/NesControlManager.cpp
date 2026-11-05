@@ -152,7 +152,8 @@ shared_ptr<BaseControlDevice> NesControlManager::CreateControllerDevice(Controll
 			bool isSuborCart = SuborCarts::IsSuborCart(prgCrc);
 			bool reduced = YuxingMapper::IsV10OrV11(prgCrc) || isSuborCart;
 			bool mouseOnBit0 = SuborCarts::HasPs2Mouse(prgCrc) || SuborCarts::HasSerialMouseOnPort2(prgCrc);
-			device.reset(new SuborKeyboard(_emu, keys, reduced, SuborCarts::HasExtendedKeyboard(prgCrc), mouseOnBit0, SuborCarts::HasAltAtEnd(prgCrc), HuatongBt686::IsBt686(prgCrc)));
+			bool bt686 = dynamic_cast<HuatongBt686*>(_console->GetMapper()) != nullptr;
+			device.reset(new SuborKeyboard(_emu, keys, reduced, SuborCarts::HasExtendedKeyboard(prgCrc), mouseOnBit0, SuborCarts::HasAltAtEnd(prgCrc), bt686));
 			break;
 		}
 		case ControllerType::BbkKeyboard: device.reset(new BbkKeyboard(_emu, keys)); break;

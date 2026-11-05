@@ -11,6 +11,7 @@
 #include "Shared/MessageManager.h"
 #include "Utilities/FolderUtilities.h"
 #include "Utilities/Serializer.h"
+#include "Utilities/CRC32.h"
 
 //八通 BT-686, the 华通 (Huatong) learning machine, with its 系统程序卡 (system program card) in the
 //cartridge slot. Read off the card's code; there is no reference emulator for it.
@@ -462,20 +463,21 @@ protected:
 	}
 
 public:
-	//PRG CRC32s: the mask ROM followed by each card, and the mask ROM alone. System cards: V1.0
-	//(no version on the label; HT-DOS V1.0), V2.0 in two releases (V20aCrc the earlier, still
-	//HT-DOS V1.0; V20Crc with HT-DOS V2.0) and V3.0; then the dictionary card
+	//PRG CRC32s of the cards that speak otherwise than the rest (see InitMapper), each image being
+	//the mask ROM followed by the card: V1.0 (no version on the label; HT-DOS V1.0) and V2.0 in
+	//two releases (V20aCrc the earlier, still HT-DOS V1.0; V20Crc with HT-DOS V2.0)
 	static constexpr uint32_t V10Crc = 0x0747E153;
 	static constexpr uint32_t V20aCrc = 0xE9A025F6;
 	static constexpr uint32_t V20Crc = 0x09F6C5CD;
-	static constexpr uint32_t V30Crc = 0xE451E5A7;
-	static constexpr uint32_t DictionaryCrc = 0x56243EEC;
-	static constexpr uint32_t NoCardCrc = 0xB4300B49;
+	//The built-in mask ROM's CRC32
+	static constexpr uint32_t MaskRomCrc = 0xB4300B49;
 
-	static bool IsBt686(uint32_t prgCrc)
+	//An image is the BT-686 when it starts with the built-in mask ROM: alone, it is the machine
+	//with its slot empty, and whatever follows it is the card in the slot - a system card, the
+	//dictionary card, or a cartridge made into a card
+	static bool IsBt686(vector<uint8_t>& prgRom)
 	{
-		return prgCrc == V10Crc || prgCrc == V20aCrc || prgCrc == V20Crc || prgCrc == V30Crc ||
-			prgCrc == DictionaryCrc || prgCrc == NoCardCrc;
+		return prgRom.size() >= MaskRomSize && CRC32::GetCRC(prgRom.data(), MaskRomSize) == MaskRomCrc;
 	}
 
 	vector<string> GetDiskFileList()
