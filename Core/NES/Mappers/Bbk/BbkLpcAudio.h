@@ -316,6 +316,8 @@ private:
 	bool _blockUnderrun = false;
 	//Whether a reset waits for the queued bytes to be spoken (see WriteControl)
 	bool _deferReset = false;
+	//Whether a stop frame drops what is queued behind it and starts afresh (see RestartAfterStop)
+	bool _restartAfterStop = false;
 
 	uint8_t _fifo[FifoSize] = {};
 	uint32_t _fifoReadPos = 0;
@@ -790,6 +792,12 @@ private:
 				_fifoReadPos = _fifoWritePos;
 				_state = LpcState::Finished;
 				_speechEnd = true;
+			} else if(_restartAfterStop) {
+				//The bytes behind the stop are the end of the phrase as it is stored, and the next
+				//phrase follows them with no reset between: the chip drops what it holds and takes
+				//the next byte as the start of a stream
+				ResetSynth();
+				_fifoReadPos = _fifoWritePos;
 			} else if(_variant == LpcVariant::LingTong) {
 				//LingTong: the software pads every phrase with stop frames, and the chip falls
 				//silent there. Repeating the last frame instead holds the end of the word as a
@@ -1000,6 +1008,12 @@ public:
 	//For another machine whose software resets the chip the moment the last byte is queued, like
 	//the Dr. PC Jr. (see WriteControl)
 	void DeferResetUntilSpoken() { _deferReset = true; }
+
+	//For a chip that speaks one phrase after another with no reset between them: at a stop
+	//frame it throws away what is still queued, as a TMS5220 fed from outside does, and the
+	//next byte written opens a new stream. Decoding on from the stop read the stored tail of
+	//the phrase as a frame and took the next phrase from the wrong bit.
+	void RestartAfterStop() { _restartAfterStop = true; }
 
 	void Reset()
 	{

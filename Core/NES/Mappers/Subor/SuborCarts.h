@@ -111,6 +111,7 @@ public:
 			case 0x33A93F6E: //another maker's, with the Kingwon-type keyboard (mapper 241)
 			case 0x8FA597F8: //typing and dictionary cartridge (mapper 241)
 			case 0x957ABE27: //Wubi typing and English cartridge (mapper 241)
+			case 0x903EADB8: //the first one in another maker's edition (mapper 241)
 			case 0x006834C8: //multimedia card 1 in a V15.0 V2 host (mapper 178)
 			case 0xA05827EB: //multimedia card 2 in a V15.0 V2 host (mapper 178)
 			case 0xBD8ACE09: //multimedia card 4 in a V15.0 V2 host (mapper 178)
@@ -292,12 +293,13 @@ public:
 			case 0x51C41A5A: //16-in-1 study card from another maker (mapper 241)
 			case 0x5DD45CFA: //Kingwon learning cartridge, with a PS/2 mouse (mapper 241)
 			//Other makers' learning cartridges with the same 10-row keyboard scan. Most bring a
-			//mouse too (see HasPs2Mouse, HasSerialMouse and HasSerialMouseOnPort2); these ten don't.
+			//mouse too (see HasPs2Mouse, HasSerialMouse and HasSerialMouseOnPort2); these eleven don't.
 			case 0xE406218A: //(mapper 241)
 			case 0xCC330906: //(mapper 241)
 			case 0x2726FC11: //(mapper 178)
 			case 0xE90A6AEB: //(mapper 241)
 			case 0x2B74253D: //(mapper 241)
+			case 0x903EADB8: //the previous one in another maker's edition (mapper 241)
 			case 0xB72B17ED: //(mapper 178)
 			case 0x389785A0: //the previous one as a mapper 241 image
 			case 0x5F2FA921: //(mapper 241)
