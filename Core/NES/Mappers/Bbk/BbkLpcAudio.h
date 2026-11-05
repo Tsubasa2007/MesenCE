@@ -314,6 +314,21 @@ private:
 	uint32_t _phraseEnd = 0;
 	bool _phraseEndValid = false;
 	bool _blockUnderrun = false;
+	//The ends of the blocks queued behind that one, each with a reset still waiting for it
+	static constexpr uint8_t MaxLaterEnds = 8;
+	uint32_t _laterEnds[MaxLaterEnds] = {};
+	uint8_t _laterEndCount = 0;
+
+	//The block being decoded is done with: the next one queued, if any, is the one to watch for
+	void NextPhraseEnd()
+	{
+		_phraseEndValid = _laterEndCount > 0;
+		if(_phraseEndValid) {
+			_phraseEnd = _laterEnds[0];
+			_laterEndCount--;
+			memmove(_laterEnds, _laterEnds + 1, _laterEndCount * sizeof(_laterEnds[0]));
+		}
+	}
 	//Whether a reset waits for the queued bytes to be spoken (see WriteControl)
 	bool _deferReset = false;
 	//Whether a stop frame drops what is queued behind it and starts afresh (see RestartAfterStop)
@@ -795,9 +810,11 @@ private:
 			} else if(_restartAfterStop) {
 				//The bytes behind the stop are the end of the phrase as it is stored, and the next
 				//phrase follows them with no reset between: the chip drops what it holds and takes
-				//the next byte as the start of a stream
+				//the next byte as the start of a stream. With a reset waiting (see WriteControl),
+				//what follows it is the next phrase, already queued: only the tail before it goes.
 				ResetSynth();
-				_fifoReadPos = _fifoWritePos;
+				_fifoReadPos = _phraseEndValid ? _phraseEnd : _fifoWritePos;
+				NextPhraseEnd();
 			} else if(_variant == LpcVariant::LingTong) {
 				//LingTong: the software pads every phrase with stop frames, and the chip falls
 				//silent there. Repeating the last frame instead holds the end of the word as a
@@ -814,7 +831,11 @@ private:
 	//fewer bytes than it could consume: the bit reader fabricates zero bits on an empty
 	//FIFO, which would shift the bit alignment and turn the rest of the stream into noise.
 	//(The stream tail this can leave unconsumed is just the terminator - no audio is lost;
-	//the game resets the decoder via $FF10 before the next phrase anyway.)
+	//the game resets the decoder via $FF10 before the next phrase anyway.) The exception is a
+	//block with a reset waiting at its end (see WriteControl): all of it is queued, and the
+	//bit reader stops at the end instead of fabricating bits, so it is decoded to the end at
+	//once. Waiting for more bytes held its last frames back until the next phrase was sent,
+	//and a mapper 241 cartridge's word lost its ending and had it spoken before the next one.
 	void TryDecodeStep()
 	{
 		if(_pcmPos < _samplesPerFrame) {
@@ -878,20 +899,20 @@ private:
 						_magicFound = true;
 					}
 				}
-			} else if(count >= PreloadBytesNeeded) {
+			} else if(count >= PreloadBytesNeeded || _phraseEndValid) {
 				PreloadFrames();
 			}
 			return; //First frame is synthesized on the next tick
 		}
 
 		if(_state == LpcState::Run) {
-			if(count >= FrameBytesNeeded) {
+			if(count >= FrameBytesNeeded || _phraseEndValid) {
 				SynthesizeFrame();
 				if(_blockUnderrun) {
 					//That frame ran off the end of the block. Drop it and the padding behind
 					//it, and open the next block on a byte boundary with a clean synth.
 					_blockUnderrun = false;
-					_phraseEndValid = false;
+					NextPhraseEnd();
 					_bitsLeft = 0;
 					_dataCache = 0;
 					ResetSynth();
@@ -953,6 +974,7 @@ protected:
 		SVArray(_fifo, FifoSize);
 		SV(_fifoReadPos); SV(_fifoWritePos);
 		SV(_phraseEnd); SV(_phraseEndValid); SV(_blockUnderrun);
+		SVArray(_laterEnds, MaxLaterEnds); SV(_laterEndCount);
 
 		SV(_framePrev.Energy); SV(_framePrev.Pitch);
 		SV(_frameCurr.Energy); SV(_frameCurr.Pitch);
@@ -1018,6 +1040,8 @@ public:
 	void Reset()
 	{
 		_fifoReadPos = _fifoWritePos = 0;
+		_phraseEndValid = false;
+		_laterEndCount = 0;
 		_regFF10 = 0;
 		_pcmPos = (int16_t)_samplesPerFrame;
 		_cycleAcc = 0;
@@ -1051,17 +1075,27 @@ public:
 			//bytes before it has spoken what it holds. Flushing there threw away 16% of one
 			//lesson disc's speech and cut the end off its words. Remember where the block
 			//ends instead: the tail is still decoded, and the reset happens when the decoder
-			//reaches the boundary. The BBK, the BT-686 and the multimedia cards do the same (see
-			//DeferResetUntilSpoken); the other machines reset with a drained buffer.
+			//reaches the boundary. The BBK, the BT-686, the multimedia cards and the mapper 241
+			//cartridges do the same (see DeferResetUntilSpoken); the other machines reset with a
+			//drained buffer. A block can be queued whole behind one still waiting to be spoken -
+			//a mapper 241 cartridge sends a word as pieces of as little as two bytes - so its
+			//end is remembered as well; resets with nothing sent between them are one.
 			if(_deferReset && GetFifoCount() > 0) {
 				if(!_phraseEndValid) {
 					_phraseEnd = _fifoWritePos;
 					_phraseEndValid = true;
+				} else {
+					uint32_t lastEnd = _laterEndCount > 0 ? _laterEnds[_laterEndCount - 1] : _phraseEnd;
+					if(lastEnd != _fifoWritePos && _laterEndCount < MaxLaterEnds) {
+						_laterEnds[_laterEndCount++] = _fifoWritePos;
+					}
 				}
 			} else {
 				ResetSynth();
 				_pcmPos = (int16_t)_samplesPerFrame;
 				_fifoReadPos = _fifoWritePos = 0;
+				_phraseEndValid = false;
+				_laterEndCount = 0;
 			}
 		}
 		_regFF10 = value & 0x01;

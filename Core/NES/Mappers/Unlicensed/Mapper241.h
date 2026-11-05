@@ -69,9 +69,13 @@ protected:
 		}
 		if(HasSpeech()) {
 			_lpcAudio.reset(new BbkLpcAudio(_console, BbkLpcAudio::LpcVariant::Yuxing));
-			//The cartridges reset the chip once, at power-on, and send each phrase as it is
+			//Some cartridges reset the chip only at power-on and send each phrase as it is
 			//stored, with the bytes behind its stop frame (see BbkLpcAudio::RestartAfterStop)
 			_lpcAudio->RestartAfterStop();
+			//Others end every piece of a word with resets, each written as soon as the chip
+			//can take another write - while it still holds up to BusyThreshold bytes it has not
+			//spoken. Resetting there cut every piece short, and a piece of a few bytes was lost.
+			_lpcAudio->DeferResetUntilSpoken();
 			_lpcAudio->Reset();
 			//Reads of $8000-$FFFF stay plain ROM reads
 			RemoveRegisterRange(0x8000, 0xFFFF, MemoryOperation::Read);
