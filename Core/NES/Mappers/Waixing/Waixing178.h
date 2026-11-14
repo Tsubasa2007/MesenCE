@@ -19,7 +19,7 @@ private:
 	uint8_t _lpcByte = 0;
 	bool _lpcHalf = false;
 
-	bool HasSpeech() { return SuborCarts::HasLpcSpeech(_romInfo.Hash.PrgCrc32); }
+	bool HasSpeech() { return SuborCarts::HasLpcSpeech(_romInfo.Hash.CartPrgCrc32); }
 
 protected:
 	uint16_t GetPrgPageSize() override { return 0x4000; }
@@ -31,8 +31,8 @@ protected:
 	uint32_t GetWorkRamSize() override { return 0x8000; }
 	bool AllowRegisterRead() override { return HasSpeech(); }
 	//See SuborCarts::HasLongDendyFrame
-	int32_t GetDendyScanlineCount() override { return SuborCarts::HasLongDendyFrame(_romInfo.Hash.PrgCrc32) ? 313 : 312; }
-	int32_t GetDendyNmiScanline() override { return SuborCarts::HasLongDendyFrame(_romInfo.Hash.PrgCrc32) ? 292 : 291; }
+	int32_t GetDendyScanlineCount() override { return SuborCarts::HasLongDendyFrame(_romInfo.Hash.CartPrgCrc32) ? 313 : 312; }
+	int32_t GetDendyNmiScanline() override { return SuborCarts::HasLongDendyFrame(_romInfo.Hash.CartPrgCrc32) ? 292 : 291; }
 	bool EnableCpuClockHook() override { return HasSpeech(); }
 
 	void InitMapper() override

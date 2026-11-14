@@ -1316,27 +1316,27 @@ void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem syst
 			//The same key matrix as the LingTong machines, read by DongdaPec586
 			log("[Input] PEC-586 keyboard connected");
 			expDevice = ControllerType::Sb2kKeyboard;
-		} else if(SuborCarts::HasKingwonKeyboard(mapper->GetRomInfo().Hash.PrgCrc32)) {
+		} else if(SuborCarts::HasKingwonKeyboard(mapper->GetRomInfo().Hash.CartPrgCrc32)) {
 			//Mapper241 runs this keyboard's scan; the device only says which keys are down
 			log("[Input] Kingwon keyboard connected");
 			port1 = ControllerType::NesController;
 			port2 = ControllerType::NesController;
 			expDevice = ControllerType::Sb2kKeyboard;
-		} else if(SuborCarts::IsSuborCart(mapper->GetRomInfo().Hash.PrgCrc32)) {
+		} else if(SuborCarts::IsSuborCart(mapper->GetRomInfo().Hash.CartPrgCrc32)) {
 			//The mouse takes the first port so it answers $4016 and leaves $4017 to the keyboard,
 			//which is the split the Subor cartridges' BIOS scans - one 24-bit packet per latch on $4016,
 			//and the $05/$04/$06 key counter read back on $4017.
-			if(SuborCarts::HasPs2Mouse(mapper->GetRomInfo().Hash.PrgCrc32)) {
+			if(SuborCarts::HasPs2Mouse(mapper->GetRomInfo().Hash.CartPrgCrc32)) {
 				//The card's own mouse answers on $4017 bit 0, beside the keyboard's bits 1-4
 				log("[Input] PS/2 mouse connected");
 				port1 = ControllerType::NesController;
 				port2 = ControllerType::Ps2Mouse;
-			} else if(SuborCarts::HasSerialMouseOnPort2(mapper->GetRomInfo().Hash.PrgCrc32)) {
+			} else if(SuborCarts::HasSerialMouseOnPort2(mapper->GetRomInfo().Hash.CartPrgCrc32)) {
 				//The 24-bit mouse read on $4017 bit 0, beside the keyboard's bits 1-4
 				log("[Input] Subor mouse (24-bit) connected");
 				port1 = ControllerType::NesController;
 				port2 = ControllerType::SuborMouse24;
-			} else if(!SuborCarts::HasSerialMouse(mapper->GetRomInfo().Hash.PrgCrc32)) {
+			} else if(!SuborCarts::HasSerialMouse(mapper->GetRomInfo().Hash.CartPrgCrc32)) {
 				//No mouse driver in this one: a joypad in each port
 				port1 = ControllerType::NesController;
 				port2 = ControllerType::NesController;

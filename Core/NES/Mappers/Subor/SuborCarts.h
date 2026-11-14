@@ -1,5 +1,6 @@
 #pragma once
 #include "pch.h"
+#include "Utilities/CRC32.h"
 
 //The Subor (小霸王) learning cartridges. They sit on several boards - mappers 177, 178, 241 and 518,
 //Subor168 and Subor560 - and their headers say nothing about the machine around them, so each is
@@ -7,12 +8,33 @@
 //$4016/$4017; the ones with a mouse driver also want the 24-bit serial mouse answering on $4016 (see
 //HasSerialMouse). The reference emulator gives every one of these the same keyboard and mouse.
 //
+//The V5 and the V7.1 take a 1MB add-on card in banks $40-$7F, and an image of one with its card in
+//is the cartridge's own 1MB followed by the card's. Nothing here depends on the card, so such an
+//image is known by its first 1MB, whichever card follows (see GetCartPrgCrc).
+//
 //The 18-pin expansion cards (数奇王) run inside these machines too, and four of them boot on their own
 //as 512KB mapper 178 images. They scan the same 10-row keyboard and bring their own mouse, a PS/2
 //one (see Ps2Mouse).
 class SuborCarts
 {
 public:
+	static constexpr uint32_t AddOnBaseSize = 0x100000;
+	static constexpr uint32_t V5Crc = 0x40A4C574;
+	static constexpr uint32_t V71Crc = 0x79C85E71;
+
+	//The CRC32 this class and Subor168 know an image by (HashInfo::CartPrgCrc32): the cartridge's
+	//own when the image is a V5 or V7.1 with an add-on card after it, the PRG CRC32 otherwise
+	static uint32_t GetCartPrgCrc(vector<uint8_t>& prgRom, uint32_t prgCrc)
+	{
+		if(prgRom.size() > AddOnBaseSize) {
+			uint32_t baseCrc = CRC32::GetCRC(prgRom.data(), AddOnBaseSize);
+			if(baseCrc == V5Crc || baseCrc == V71Crc) {
+				return baseCrc;
+			}
+		}
+		return prgCrc;
+	}
+
 	//The expansion cards, whose mouse is the PS/2 one instead of the 24-bit serial mouse - and other
 	//makers' learning cartridges with the same 10-row keyboard scan and PS/2 driver ($EB, then a
 	//check for the $FA acknowledge, the data line driven through $4016 bit 0)
@@ -155,14 +177,11 @@ public:
 	{
 		switch(prgCrc) {
 			case 0x41401C6D: //V4
-			case 0x40A4C574: //V5
-			case 0xFDD9321C: //V5 with add-ons
-			case 0xCA501706:
+			case V5Crc: //V5, with or without an add-on
 			case 0x85068811: //V6
 			case 0x6F84076D: //V6+
 			case 0x04260DBC: //V7.0
-			case 0x79C85E71: //V7.1
-			case 0xD3113B3F: //V7.1 with an add-on
+			case V71Crc: //V7.1, with or without an add-on
 			case 0xE475D89A: //V9.0
 			case 0x900D9E00: //V9.1
 			case 0x12D61CE8: //V11
@@ -196,9 +215,7 @@ public:
 	static bool HasPrinterAlways(uint32_t prgCrc)
 	{
 		switch(prgCrc) {
-			case 0x40A4C574: //V5
-			case 0xFDD9321C: //V5 with add-ons
-			case 0xCA501706:
+			case V5Crc: //V5, with or without an add-on
 				return true;
 
 			default:
@@ -207,8 +224,8 @@ public:
 	}
 
 	//The cartridges carrying SB DOS (Copyright by SUBOR, 1996) for the Subor floppy drive: it reads
-	//1.44MB PC-format disks and runs the Subor .EXE/.COM programs on them. That is the V5 and its
-	//add-on images - the same ones as HasPrinterAlways.
+	//1.44MB PC-format disks and runs the Subor .EXE/.COM programs on them. That is the V5, with or
+	//without an add-on card - the same as HasPrinterAlways.
 	static bool HasFloppyDrive(uint32_t prgCrc)
 	{
 		return HasPrinterAlways(prgCrc);
@@ -222,14 +239,11 @@ public:
 			case 0xE4460DF2: //V1.1 (mapper 241)
 			case 0x0930349E: //V3 (mapper 241)
 			case 0x41401C6D: //V4 (mapper 167)
-			case 0x40A4C574: //V5 (mapper 518)
-			case 0xFDD9321C: //V5 with a 1MB add-on (mapper 518)
-			case 0xCA501706: //V5 with another 1MB add-on (mapper 518)
+			case V5Crc: //V5, with or without an add-on (mapper 518)
 			case 0x85068811: //V6 (mapper 241)
 			case 0x6F84076D: //V6+ (mapper 178)
 			case 0x04260DBC: //V7.0 (Subor168)
-			case 0x79C85E71: //V7.1 (Subor168)
-			case 0xD3113B3F: //V7.1 with a 1MB add-on (Subor168)
+			case V71Crc: //V7.1, with or without an add-on (Subor168)
 			case 0xF58761D0: //V8.0 (mapper 177)
 			case 0xE475D89A: //V9.0 (mapper 241)
 			case 0x900D9E00: //V9.1 (mapper 241)

@@ -4,6 +4,7 @@
 #include "NES/NesConsole.h"
 #include "NES/BaseNesPpu.h"
 #include "NES/Mappers/Bbk/BbkLpcAudio.h"
+#include "NES/Mappers/Subor/SuborCarts.h"
 #include "Utilities/Serializer.h"
 
 //Subor V7.0 / V7.1 (小霸王) learning cartridges, and the V7.1 with a 1MB add-on above it. Their headers say mapper 168, which in iNES terms
@@ -178,8 +179,9 @@ public:
 		return prgCrc == 0x0A9808AE;
 	}
 
-	static bool IsSubor168(uint32_t prgCrc)
+	//Known by HashInfo::CartPrgCrc32, so the V7.1 with any add-on card is (see SuborCarts)
+	static bool IsSubor168(uint32_t cartCrc)
 	{
-		return prgCrc == 0x04260DBC || prgCrc == 0x79C85E71 || prgCrc == 0xD3113B3F || IsKaraoke(prgCrc);
+		return cartCrc == 0x04260DBC || cartCrc == SuborCarts::V71Crc || IsKaraoke(cartCrc);
 	}
 };

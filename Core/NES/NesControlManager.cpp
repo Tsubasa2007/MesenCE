@@ -112,11 +112,11 @@ shared_ptr<BaseControlDevice> NesControlManager::CreateControllerDevice(Controll
 		case ControllerType::SnesMouse: device.reset(new SnesMouse(_emu, port, keys)); break;
 		case ControllerType::SuborMouse: device.reset(new SuborMouse(_emu, port, keys)); break;
 		case ControllerType::SuborMouse24:
-			device.reset(new SuborMouse24(_emu, port, keys, SuborCarts::HasInvertedMouseCounts(_console->GetMapper()->GetRomInfo().Hash.PrgCrc32)));
+			device.reset(new SuborMouse24(_emu, port, keys, SuborCarts::HasInvertedMouseCounts(_console->GetMapper()->GetRomInfo().Hash.CartPrgCrc32)));
 			break;
 		case ControllerType::BbkMouse: device.reset(new BbkMouse(_emu, port, keys)); break;
 		case ControllerType::Ps2Mouse:
-			device.reset(new Ps2Mouse(_emu, port, keys, SuborCarts::HasPs2MouseXFirst(_console->GetMapper()->GetRomInfo().Hash.PrgCrc32)));
+			device.reset(new Ps2Mouse(_emu, port, keys, SuborCarts::HasPs2MouseXFirst(_console->GetMapper()->GetRomInfo().Hash.CartPrgCrc32)));
 			break;
 		case ControllerType::Sb2kMouse: device.reset(new Sb2kMouse(_emu, port, keys)); break;
 		case ControllerType::YuxingMouse: device.reset(new YuxingMouse(_emu, port, keys)); break;
@@ -148,12 +148,13 @@ shared_ptr<BaseControlDevice> NesControlManager::CreateControllerDevice(Controll
 			//their software's Alt+Fn shortcuts need - so theirs is the extended one (see
 			//SuborCarts::HasExtendedKeyboard). The YuXing machines stop at row 8. The BT-686 scans
 			//the full keyboard but has the extended one's Alt.
-			uint32_t prgCrc = _console->GetMapper()->GetRomInfo().Hash.PrgCrc32;
-			bool isSuborCart = SuborCarts::IsSuborCart(prgCrc);
-			bool reduced = YuxingMapper::IsV10OrV11(prgCrc) || isSuborCart;
-			bool mouseOnBit0 = SuborCarts::HasPs2Mouse(prgCrc) || SuborCarts::HasSerialMouseOnPort2(prgCrc);
+			NesRomInfo romInfo = _console->GetMapper()->GetRomInfo();
+			uint32_t cartCrc = romInfo.Hash.CartPrgCrc32;
+			bool isSuborCart = SuborCarts::IsSuborCart(cartCrc);
+			bool reduced = YuxingMapper::IsV10OrV11(romInfo.Hash.PrgCrc32) || isSuborCart;
+			bool mouseOnBit0 = SuborCarts::HasPs2Mouse(cartCrc) || SuborCarts::HasSerialMouseOnPort2(cartCrc);
 			bool bt686 = dynamic_cast<HuatongBt686*>(_console->GetMapper()) != nullptr;
-			device.reset(new SuborKeyboard(_emu, keys, reduced, SuborCarts::HasExtendedKeyboard(prgCrc), mouseOnBit0, SuborCarts::HasAltAtEnd(prgCrc), bt686));
+			device.reset(new SuborKeyboard(_emu, keys, reduced, SuborCarts::HasExtendedKeyboard(cartCrc), mouseOnBit0, SuborCarts::HasAltAtEnd(cartCrc), bt686));
 			break;
 		}
 		case ControllerType::BbkKeyboard: device.reset(new BbkKeyboard(_emu, keys)); break;

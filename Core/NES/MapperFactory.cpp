@@ -472,7 +472,7 @@ BaseMapper* MapperFactory::GetMapperFromID(RomData& romData)
 		case 167: return new Subor166();
 		case 168:
 			//The Subor V7 cartridges carry this number for a Subor board of their own
-			if(Subor168::IsSubor168(romData.Info.Hash.PrgCrc32)) {
+			if(Subor168::IsSubor168(romData.Info.Hash.CartPrgCrc32)) {
 				return new Subor168();
 			}
 			return new Racermate();
@@ -816,6 +816,8 @@ unique_ptr<BaseMapper> MapperFactory::InitializeFromFile(NesConsole* console, Vi
 	romData = {};
 	bool databaseEnabled = !console->GetNesConfig().DisableGameDatabase;
 	if(RomLoader::LoadFile(romFile, romData, databaseEnabled)) {
+		romData.Info.Hash.CartPrgCrc32 = SuborCarts::GetCartPrgCrc(romData.PrgRom, romData.Info.Hash.PrgCrc32);
+
 		//These two run on Dendy timing, and their mapper 178 board leaves the iNES header no
 		//way to say so - the machine has to be recognised before the mapper is built, because
 		//that is the last point where the region can still be changed.
@@ -837,13 +839,13 @@ unique_ptr<BaseMapper> MapperFactory::InitializeFromFile(NesConsole* console, Vi
 			romData.Info.InputType = GameInputType::SuborKeyboard;
 		}
 
-		if(SuborCarts::IsSuborCart(romData.Info.Hash.PrgCrc32)) {
+		if(SuborCarts::IsSuborCart(romData.Info.Hash.CartPrgCrc32)) {
 			romData.Info.System = GameSystem::Dendy;
 			romData.Info.InputType = GameInputType::SuborKeyboardMouse1;
-		} else if(SuborCarts::HasKingwonKeyboard(romData.Info.Hash.PrgCrc32)) {
+		} else if(SuborCarts::HasKingwonKeyboard(romData.Info.Hash.CartPrgCrc32)) {
 			romData.Info.System = GameSystem::Dendy;
 			romData.Info.InputType = GameInputType::SuborKeyboardMouse1;
-		} else if(SuborCarts::HasFamilyBasicKeyboard(romData.Info.Hash.PrgCrc32)) {
+		} else if(SuborCarts::HasFamilyBasicKeyboard(romData.Info.Hash.CartPrgCrc32)) {
 			romData.Info.System = GameSystem::Dendy;
 			romData.Info.InputType = GameInputType::FamilyBasicKeyboard;
 		}

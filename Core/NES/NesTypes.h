@@ -388,6 +388,9 @@ struct HashInfo
 	uint32_t Crc32 = 0;
 	uint32_t PrgCrc32 = 0;
 	uint32_t PrgChrCrc32 = 0;
+	//The PRG CRC32 of the cartridge the image is: PrgCrc32, apart from a Subor cartridge imaged with
+	//an add-on card after it (see SuborCarts::GetCartPrgCrc)
+	uint32_t CartPrgCrc32 = 0;
 };
 
 enum class VsSystemType

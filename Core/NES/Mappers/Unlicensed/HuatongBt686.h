@@ -289,11 +289,11 @@ protected:
 		//8KHz, from the pitch of two real machines' start-up phrase, which they speak at different
 		//speeds: one with an HT-DOS 2.0 card takes a frame every 20ms, the other, taken to have an
 		//HT-DOS V1.0 card, every 25ms
-		uint32_t prgCrc = _romInfo.Hash.PrgCrc32;
-		bool htDos1Card = prgCrc == V10Crc || prgCrc == V20aCrc;
+		uint32_t cardCrc = _prgSize > MaskRomSize ? CRC32::GetCRC(_prgRom + MaskRomSize, _prgSize - MaskRomSize) : 0;
+		bool htDos1Card = cardCrc == V10CardCrc || cardCrc == V20aCardCrc;
 		_lpcAudio->SetTiming(8000, htDos1Card ? 200 : 160);
 		_lpcAudio->Reset();
-		_byteSpeech = prgCrc == V10Crc || prgCrc == V20aCrc || prgCrc == V20Crc;
+		_byteSpeech = htDos1Card || cardCrc == V20CardCrc;
 		_speechInHeader = true;
 		_speechStops = 0;
 		if(!_swapListener) {
@@ -463,12 +463,12 @@ protected:
 	}
 
 public:
-	//PRG CRC32s of the cards that speak otherwise than the rest (see InitMapper), each image being
-	//the mask ROM followed by the card: V1.0 (no version on the label; HT-DOS V1.0) and V2.0 in
-	//two releases (V20aCrc the earlier, still HT-DOS V1.0; V20Crc with HT-DOS V2.0)
-	static constexpr uint32_t V10Crc = 0x0747E153;
-	static constexpr uint32_t V20aCrc = 0xE9A025F6;
-	static constexpr uint32_t V20Crc = 0x09F6C5CD;
+	//The cards that speak otherwise than the rest (see InitMapper), known by the CRC32 of the card
+	//itself - what follows the mask ROM in the image: V1.0 (no version on the label; HT-DOS V1.0)
+	//and V2.0 in two releases (V20aCardCrc the earlier, still HT-DOS V1.0; V20CardCrc with HT-DOS V2.0)
+	static constexpr uint32_t V10CardCrc = 0x048168E4;
+	static constexpr uint32_t V20aCardCrc = 0xEA66AC41;
+	static constexpr uint32_t V20CardCrc = 0x0A304C7A;
 	//The built-in mask ROM's CRC32
 	static constexpr uint32_t MaskRomCrc = 0xB4300B49;
 

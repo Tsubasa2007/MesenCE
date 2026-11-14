@@ -181,9 +181,9 @@ protected:
 		AddRegisterRange(0x5000, 0x5FFF, MemoryOperation::Write);
 		RemoveRegisterRange(0x8000, 0xFFFF, MemoryOperation::Write);
 
-		_isSuborCart = SuborCarts::IsSuborCart(_romInfo.Hash.PrgCrc32);
-		_printerAlways = SuborCarts::HasPrinterAlways(_romInfo.Hash.PrgCrc32);
-		_hasFloppy = SuborCarts::HasFloppyDrive(_romInfo.Hash.PrgCrc32);
+		_isSuborCart = SuborCarts::IsSuborCart(_romInfo.Hash.CartPrgCrc32);
+		_printerAlways = SuborCarts::HasPrinterAlways(_romInfo.Hash.CartPrgCrc32);
+		_hasFloppy = SuborCarts::HasFloppyDrive(_romInfo.Hash.CartPrgCrc32);
 		if(_hasFloppy) {
 			_dram.assign(DramSize, 0);
 			AddRegisterRange(0x5600, 0x56FF, MemoryOperation::Read);
