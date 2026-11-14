@@ -7,17 +7,12 @@
 //$4016/$4017; the ones with a mouse driver also want the 24-bit serial mouse answering on $4016 (see
 //HasSerialMouse). The reference emulator gives every one of these the same keyboard and mouse.
 //
-//The 18-pin expansion cards (数奇王) run inside these machines too. One is not a dump of a single
-//chip: built as a 1MB mapper 178 image - the Subor V15.0 V2 ROM as the host in the lower 512KB,
-//where the card's label font and its "exit to host" target are, and the card above it, where it
-//runs. The other cards boot on their own as 512KB mapper 178 images, but they too read their
-//label font from the host, so each also comes as a host image the same way. All of them scan the
-//same 10-row keyboard and bring their own mouse, a PS/2 one (see Ps2Mouse).
+//The 18-pin expansion cards (数奇王) run inside these machines too, and four of them boot on their own
+//as 512KB mapper 178 images. They scan the same 10-row keyboard and bring their own mouse, a PS/2
+//one (see Ps2Mouse).
 class SuborCarts
 {
 public:
-	static constexpr uint32_t Ps2MouseCard = 0x7AD19105;
-
 	//The expansion cards, whose mouse is the PS/2 one instead of the 24-bit serial mouse - and other
 	//makers' learning cartridges with the same 10-row keyboard scan and PS/2 driver ($EB, then a
 	//check for the $FA acknowledge, the data line driven through $4016 bit 0)
@@ -25,11 +20,6 @@ public:
 	{
 		switch(prgCrc) {
 			case 0x5DD45CFA: //Kingwon learning cartridge (mapper 241)
-			case 0x006834C8: //multimedia card 1 in a V15.0 V2 host
-			case 0xA05827EB: //multimedia card 2 in a V15.0 V2 host
-			case 0xBD8ACE09: //multimedia card 4 in a V15.0 V2 host
-			case 0x0D4F90B2: //Windows 98 practice card in a V15.0 V2 host
-			case Ps2MouseCard: //voice-mouse card in a V15.0 V2 host
 			case 0x204D11ED: //multimedia card 1
 			case 0x4989118F: //multimedia card 2
 			case 0x4DC15B83: //multimedia card 4
@@ -46,25 +36,6 @@ public:
 			case 0x0BEB8BCD: //the previous one as a mapper 241 image
 			case 0xBACB4CDE: //(mapper 241)
 			case 0x6922D4CE: //(mapper 133, with the bank register at $6001)
-				return true;
-
-			default:
-				return false;
-		}
-	}
-
-	//The cards built into a host image (see the class comment). Some of a card's lessons run the
-	//host's own programs - one of the voice-mouse card's lessons starts a host program with JSR $8000
-	//in host bank 18 - and those read the machine's 24-bit serial mouse on $4016, so these images have
-	//both mice plugged in: the serial one for the host's programs, the PS/2 one for the card.
-	static bool IsCardInHost(uint32_t prgCrc)
-	{
-		switch(prgCrc) {
-			case 0x006834C8: //multimedia card 1
-			case 0xA05827EB: //multimedia card 2
-			case 0xBD8ACE09: //multimedia card 4
-			case 0x0D4F90B2: //Windows 98 practice card
-			case Ps2MouseCard: //voice-mouse card
 				return true;
 
 			default:
@@ -112,9 +83,6 @@ public:
 			case 0x8FA597F8: //typing and dictionary cartridge (mapper 241)
 			case 0x957ABE27: //Wubi typing and English cartridge (mapper 241)
 			case 0x903EADB8: //the first one in another maker's edition (mapper 241)
-			case 0x006834C8: //multimedia card 1 in a V15.0 V2 host (mapper 178)
-			case 0xA05827EB: //multimedia card 2 in a V15.0 V2 host (mapper 178)
-			case 0xBD8ACE09: //multimedia card 4 in a V15.0 V2 host (mapper 178)
 			case 0x204D11ED: //multimedia card 1 (mapper 178)
 			case 0x4989118F: //multimedia card 2 (mapper 178)
 			case 0x4DC15B83: //multimedia card 4 (mapper 178)
@@ -156,7 +124,7 @@ public:
 	{
 		return prgCrc == 0x0A9808AE || prgCrc == 0x957ABE27 || //karaoke, Wubi typing
 			prgCrc == 0x9D91BF0F || //study card with the Family BASIC keyboard
-			prgCrc == 0x4DC15B83 || prgCrc == 0xBD8ACE09; //multimedia card 4, alone and in its host
+			prgCrc == 0x4DC15B83; //multimedia card 4
 	}
 
 	//The cartridges with the cut-down keyboard whose text editor reads its Alt modifier from row 1
@@ -179,7 +147,7 @@ public:
 	}
 
 	//The cartridges whose BIOS scans 13 rows: they read row 9's extended-keyboard bit and then rows
-	//10-12. V1.0, V1.1, V3 and V8.0 stop at row 8, and V15.0 / V15.0 V2 (and the card's host) step to row 9
+	//10-12. V1.0, V1.1, V3 and V8.0 stop at row 8, and V15.0 / V15.0 V2 step to row 9
 	//but take anything there for a key: they skip their splash screen and see a held key unless
 	//row 9 is the reduced keyboard's empty gap. V12.0 scans 12 rows, and its key table gives row 9's
 	//extended-keyboard bit no key, so it wants that bit there too.
@@ -271,11 +239,6 @@ public:
 			case 0xF18BC238: //V14.0, 视窗系统2000 (mapper 178)
 			case 0x6058DB1C: //V15.0, Windows 2002 (mapper 177)
 			case 0x9B004BF8: //V15.0 V2, Windows 2005 (mapper 178)
-			case 0x006834C8: //multimedia card 1 in a V15.0 V2 host
-			case 0xA05827EB: //multimedia card 2 in a V15.0 V2 host
-			case 0xBD8ACE09: //multimedia card 4 in a V15.0 V2 host
-			case 0x0D4F90B2: //Windows 98 practice card in a V15.0 V2 host
-			case Ps2MouseCard: //expansion card in a V15.0 V2 host (mapper 178)
 			case 0x204D11ED: //expansion cards on their own (mapper 178)
 			case 0x4989118F:
 			case 0x4DC15B83:
