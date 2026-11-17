@@ -114,6 +114,19 @@ BIOS、软盘和光盘镜像都**不**随本程序提供，请使用自己的备
 <tr><td align="center"><img src="docs/screenshots/zoson/01-stardvcd01-desktop.png" width="192" alt="STARDVCD01：文字处理、数据库"><br><sub>STARDVCD01：文字处理、数据库</sub></td><td align="center"><img src="docs/screenshots/zoson/02-starcvcd02-desktop.png" width="192" alt="STARCVCD02：打字学校、英语词霸"><br><sub>STARCVCD02：打字学校、英语词霸</sub></td><td align="center"><img src="docs/screenshots/zoson/03-starcvcd03-desktop.png" width="192" alt="STARCVCD03：益智游戏、电子琴、音乐欣赏"><br><sub>STARCVCD03：益智游戏、电子琴、音乐欣赏</sub></td><td align="center"><img src="docs/screenshots/zoson/04-starcvcd04-games.png" width="192" alt="STARCVCD04：游戏菜单"><br><sub>STARCVCD04：游戏菜单</sub></td></tr>
 </table>
 
+### 八通 BT-686 V3.0
+
+<table>
+<tr><td align="center"><img src="docs/screenshots/batong/01-boot.png" width="192" alt="开机画面"><br><sub>开机画面</sub></td><td align="center"><img src="docs/screenshots/batong/02-logo.png" width="192" alt="八通电子标志"><br><sub>八通电子标志</sub></td><td align="center"><img src="docs/screenshots/batong/03-main-menu.png" width="192" alt="主目录"><br><sub>主目录</sub></td><td align="center"><img src="docs/screenshots/batong/04-ec002-composer.png" width="192" alt="EC002 作曲家 + 法老迷宫 + 脸谱设计 + 神算卡片"><br><sub>EC002 作曲家 + 法老迷宫 + 脸谱设计 + 神算卡片</sub></td></tr>
+</table>
+
+<details><summary>更多（4 张）</summary>
+
+<table>
+<tr><td align="center"><img src="docs/screenshots/batong/05-ec006-english-dictionary.png" width="192" alt="EC006 英语小词典 + 英语练习"><br><sub>EC006 英语小词典 + 英语练习</sub></td><td align="center"><img src="docs/screenshots/batong/06-ed004-chinese.png" width="192" alt="ED004 小学二年级第四册语文"><br><sub>ED004 小学二年级第四册语文</sub></td><td align="center"><img src="docs/screenshots/batong/07-ed016-composition.png" width="192" alt="ED016 小学怎样写作文（下）"><br><sub>ED016 小学怎样写作文（下）</sub></td><td align="center"><img src="docs/screenshots/batong/08-gd002-games.png" width="192" alt="GD002 双鹰 + 足球 + 西部枪手"><br><sub>GD002 双鹰 + 足球 + 西部枪手</sub></td></tr>
+</table>
+</details>
+
 ### 小霸王中英文电脑学习卡
 
 <table>
