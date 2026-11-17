@@ -163,6 +163,20 @@ BIOS、软盘和光盘镜像都**不**随本程序提供，请使用自己的备
 </table>
 </details>
 
+### Super A'Can
+
+<table>
+<tr><td align="center"><img src="docs/screenshots/superacan/01-boom-zoo.png" width="192" alt="Boom Zoo"><br><sub>Boom Zoo</sub></td><td align="center"><img src="docs/screenshots/superacan/02-formosa-duel.png" width="240" alt="Formosa Duel"><br><sub>Formosa Duel</sub></td><td align="center"><img src="docs/screenshots/superacan/03-gambling-lord.png" width="240" alt="Gambling Lord"><br><sub>Gambling Lord</sub></td><td align="center"><img src="docs/screenshots/superacan/04-journey-to-the-laugh.png" width="240" alt="Journey to the Laugh"><br><sub>Journey to the Laugh</sub></td></tr>
+</table>
+
+<details><summary>更多（8 张）</summary>
+
+<table>
+<tr><td align="center"><img src="docs/screenshots/superacan/05-magical-pool.png" width="240" alt="Magical Pool"><br><sub>Magical Pool</sub></td><td align="center"><img src="docs/screenshots/superacan/06-monopoly.png" width="240" alt="Monopoly - Adventure in Africa"><br><sub>Monopoly - Adventure in Africa</sub></td><td align="center"><img src="docs/screenshots/superacan/07-rebel-star.png" width="240" alt="Rebel Star"><br><sub>Rebel Star</sub></td><td align="center"><img src="docs/screenshots/superacan/08-sango-fighter.png" width="240" alt="Sango Fighter"><br><sub>Sango Fighter</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/superacan/09-speedy-dragon.png" width="240" alt="Speedy Dragon"><br><sub>Speedy Dragon</sub></td><td align="center"><img src="docs/screenshots/superacan/10-super-dragon-force.png" width="240" alt="Super Dragon Force"><br><sub>Super Dragon Force</sub></td><td align="center"><img src="docs/screenshots/superacan/11-baseball-league.png" width="240" alt="Super Taiwanese Baseball League"><br><sub>Super Taiwanese Baseball League</sub></td><td align="center"><img src="docs/screenshots/superacan/12-son-of-evil.png" width="192" alt="The Son of Evil"><br><sub>The Son of Evil</sub></td></tr>
+</table>
+</details>
+
 ## 快速上手
 
 ### 1. 放好 BIOS
