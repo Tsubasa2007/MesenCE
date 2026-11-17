@@ -45,6 +45,7 @@ namespace Mesen.Config
 		[ObservableProperty] public partial bool FdsAutoInsertDisk { get; set; } = false;
 		[ObservableProperty] public partial bool BbkShowDiskLed { get; set; } = false;
 		[ObservableProperty] public partial bool Yuyin2Printer { get; set; } = false;
+		[ObservableProperty] public partial bool SuborFloppyDrive { get; set; } = true;
 		[ObservableProperty] public partial bool BbkPcLink { get; set; } = false;
 		[ObservableProperty] public partial bool YuxingSkipVcdScreen { get; set; } = true;
 		[ObservableProperty] public partial bool UseExternalVideoPlayer { get; set; } = false;
@@ -191,6 +192,7 @@ namespace Mesen.Config
 				FdsAutoInsertDisk = FdsAutoInsertDisk,
 				BbkShowDiskLed = BbkShowDiskLed,
 				Yuyin2Printer = Yuyin2Printer,
+				SuborFloppyDrive = SuborFloppyDrive,
 				BbkPcLink = BbkPcLink,
 				YuxingSkipVcdScreen = YuxingSkipVcdScreen,
 				UseExternalVideoPlayer = UseExternalVideoPlayer,
@@ -340,6 +342,7 @@ namespace Mesen.Config
 		[MarshalAs(UnmanagedType.I1)] public bool FdsAutoInsertDisk;
 		[MarshalAs(UnmanagedType.I1)] public bool BbkShowDiskLed;
 		[MarshalAs(UnmanagedType.I1)] public bool Yuyin2Printer;
+		[MarshalAs(UnmanagedType.I1)] public bool SuborFloppyDrive;
 		[MarshalAs(UnmanagedType.I1)] public bool BbkPcLink;
 		[MarshalAs(UnmanagedType.I1)] public bool YuxingSkipVcdScreen;
 		[MarshalAs(UnmanagedType.I1)] public bool UseExternalVideoPlayer;

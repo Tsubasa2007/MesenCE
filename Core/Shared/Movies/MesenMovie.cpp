@@ -261,6 +261,10 @@ bool MesenMovie::ApplySettings(istream& settingsData)
 	if(consoleType == ConsoleType::Nes && !s.ContainsKey("_nes.FloppyWriteProtected")) {
 		settings->GetNesConfig().FloppyWriteProtected = false;
 	}
+	//Likewise a recording from before the Subor V5's floppy drive could be left out had it in
+	if(consoleType == ConsoleType::Nes && !s.ContainsKey("_nes.SuborFloppyDrive")) {
+		settings->GetNesConfig().SuborFloppyDrive = true;
+	}
 
 	return true;
 }

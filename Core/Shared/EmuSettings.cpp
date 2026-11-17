@@ -76,6 +76,7 @@ void EmuSettings::Serialize(Serializer& s)
 			SV(_nes.YuxingOnlineServer);
 			SV(_nes.FloppyWriteProtected);
 			SV(_nes.Yuyin2Printer);
+			SV(_nes.SuborFloppyDrive);
 			SV(_nes.BbkPcLink);
 			SV(_nes.Port1.Type);
 			SV(_nes.Port1SubPorts[0].Type);

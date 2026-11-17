@@ -720,6 +720,10 @@ struct NesConfig
 	//The 语音二号's printer reports "ready" on the same line the port 1 controller shifts
 	//its data out on, so only one of the two can be attached at a time - see Yuyin2Mapper.
 	bool Yuyin2Printer = false;
+	//The Subor V5 cartridge's floppy drive for SB DOS. Its menu probes the drive at power-on and
+	//offers DOS only when it answers, so without it the menu is the one a machine without a
+	//drive shows. Read when the cartridge powers on - see Dance2000.
+	bool SuborFloppyDrive = true;
 	//The BBK's parallel port goes to an emulated PC serving a host folder as a drive (see BbkPcLink)
 	bool BbkPcLink = false;
 	//The YuXing VCD models power on showing the player's own screen, which is left behind

@@ -310,6 +310,9 @@
 			<Control ID="lblBbkPcLinkFolder">PC folder (empty = BbkPcLink in the Mesen folder):</Control>
 			<Control ID="chkYuyin2Printer">Attach the printer to the BBK voice models and the Subor cartridges (occupies the port 1 controller line)</Control>
 
+			<Control ID="lblSuborSettings">Subor Learning Machine Settings</Control>
+			<Control ID="chkSuborFloppyDrive">Attach the floppy drive to the V5.0 cartridge (SB DOS; takes effect at the next power-on)</Control>
+
 			<Control ID="lblYuxingSettings">YuXing Learning Machine Settings</Control>
 			<Control ID="chkYuxingSkipVcdScreen">Skip the VCD player screen when the drive is empty</Control>
 			<Control ID="chkYuxingDTypeMouse">Use the D-type add-on serial mouse instead of the built-in mouse</Control>

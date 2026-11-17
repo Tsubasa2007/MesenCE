@@ -86,6 +86,10 @@
 						</DockPanel>
 					</c:OptionSection>
 
+					<c:OptionSection Header="{l:Translate lblSuborSettings}">
+						<CheckBox IsChecked="{Binding Config.SuborFloppyDrive}" Content="{l:Translate chkSuborFloppyDrive}" />
+					</c:OptionSection>
+
 					<c:OptionSection Header="{l:Translate lblYuxingSettings}">
 						<CheckBox IsChecked="{Binding Config.YuxingSkipVcdScreen}" Content="{l:Translate chkYuxingSkipVcdScreen}" />
 						<CheckBox IsChecked="{Binding Config.YuxingDTypeMouse}" Content="{l:Translate chkYuxingDTypeMouse}" />

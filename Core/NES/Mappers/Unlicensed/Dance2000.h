@@ -28,6 +28,10 @@
 //   bits 0-3, written through the pointer at $80/$81) and checks its header there before
 //   running it - a .EXE in 32KB mode ($5200 bit 2), where bits 0-2 pick a 32KB RAM bank. The
 //   RAM is apart from the 8KB at $6000-$7FFF, which SB DOS keeps its own state in.
+//   The drive is optional (NesConfig::SuborFloppyDrive): the menu sends the controller SPECIFY
+//   and RECALIBRATE at power-on, giving up when $5604 never shows it ready, and shows its DOS
+//   item only when it answered. Without the drive nothing answers at $5500-$56FF (open bus),
+//   and the program RAM goes with it.
 class Dance2000 : public BaseMapper
 {
 private:
@@ -183,7 +187,7 @@ protected:
 
 		_isSuborCart = SuborCarts::IsSuborCart(_romInfo.Hash.CartPrgCrc32);
 		_printerAlways = SuborCarts::HasPrinterAlways(_romInfo.Hash.CartPrgCrc32);
-		_hasFloppy = SuborCarts::HasFloppyDrive(_romInfo.Hash.CartPrgCrc32);
+		_hasFloppy = SuborCarts::HasFloppyDrive(_romInfo.Hash.CartPrgCrc32) && _console->GetNesConfig().SuborFloppyDrive;
 		if(_hasFloppy) {
 			_dram.assign(DramSize, 0);
 			AddRegisterRange(0x5600, 0x56FF, MemoryOperation::Read);
