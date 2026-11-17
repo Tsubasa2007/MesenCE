@@ -1,8 +1,8 @@
 # Mesen 学习机版
 
-*A fork of [MesenCE](https://github.com/nesdev-org/MesenCE) that adds the Chinese learning machines of the 1990s (BBK, Subor SB-2000 / SB97, YuXing, Kingwon / Bung Doctor PC Jr., LingTong / Zoson VCD) and the Super A'Can console.*
+*A fork of [MesenCE](https://github.com/nesdev-org/MesenCE) that adds the Chinese learning machines of the 1990s (BBK, Subor SB-2000 / SB97, YuXing, Kingwon / Bung Doctor PC Jr., LingTong / Zoson VCD, Batong BT-686) and the Super A'Can console.*
 
-本项目基于 Mesen 社区版（MesenCE），加入了九十年代国产电脑学习机的模拟：步步高、小霸王 SB-2000 / SB97、裕兴、科王 / 邦谷小博士、灵童 / 中索 VCD，以及 Super A'Can 游戏机。Mesen 原有的功能全部保留：调试器、即时存档、倒带、录像、着色器等等。
+本项目基于 Mesen 社区版（MesenCE），加入了九十年代国产电脑学习机的模拟：步步高、小霸王 SB-2000 / SB97、裕兴、科王 / 邦谷小博士、灵童 / 中索 VCD、八通 BT-686，以及 Super A'Can 游戏机。Mesen 原有的功能全部保留：调试器、即时存档、倒带、录像、着色器等等。
 
 ## 下载
 
@@ -21,6 +21,7 @@ BIOS、软盘和光盘镜像都**不**随本程序提供，请使用自己的备
 | 裕兴电脑学习机（软驱型、VCD 型） | BIOS（.nes）＋ 软盘镜像（.img），VCD 型还可以用光盘镜像（.cue / .bin / .iso） | 软驱、VCD 光驱与光盘菜单、VCD 画面与声音、键盘、内置鼠标或 D 型串口鼠标、打印机 |
 | 科王 KW2000 / KW3000、邦谷小博士（Bung Doctor PC Jr.） | BIOS（.nes）＋ 光盘镜像（.cue / .bin），也可以用软盘镜像（.img） | 光驱、软驱、VCD 画面、键盘、鼠标、打印机 |
 | 灵童 SMART-128B（含电子盘版）、中索 VCD（G2002） | BIOS（.nes）＋ 软盘镜像（.woz）；中索 VCD 用光盘镜像（.cue / .bin / .iso），光盘上的游戏（.cdv）也可以直接打开 | 软驱、电子盘、光驱与光盘菜单、键盘、鼠标、语音、打印机 |
+| 八通 BT-686 | BIOS（.nes：机内的掩膜 ROM 加插在卡槽里的系统卡或英语词典卡）＋ 软盘镜像（.img / .ima） | 软驱、键盘、128KB 内存卡、语音、打印机 |
 | 小霸王中英文电脑学习卡 | 卡带（.nes） | 键盘、鼠标、语音 |
 | 裕兴电脑学习卡 | 卡带（.nes） | 键盘、鼠标 |
 | Super A'Can | 卡带（.bin，或两片芯片合在一起的 .zip） | 整机，另有 68000 与声音处理器的调试器 |
@@ -114,7 +115,7 @@ BIOS、软盘和光盘镜像都**不**随本程序提供，请使用自己的备
 <tr><td align="center"><img src="docs/screenshots/zoson/01-stardvcd01-desktop.png" width="192" alt="STARDVCD01：文字处理、数据库"><br><sub>STARDVCD01：文字处理、数据库</sub></td><td align="center"><img src="docs/screenshots/zoson/02-starcvcd02-desktop.png" width="192" alt="STARCVCD02：打字学校、英语词霸"><br><sub>STARCVCD02：打字学校、英语词霸</sub></td><td align="center"><img src="docs/screenshots/zoson/03-starcvcd03-desktop.png" width="192" alt="STARCVCD03：益智游戏、电子琴、音乐欣赏"><br><sub>STARCVCD03：益智游戏、电子琴、音乐欣赏</sub></td><td align="center"><img src="docs/screenshots/zoson/04-starcvcd04-games.png" width="192" alt="STARCVCD04：游戏菜单"><br><sub>STARCVCD04：游戏菜单</sub></td></tr>
 </table>
 
-### 八通 BT-686 V3.0
+### 八通 BT-686
 
 <table>
 <tr><td align="center"><img src="docs/screenshots/batong/01-boot.png" width="192" alt="开机画面"><br><sub>开机画面</sub></td><td align="center"><img src="docs/screenshots/batong/02-logo.png" width="192" alt="八通电子标志"><br><sub>八通电子标志</sub></td><td align="center"><img src="docs/screenshots/batong/03-main-menu.png" width="192" alt="主目录"><br><sub>主目录</sub></td><td align="center"><img src="docs/screenshots/batong/04-ec002-composer.png" width="192" alt="EC002 作曲家 + 法老迷宫 + 脸谱设计 + 神算卡片"><br><sub>EC002 作曲家 + 法老迷宫 + 脸谱设计 + 神算卡片</sub></td></tr>
