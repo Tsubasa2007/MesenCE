@@ -108,12 +108,12 @@ namespace Mesen.Windows
 
 		private void OnMesenLinkTapped(object? sender, TappedEventArgs e)
 		{
-			ApplicationHelper.OpenBrowser("https://github.com/nesdev-org/MesenCE");
+			ApplicationHelper.OpenBrowser("https://github.com/Tsubasa2007/MesenCE");
 		}
 
 		private void OnCommitLinkTapped(object? sender, TappedEventArgs e)
 		{
-			ApplicationHelper.OpenBrowser("https://github.com/nesdev-org/MesenCE/commit/" + BuildSha);
+			ApplicationHelper.OpenBrowser("https://github.com/Tsubasa2007/MesenCE/commit/" + BuildSha);
 		}
 	}
 

@@ -756,7 +756,7 @@
 			<Control ID="wndTitle">关于 - MesenCE</Control>
 			<Control ID="lblName">Mesen 社区版</Control>
 			<Control ID="lblWebsite">网站：</Control>
-			<Control ID="lblLink">github.com/nesdev-org/MesenCE</Control>
+			<Control ID="lblLink">github.com/Tsubasa2007/MesenCE</Control>
 			<Control ID="lblVersion">版本：</Control>
 			<Control ID="lblBuildDate">编译日期：</Control>
 			<Control ID="lblCommitId">提交 ID：</Control>
