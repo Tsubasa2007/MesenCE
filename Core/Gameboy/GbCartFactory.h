@@ -12,6 +12,7 @@
 #include "Gameboy/Carts/GbHuc1.h"
 #include "Gameboy/Carts/GbWisdomTree.h"
 #include "Gameboy/Carts/GbKongFeng.h"
+#include "Gameboy/Carts/GbGgb81.h"
 #include "Gameboy/GbxFooter.h"
 
 class GbCartFactory
@@ -53,6 +54,8 @@ private:
 			return new GbMmm01();
 		} else if(mapperId == "M161") {
 			return new GbM161();
+		} else if(mapperId == "GB81") {
+			return new GbGgb81();
 		}
 
 		return nullptr;
@@ -133,6 +136,10 @@ private:
 		if(header.CartType == 0x1B && GbKongFeng::IsKongFengCart(prgRom)) {
 			MessageManager::Log("Auto-detected cart type: Kong Feng (MBC5 + challenge chip)");
 			return new GbKongFeng();
+		}
+		if(header.CartType >= 0x19 && header.CartType <= 0x1E && GbGgb81::IsGgb81Cart(prgRom)) {
+			MessageManager::Log("Auto-detected cart type: GGB-81 (MBC5 + data line reordering)");
+			return new GbGgb81();
 		}
 		return nullptr;
 	}

@@ -57,6 +57,7 @@
     <ClInclude Include="Gameboy\Carts\GbMmm01.h" />
     <ClInclude Include="Gameboy\Carts\GbWisdomTree.h" />
     <ClInclude Include="Gameboy\Carts\GbKongFeng.h" />
+    <ClInclude Include="Gameboy\Carts\GbGgb81.h" />
     <ClInclude Include="Gameboy\GbxFooter.h" />
     <ClInclude Include="GBA\Cart\GbaGpio.h" />
     <ClInclude Include="GBA\Cart\GbaRtc.h" />
