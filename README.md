@@ -68,13 +68,13 @@ BIOS、软盘和光盘镜像都**不**随本程序提供，请使用自己的备
 ### 小霸王 SB97
 
 <table>
-<tr><td align="center"><img src="docs/screenshots/sb97/01-a10-chinese.png" width="192" alt="A10 小学语文基础训练一年级"><br><sub>A10 小学语文基础训练一年级</sub></td><td align="center"><img src="docs/screenshots/sb97/02-b751-algebra.png" width="192" alt="B751 初中代数二年级（上）"><br><sub>B751 初中代数二年级（上）</sub></td><td align="center"><img src="docs/screenshots/sb97/03-g71-geography.png" width="192" alt="G71 中国地理"><br><sub>G71 中国地理</sub></td><td align="center"><img src="docs/screenshots/sb97/04-v01-brain-training.png" width="192" alt="V01 智力训练（一）"><br><sub>V01 智力训练（一）</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/sb97/00-v5.0-menu.png" width="192" alt="V5.0 菜单"><br><sub>V5.0 菜单</sub></td><td align="center"><img src="docs/screenshots/sb97/01-a10-chinese.png" width="192" alt="A10 小学语文基础训练一年级"><br><sub>A10 小学语文基础训练一年级</sub></td><td align="center"><img src="docs/screenshots/sb97/02-b751-algebra.png" width="192" alt="B751 初中代数二年级（上）"><br><sub>B751 初中代数二年级（上）</sub></td><td align="center"><img src="docs/screenshots/sb97/03-g71-geography.png" width="192" alt="G71 中国地理"><br><sub>G71 中国地理</sub></td></tr>
 </table>
 
-<details><summary>更多（3 张）</summary>
+<details><summary>更多（4 张）</summary>
 
 <table>
-<tr><td align="center"><img src="docs/screenshots/sb97/05-x71-computer-exam.png" width="192" alt="X71 计算机等级考试（初级版）基础知识 DOS 教学"><br><sub>X71 计算机等级考试（初级版）基础知识 DOS 教学</sub></td><td align="center"><img src="docs/screenshots/sb97/06-x91-wps.png" width="192" alt="X91 WPS"><br><sub>X91 WPS</sub></td><td align="center"><img src="docs/screenshots/sb97/07-x92-basic.png" width="192" alt="X92 BASIC"><br><sub>X92 BASIC</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/sb97/04-v01-brain-training.png" width="192" alt="V01 智力训练（一）"><br><sub>V01 智力训练（一）</sub></td><td align="center"><img src="docs/screenshots/sb97/05-x71-computer-exam.png" width="192" alt="X71 计算机等级考试（初级版）基础知识 DOS 教学"><br><sub>X71 计算机等级考试（初级版）基础知识 DOS 教学</sub></td><td align="center"><img src="docs/screenshots/sb97/06-x91-wps.png" width="192" alt="X91 WPS"><br><sub>X91 WPS</sub></td><td align="center"><img src="docs/screenshots/sb97/07-x92-basic.png" width="192" alt="X92 BASIC"><br><sub>X92 BASIC</sub></td></tr>
 </table>
 </details>
 
