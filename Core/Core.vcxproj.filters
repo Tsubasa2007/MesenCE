@@ -2895,6 +2895,9 @@
     <ClInclude Include="Gameboy\Carts\GbWisdomTree.h">
       <Filter>Gameboy\Carts</Filter>
     </ClInclude>
+    <ClInclude Include="Gameboy\Carts\GbKongFeng.h">
+      <Filter>Gameboy\Carts</Filter>
+    </ClInclude>
     <ClInclude Include="Gameboy\Carts\Eeprom93Lc56.h">
       <Filter>Gameboy\Carts</Filter>
     </ClInclude>

@@ -43,6 +43,12 @@ public:
 	{
 	}
 
+	//For boards whose header understates the cart RAM
+	virtual uint32_t GetCartRamSize(uint32_t headerSize)
+	{
+		return headerSize;
+	}
+
 	virtual void RefreshMappings()
 	{
 		Map(0x0000, 0x7FFF, GbMemoryType::PrgRom, 0, true);

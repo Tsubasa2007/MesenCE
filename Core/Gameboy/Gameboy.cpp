@@ -488,7 +488,7 @@ LoadRomResult Gameboy::LoadRom(VirtualFile& romFile)
 			if(gbxFooter.IsValid()) {
 				Init(cart, romData, gbxFooter.GetRamSize(), gbxFooter.HasBattery());
 			} else {
-				Init(cart, romData, header.GetCartRamSize(), header.HasBattery());
+				Init(cart, romData, cart->GetCartRamSize(header.GetCartRamSize()), header.HasBattery());
 			}
 
 			EmuSettings* settings = _emu->GetSettings();

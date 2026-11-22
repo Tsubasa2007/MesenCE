@@ -11,6 +11,7 @@
 #include "Gameboy/Carts/GbM161.h"
 #include "Gameboy/Carts/GbHuc1.h"
 #include "Gameboy/Carts/GbWisdomTree.h"
+#include "Gameboy/Carts/GbKongFeng.h"
 #include "Gameboy/GbxFooter.h"
 
 class GbCartFactory
@@ -59,7 +60,7 @@ private:
 
 	static GbCart* LoadFromGbHeader(Emulator* emu, GameboyHeader& header, vector<uint8_t>& prgRom)
 	{
-		GbCart* cart = ProcessExceptions(header);
+		GbCart* cart = ProcessExceptions(header, prgRom);
 		if(cart) {
 			return cart;
 		}
@@ -123,11 +124,15 @@ private:
 		return nullptr;
 	}
 
-	static GbCart* ProcessExceptions(GameboyHeader& header)
+	static GbCart* ProcessExceptions(GameboyHeader& header, vector<uint8_t>& prgRom)
 	{
 		if(header.CartType == 0x10 && header.GetCartName() == "TETRIS SET") {
 			MessageManager::Log("Auto-detected cart type: M161");
 			return new GbM161();
+		}
+		if(header.CartType == 0x1B && GbKongFeng::IsKongFengCart(prgRom)) {
+			MessageManager::Log("Auto-detected cart type: Kong Feng (MBC5 + challenge chip)");
+			return new GbKongFeng();
 		}
 		return nullptr;
 	}
