@@ -219,6 +219,7 @@
 #include "NES/Mappers/Unlicensed/Henggedianzi177.h"
 #include "NES/Mappers/Unlicensed/Henggedianzi177Lpc.h"
 #include "NES/Mappers/Unlicensed/ChengXinDa.h"
+#include "NES/Mappers/Unlicensed/BitCorpGd24.h"
 #include "NES/Mappers/Unlicensed/Henggedianzi179.h"
 #include "NES/Mappers/Unlicensed/Hp898f.h"
 #include "NES/Mappers/Unlicensed/MagicKidGooGoo.h"
@@ -299,6 +300,12 @@ BaseMapper* MapperFactory::GetMapperFromID(RomData& romData)
 	if(ChengXinDa::IsChengXinDa(romData.Info.Hash.PrgCrc32)) {
 		romData.ChrRamSize = 0x2000;
 		return new ChengXinDa();
+	}
+
+	//The GuangDa GD-24in1 learning cartridge comes as a headerless dump - see BitCorpGd24
+	if(BitCorpGd24::IsBitCorpGd24(romData.Info.Hash.PrgCrc32)) {
+		romData.ChrRamSize = 0x2000;
+		return new BitCorpGd24();
 	}
 
 	// clang-format off
@@ -837,6 +844,11 @@ unique_ptr<BaseMapper> MapperFactory::InitializeFromFile(NesConsole* console, Vi
 		//on $4016 would cost it the joypad.
 		if(romData.Info.MapperID == 176 && romData.Info.SubMapperID == 4) {
 			romData.Info.InputType = GameInputType::SuborKeyboard;
+		}
+
+		//The GuangDa cartridge scans its own keyboard (see BitCorpGd24)
+		if(BitCorpGd24::IsBitCorpGd24(romData.Info.Hash.PrgCrc32)) {
+			romData.Info.InputType = GameInputType::SuborKeyboardMouse1;
 		}
 
 		if(SuborCarts::IsSuborCart(romData.Info.Hash.CartPrgCrc32)) {

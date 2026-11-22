@@ -36,6 +36,7 @@
 #include "NES/Mappers/Unlicensed/HuatongBt686.h"
 #include "NES/Mappers/Unlicensed/PlqAvCard.h"
 #include "NES/Mappers/Unlicensed/DongdaPec586.h"
+#include "NES/Mappers/Unlicensed/BitCorpGd24.h"
 #include "NES/Mappers/Bung/DrPcJrMapper.h"
 #include "NES/Mappers/Bbk/Yuyin2Mapper.h"
 #include "NES/Mappers/Yuxing/YuxingMapper.h"
@@ -1315,6 +1316,14 @@ void NesConsole::InitializeInputDevices(GameInputType inputType, GameSystem syst
 		} else if(dynamic_cast<DongdaPec586*>(mapper)) {
 			//The same key matrix as the LingTong machines, read by DongdaPec586
 			log("[Input] PEC-586 keyboard connected");
+			expDevice = ControllerType::Sb2kKeyboard;
+		} else if(dynamic_cast<BitCorpGd24*>(mapper)) {
+			//The ZeCheng-type key matrix again, scanned by BitCorpGd24 (bit 1 of $4017). Two of the cartridge's games
+			//are light gun games (trigger and light on $4017 bits 4 and 3), so the second port takes a
+			//Zapper, as for the NES games; the first a joypad (the games and the menus' pad keys).
+			log("[Input] GuangDa keyboard connected");
+			port1 = ControllerType::NesController;
+			port2 = ControllerType::NesZapper;
 			expDevice = ControllerType::Sb2kKeyboard;
 		} else if(SuborCarts::HasKingwonKeyboard(mapper->GetRomInfo().Hash.CartPrgCrc32)) {
 			//Mapper241 runs this keyboard's scan; the device only says which keys are down
