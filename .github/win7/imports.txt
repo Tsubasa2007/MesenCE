@@ -242,6 +242,7 @@ Mesen.exe: kernel32.dll!InitializeCriticalSectionEx
 Mesen.exe: kernel32.dll!InitializeSListHead
 Mesen.exe: kernel32.dll!IsDebuggerPresent
 Mesen.exe: kernel32.dll!IsProcessInJob
+Mesen.exe: kernel32.dll!IsProcessorFeaturePresent
 Mesen.exe: kernel32.dll!IsWow64Process
 Mesen.exe: kernel32.dll!K32EnumProcessModulesEx
 Mesen.exe: kernel32.dll!K32EnumProcesses
